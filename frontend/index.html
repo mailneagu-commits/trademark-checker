@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verificare Disponibilitate Marcă</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; color: #1a1a2e; min-height: 100vh; }
+
+    header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+      color: #fff; padding: 22px 40px;
+      display: flex; align-items: center; gap: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+    }
+    header .logo { font-size: 2rem; }
+    header h1  { font-size: 1.35rem; font-weight: 700; }
+    header p   { font-size: 0.8rem; opacity: 0.65; margin-top: 3px; }
+
+    .container { max-width: 1280px; margin: 0 auto; padding: 28px 18px; }
+
+    .card {
+      background: #fff; border-radius: 14px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.07);
+      padding: 26px 30px; margin-bottom: 22px;
+    }
+    .card h2 { font-size: 0.95rem; font-weight: 700; color: #0f3460; margin-bottom: 16px; }
+
+    label { display: block; font-size: 0.78rem; font-weight: 700; color: #666;
+            margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    input[type="text"] {
+      width: 100%; padding: 11px 14px; border: 2px solid #e0e0e0;
+      border-radius: 8px; font-size: 1rem; outline: none; transition: border-color .2s;
+    }
+    input[type="text"]:focus { border-color: #0f3460; }
+
+    .search-filter {
+      padding: 7px 11px; border: 1.5px solid #ddd; border-radius: 6px;
+      font-size: 0.86rem; width: 100%; margin-bottom: 9px; outline: none;
+    }
+    .search-filter:focus { border-color: #0f3460; }
+
+    .chips-grid {
+      display: flex; flex-wrap: wrap; gap: 5px;
+      max-height: 210px; overflow-y: auto; padding: 2px;
+    }
+    .chip {
+      display: inline-flex; align-items: center; padding: 5px 11px;
+      border-radius: 20px; border: 1.5px solid #d0d7e3; background: #f7f9fc;
+      font-size: 0.76rem; cursor: pointer; user-select: none; transition: all .15s; white-space: nowrap;
+    }
+    .chip:hover { border-color: #0f3460; background: #e8f0fb; }
+    .chip.selected { background: #0f3460; border-color: #0f3460; color: #fff; }
+
+    .countries-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+      gap: 7px; max-height: 250px; overflow-y: auto; padding: 2px;
+    }
+    .country-item {
+      display: flex; align-items: center; gap: 7px; padding: 7px 10px;
+      border-radius: 7px; border: 1.5px solid #e0e0e0; background: #fafafa;
+      cursor: pointer; font-size: 0.8rem; transition: all .15s; user-select: none;
+    }
+    .country-item:hover { border-color: #0f3460; background: #e8f0fb; }
+    .country-item.selected { background: #0f3460; border-color: #0f3460; color: #fff; }
+    .country-item .flag { font-size: 1.05rem; }
+
+    .select-all-row { display: flex; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
+    .btn-sm {
+      padding: 5px 12px; border-radius: 6px; border: 1.5px solid #0f3460;
+      background: transparent; color: #0f3460; font-size: 0.76rem; font-weight: 600;
+      cursor: pointer; transition: all .15s;
+    }
+    .btn-sm:hover { background: #0f3460; color: #fff; }
+
+    .divider { border: none; border-top: 1px solid #eee; margin: 18px 0; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0f3460, #1a5276); color: #fff;
+      border: none; padding: 13px 32px; border-radius: 9px; font-size: 0.97rem;
+      font-weight: 700; cursor: pointer; transition: opacity .2s, transform .1s;
+    }
+    .btn-primary:hover { opacity: .9; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+    .btn-export {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 18px; border-radius: 7px; border: 1.5px solid #0f3460;
+      background: #fff; color: #0f3460; font-size: 0.82rem; font-weight: 700;
+      cursor: pointer; transition: all .15s;
+    }
+    .btn-export:hover { background: #0f3460; color: #fff; }
+
+    .spinner {
+      display: none; width: 20px; height: 20px;
+      border: 3px solid rgba(255,255,255,.35); border-top-color: #fff;
+      border-radius: 50%; animation: spin .7s linear infinite; margin-left: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+    .badge { padding: 9px 16px; border-radius: 8px; font-size: 0.83rem; font-weight: 600; }
+    .badge-blue  { background: #e8f0fb; color: #0f3460; }
+    .badge-red   { background: #fdecea; color: #c0392b; }
+    .badge-green { background: #eafaf1; color: #1e8449; }
+    .badge-warn  { background: #fff3cd; color: #856404; }
+
+    .status-badge { padding: 3px 9px; border-radius: 12px; font-size: 0.73rem; font-weight: 700; white-space:nowrap; }
+    .status-reg   { background: #eafaf1; color: #1e8449; }
+    .status-filed { background: #fef9e7; color: #b7950b; }
+    .status-exp   { background: #f9ebea; color: #922b21; }
+    .status-other { background: #f2f3f4; color: #566573; }
+
+    /* Risk badge */
+    .risk-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:6px; font-size:.72rem; font-weight:800; letter-spacing:.5px; }
+    .risk-badge-very_high { background:#fdecea; color:#c0392b; border:1px solid #f5b7b1; }
+    .risk-badge-high      { background:#feebcf; color:#af4d00; border:1px solid #f5cba7; }
+    .risk-badge-medium    { background:#fff9db; color:#9a7600; border:1px solid #f9e79f; }
+    .risk-badge-low       { background:#eafaf1; color:#1e8449; border:1px solid #a9dfbf; }
+
+    /* Score bar - segmented */
+    .seg-bar-wrap { display:flex; flex-direction:column; gap:3px; }
+    .seg-bar { display:flex; height:8px; border-radius:5px; overflow:hidden; background:#e9ecef; }
+    .seg-text { background:#2980b9; height:100%; transition:width .4s; }
+    .seg-phon { background:#8e44ad; height:100%; transition:width .4s; }
+    .seg-labels { display:flex; justify-content:space-between; font-size:.66rem; color:#aaa; }
+    .score-main { font-size:.95rem; font-weight:800; }
+    .score-very_high { color:#c0392b; }
+    .score-high      { color:#af4d00; }
+    .score-medium    { color:#9a7600; }
+    .score-low       { color:#1e8449; }
+
+    /* Tabs */
+    .tabs { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:16px; border-bottom:2px solid #e0e0e0; padding-bottom:0; }
+    .tab-btn {
+      padding:8px 16px; border:none; background:transparent;
+      font-size:.82rem; font-weight:600; color:#888; cursor:pointer;
+      border-bottom:3px solid transparent; margin-bottom:-2px; transition:all .15s; border-radius:6px 6px 0 0;
+    }
+    .tab-btn:hover { color:#0f3460; background:#f0f4fa; }
+    .tab-btn.active { color:#0f3460; border-bottom-color:#0f3460; background:#e8f0fb; }
+    .tab-btn .tab-count {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:18px; height:18px; border-radius:50%; font-size:.65rem;
+      background:#0f3460; color:#fff; margin-left:5px;
+    }
+    .tab-btn.active .tab-count { background:#c0392b; }
+
+    /* Status filter */
+    .status-filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+    .sf-btn {
+      padding:5px 13px; border-radius:20px; border:1.5px solid #ddd;
+      background:#fff; font-size:.77rem; font-weight:600; cursor:pointer; transition:all .15s; color:#555;
+    }
+    .sf-btn:hover { border-color:#0f3460; color:#0f3460; }
+    .sf-btn.active { background:#0f3460; border-color:#0f3460; color:#fff; }
+
+    /* Geo distribution */
+    .geo-grid {
+      display:flex; flex-wrap:wrap; gap:8px; padding:14px 0;
+    }
+    .geo-item {
+      display:flex; align-items:center; gap:6px; padding:6px 12px;
+      background:#f7f9fc; border-radius:8px; border:1px solid #e0e0e0; font-size:.8rem;
+    }
+    .geo-item .geo-count {
+      display:inline-flex; align-items:center; justify-content:center;
+      min-width:22px; height:22px; border-radius:11px; padding:0 6px;
+      background:#0f3460; color:#fff; font-size:.72rem; font-weight:800;
+    }
+    .geo-item.geo-high .geo-count { background:#c0392b; }
+    .geo-bar-row { display:flex; align-items:center; gap:8px; margin-top:3px; }
+    .geo-bar-bg { flex:1; height:5px; background:#e9ecef; border-radius:3px; min-width:60px; }
+    .geo-bar-fill { height:100%; border-radius:3px; background:#0f3460; transition:width .5s; }
+
+    /* Result cards */
+    .cards-grid { display:flex; flex-direction:column; gap:12px; }
+    .card-row { display:flex; align-items:center; gap:10px; }
+    .card-row .tm-card { flex:1; min-width:0; }
+    .tm-card {
+      display:grid;
+      grid-template-columns: 70px 1fr auto;
+      gap:14px;
+      padding:16px 18px;
+      border-radius:12px;
+      border:1.5px solid #e8edf5;
+      background:#fff;
+      transition:box-shadow .15s, border-color .15s;
+      cursor:pointer;
+      position:relative;
+      overflow:hidden;
+    }
+    .tm-card::before {
+      content:''; position:absolute; left:0; top:0; bottom:0;
+      width:4px; border-radius:12px 0 0 12px;
+    }
+    .tm-card.risk-very_high::before { background:#c0392b; }
+    .tm-card.risk-high::before      { background:#e67e22; }
+    .tm-card.risk-medium::before    { background:#f1c40f; }
+    .tm-card.risk-low::before       { background:#27ae60; }
+    .tm-card:hover { box-shadow:0 4px 20px rgba(0,0,0,0.1); border-color:#b0c4de; }
+    .tm-card.open  { border-color:#0f3460; background:#fafcff; }
+    .tm-card.export-sel { border-color:#0f3460 !important; background:#f0f6ff !important; }
+    .tm-card.export-sel::before { width:6px !important; }
+
+    /* Checkbox export — în afara cardului */
+    .card-chk {
+      flex-shrink:0; display:flex; align-items:center; justify-content:center;
+      width:24px;
+    }
+    .card-chk input[type=checkbox] {
+      width:18px; height:18px; cursor:pointer; accent-color:#0f3460;
+      flex-shrink:0; display:block;
+    }
+
+    /* Export selection bar */
+    .sel-bar {
+      display:none; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:8px 14px; background:#eef3fb; border-radius:8px;
+      border:1.5px solid #c8d5ea; margin-bottom:10px; font-size:.83rem;
+    }
+    .sel-bar.visible { display:flex; }
+    .sel-count { font-weight:700; color:#0f3460; }
+    .btn-sel-sm {
+      padding:4px 12px; border-radius:6px; border:1.5px solid #0f3460;
+      background:#fff; color:#0f3460; font-size:.76rem; font-weight:600;
+      cursor:pointer; transition:all .15s;
+    }
+    .btn-sel-sm:hover { background:#0f3460; color:#fff; }
+
+    .tm-logo {
+      display:flex; align-items:center; justify-content:center;
+      width:70px; height:70px; border-radius:10px; border:1.5px solid #eee;
+      background:#f7f9fc; overflow:hidden; flex-shrink:0;
+    }
+    .tm-logo img { width:100%; height:100%; object-fit:contain; padding:4px; }
+    .tm-logo .no-img { font-size:1.6rem; color:#bbb; }
+
+    .tm-info { display:flex; flex-direction:column; gap:5px; min-width:0; }
+    .tm-name { font-size:1.05rem; font-weight:800; color:#1a1a2e; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tm-meta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+    .tm-office-badge {
+      font-size:.71rem; font-weight:700; padding:2px 8px; border-radius:5px;
+      background:#e8f0fb; color:#0f3460; letter-spacing:.3px;
+    }
+    .tm-rows { display:flex; flex-direction:column; gap:3px; margin-top:3px; }
+    .tm-row  { font-size:.77rem; color:#666; display:flex; gap:5px; }
+    .tm-row strong { color:#333; }
+    .tm-nice { font-size:.73rem; color:#555; background:#f0f4fa; padding:2px 7px; border-radius:4px; max-width:400px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    .tm-score-col {
+      display:flex; flex-direction:column; align-items:flex-end; gap:8px;
+      min-width:130px; flex-shrink:0;
+    }
+    .tm-dates { font-size:.7rem; color:#aaa; text-align:right; }
+    .tm-dates span { display:block; }
+    .tm-expand-btn { font-size:.75rem; color:#0f3460; font-weight:600; padding:4px 10px; border-radius:6px; border:1px solid #d0d9ee; background:#f0f4fb; cursor:pointer; }
+    .tm-expand-btn:hover { background:#0f3460; color:#fff; }
+
+    /* Detail panel inside card */
+    .tm-detail {
+      grid-column: 1 / -1;
+      display:none;
+      padding:16px;
+      background:#f7faff;
+      border-radius:8px;
+      border-top:1.5px solid #d0d9ee;
+      margin-top:4px;
+      animation: slideDown .2s ease;
+    }
+    .tm-detail.open { display:block; }
+    @keyframes slideDown { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:none} }
+    .detail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-bottom:14px; }
+    .detail-item label { font-size:.69rem; font-weight:700; color:#999; text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px; }
+    .detail-item span  { font-size:.85rem; font-weight:600; color:#1a1a2e; }
+    .goods-block { margin-bottom:10px; padding:10px 12px; background:#fff; border-radius:7px; border-left:3px solid #0f3460; }
+    .goods-block .cls-title { font-weight:700; color:#0f3460; font-size:.78rem; margin-bottom:3px; }
+    .goods-block .cls-text  { font-size:.76rem; color:#444; line-height:1.5; }
+    .goods-block .cls-desc  { font-size:.7rem; color:#999; margin-top:3px; font-style:italic; }
+
+    .empty-state { text-align: center; padding: 44px 20px; color: #888; }
+    .empty-state .icon { font-size: 2.8rem; margin-bottom: 10px; }
+
+    .error-msg {
+      background: #fdecea; color: #c0392b; padding: 13px 16px;
+      border-radius: 9px; border-left: 4px solid #e74c3c; font-size: 0.88rem; margin-bottom: 14px;
+    }
+
+    /* Expired toggle */
+    .toggle-wrap { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+    .toggle-wrap input[type=checkbox] { display:none; }
+    .toggle-track {
+      width:40px; height:22px; border-radius:11px; background:#ccc;
+      position:relative; transition:background .2s; flex-shrink:0;
+    }
+    .toggle-track::after {
+      content:''; position:absolute; top:3px; left:3px;
+      width:16px; height:16px; border-radius:50%; background:#fff;
+      transition:transform .2s; box-shadow:0 1px 3px rgba(0,0,0,.25);
+    }
+    .toggle-wrap input:checked + .toggle-track { background:#7d3c98; }
+    .toggle-wrap input:checked + .toggle-track::after { transform:translateX(18px); }
+    .toggle-label { font-size:.82rem; font-weight:600; color:#555; }
+
+    /* Expired section */
+    .tm-card.expired-card { opacity:.82; }
+    .tm-card.expired-card::before { background:#7d3c98 !important; }
+    .expired-section-hdr { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .expired-section-hdr h2 { margin:0; font-size:.95rem; color:#6c3483; }
+    .badge-purple { background:#f5eef8; color:#6c3483; }
+
+    .info-box {
+      background: #e8f0fb; border-left: 4px solid #0f3460; padding: 14px 18px;
+      border-radius: 0 9px 9px 0; font-size: 0.83rem; line-height: 1.6; margin-top: 14px;
+    }
+    .info-box code { background: #d0d9ee; padding: 1px 5px; border-radius: 3px; font-size: 0.82rem; }
+
+    .form-row { display: flex; gap: 20px; flex-wrap: wrap; }
+    .form-col  { flex: 1; min-width: 220px; }
+
+    @media (max-width: 700px) {
+      header { padding: 18px; }
+      .card  { padding: 16px; }
+      .countries-grid { grid-template-columns: repeat(2, 1fr); }
+      .tm-card { grid-template-columns: 54px 1fr; }
+      .tm-score-col { display:none; }
+      .card-chk { width:20px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⚖️</div>
+  <div>
+    <h1>Verificare Disponibilitate Marcă</h1>
+    <p>Algoritm ProtectMARK · Fuzzy · Fonetic · TMview / EUIPO / WIPO</p>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- FORM -->
+  <div class="card">
+    <h2>🔍 Date căutare</h2>
+    <div class="form-row" style="margin-bottom:20px;">
+      <div class="form-col">
+        <label>Denumire marcă</label>
+        <input type="text" id="trademarkName" placeholder="ex: MUSCLE SAUCE" autocomplete="off" />
+      </div>
+    </div>
+    <hr class="divider" />
+
+    <label>Clase NICE (selectați una sau mai multe)</label>
+    <input type="text" class="search-filter" id="niceSearch" placeholder="Caută clasă NICE..." />
+    <div class="select-all-row">
+      <button class="btn-sm" onclick="selectAllNice()">Selectează toate</button>
+      <button class="btn-sm" onclick="clearNice()">Golește</button>
+    </div>
+    <div class="chips-grid" id="niceChips"></div>
+    <hr class="divider" />
+
+    <label>Teritorii / Birouri (selectați unul sau mai multe)</label>
+    <div class="select-all-row">
+      <button class="btn-sm" onclick="selectAllCountries()">Selectează toate</button>
+      <button class="btn-sm" onclick="clearCountries()">Golește</button>
+      <button class="btn-sm" onclick="selectEU()">Doar UE</button>
+    </div>
+    <div class="countries-grid" id="countriesGrid"></div>
+    <hr class="divider" />
+
+    <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+      <button class="btn-primary" id="searchBtn" onclick="doSearch()">
+        Verifică disponibilitatea
+        <span class="spinner" id="spinner"></span>
+      </button>
+      <label class="toggle-wrap" title="Afișează/ascunde secțiunea cu mărci expirate / respinse similare" onclick="toggleExpiredSection()">
+        <input type="checkbox" id="includeExpired" checked />
+        <span class="toggle-track"></span>
+        <span class="toggle-label">🪦 Afișează mărci expirate / respinse</span>
+      </label>
+      <span id="selectionInfo" style="font-size:0.8rem; color:#888;"></span>
+    </div>
+    <div id="searchProgress" style="display:none; margin-top:10px; padding:10px 14px;
+         background:#f0f4fa; border-radius:8px; border-left:3px solid #0f3460;
+         font-size:.84rem; color:#0f3460;">
+      <span id="progressText">⏳ Căutare în progres...</span>
+    </div>
+
+    <div class="info-box" id="sessionBox">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+        <strong style="font-size:.95rem;">🔑 Activează date live TMview</strong>
+        <span id="sessionStatus" style="font-size:.8rem;padding:4px 12px;border-radius:12px;background:#fdecea;color:#c0392b;font-weight:700;">● Inactivă — date demo</span>
+      </div>
+
+      <!-- Pași vizuali -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:14px;">
+        <div style="background:#fff;border:1.5px solid #d0d7e3;border-radius:8px;padding:10px;">
+          <div style="font-size:1.3rem;margin-bottom:4px;">1️⃣</div>
+          <div style="font-size:.8rem;font-weight:700;color:#0f3460;margin-bottom:3px;">Deschide TMview</div>
+          <div style="font-size:.75rem;color:#555;">Apasă linkul de mai jos și fă o căutare oarecare (ex: <em>coca</em>)</div>
+          <a href="https://www.tmdn.org/tmview/" target="_blank" style="display:inline-block;margin-top:6px;font-size:.75rem;font-weight:700;color:#0f3460;">→ tmdn.org/tmview</a>
+        </div>
+        <div style="background:#fff;border:1.5px solid #d0d7e3;border-radius:8px;padding:10px;">
+          <div style="font-size:1.3rem;margin-bottom:4px;">2️⃣</div>
+          <div style="font-size:.8rem;font-weight:700;color:#0f3460;margin-bottom:3px;">Deschide DevTools</div>
+          <div style="font-size:.75rem;color:#555;">Apasă <kbd style="background:#eee;padding:1px 5px;border-radius:3px;border:1px solid #ccc;">F12</kbd> sau <kbd style="background:#eee;padding:1px 5px;border-radius:3px;border:1px solid #ccc;">Ctrl+Shift+I</kbd> și mergi la tab-ul <strong>Network</strong></div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #d0d7e3;border-radius:8px;padding:10px;">
+          <div style="font-size:1.3rem;margin-bottom:4px;">3️⃣</div>
+          <div style="font-size:.8rem;font-weight:700;color:#0f3460;margin-bottom:3px;">Găsește request-ul</div>
+          <div style="font-size:.75rem;color:#555;">În caseta de filter scrie <code style="background:#eee;padding:1px 4px;border-radius:3px;">results</code> și fă o căutare în TMview. Apare un request numit <code style="background:#eee;padding:1px 4px;border-radius:3px;">results?translate=true</code></div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #d0d7e3;border-radius:8px;padding:10px;">
+          <div style="font-size:1.3rem;margin-bottom:4px;">4️⃣</div>
+          <div style="font-size:.8rem;font-weight:700;color:#0f3460;margin-bottom:3px;">Copiază ca cURL</div>
+          <div style="font-size:.75rem;color:#555;"><strong>Click dreapta</strong> pe request → <strong>Copy</strong> → <strong>Copy as cURL</strong> (sau <em>Copy as cURL (bash)</em>)</div>
+        </div>
+      </div>
+
+      <!-- Input cURL -->
+      <div style="display:flex;gap:8px;align-items:flex-start;">
+        <textarea id="curlInput" placeholder="Lipește aici textul cURL copiat (începe cu: curl 'https://www.tmdn.org/tmview/api/search/results...')" rows="3"
+          style="flex:1;padding:8px;border:1.5px solid #d0d7e3;border-radius:7px;font-size:.72rem;font-family:monospace;resize:vertical;color:#333;"></textarea>
+        <button class="btn-primary" style="padding:10px 18px;white-space:nowrap;min-width:120px;" onclick="activateSession()">
+          ✅ Activează
+        </button>
+      </div>
+      <div id="sessionMsg" style="margin-top:6px;font-size:.8rem;display:none;"></div>
+    </div>
+  </div>
+
+  <div id="errorBox" class="error-msg" style="display:none;"></div>
+
+  <!-- VARIANTS PANEL -->
+  <div class="card" id="variantsCard" style="display:none;">
+    <h2>🔤 Variante de căutare generate</h2>
+    <div id="variantsContent"></div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="card" id="resultsCard" style="display:none;">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+      <h2 style="margin:0;">📊 Rezultate analiză similaritate</h2>
+      <div style="display:flex; gap:8px;">
+        <button class="btn-export" onclick="doExport('excel')">📥 Export Excel</button>
+        <button class="btn-export" onclick="doExport('pdf')">📄 Export PDF</button>
+        <button class="btn-export" onclick="doExport('word')">📝 Export Word</button>
+      </div>
+    </div>
+
+    <!-- Bara selecție export -->
+    <div class="sel-bar" id="selBar">
+      <span class="sel-count" id="selCount">0 selectate</span>
+      <span style="color:#888;font-size:.78rem;">— exportul va include doar acestea</span>
+      <button class="btn-sel-sm" onclick="selectAllCards()">Selectează toate</button>
+      <button class="btn-sel-sm" onclick="clearExportSel()">Golește selecția</button>
+    </div>
+
+    <!-- Summary badges -->
+    <div class="summary" id="summaryBadges"></div>
+
+    <!-- Geo distribution -->
+    <div id="geoSection" style="margin-bottom:18px; display:none;">
+      <label style="margin-bottom:8px;">🗺️ Distribuție pe oficii</label>
+      <div class="geo-grid" id="geoGrid"></div>
+    </div>
+
+    <!-- Office tabs -->
+    <div class="tabs" id="officeTabs"></div>
+
+    <!-- Status filter -->
+    <div class="status-filters" id="statusFilters"></div>
+
+    <!-- Conflict cards (≥80%) -->
+    <div class="cards-grid" id="cardsGrid"></div>
+
+    <div id="emptyResults" class="empty-state" style="display:none;">
+      <div class="icon">✅</div>
+      <strong>Niciun conflict detectat</strong>
+      <div style="font-size:0.83rem; margin-top:5px; color:#aaa;">Nu s-au găsit mărci cu similaritate ≥ 80%</div>
+    </div>
+
+    <!-- Similar results (35–75%) -->
+    <div id="similarSection" style="display:none; margin-top:24px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+        <h2 style="margin:0; font-size:.95rem; color:#856404;">🔍 Rezultate similare (35–75%)</h2>
+        <span id="similarCount" class="badge badge-warn"></span>
+      </div>
+      <p style="font-size:.8rem; color:#888; margin-bottom:12px;">
+        Mărci cu similaritate scăzută (60–75%) — necesită analiză suplimentară de specialitate.
+      </p>
+      <div class="cards-grid" id="similarGrid"></div>
+    </div>
+
+    <!-- Expired marks section -->
+    <div id="expiredSection" style="display:none; margin-top:28px;">
+      <div style="border-top:2px dashed #d7bde2; padding-top:20px;">
+        <div class="expired-section-hdr">
+          <h2>🪦 Mărci expirate / anulate / respinse similare</h2>
+          <span id="expiredCount" class="badge badge-purple"></span>
+        </div>
+        <p style="font-size:.8rem; color:#888; margin-bottom:14px;">
+          Mărci inactive (expirate, anulate, abandonate sau respinse) cu denumiri similare. Pot fi relevante pentru analiza istoricului sau pentru revendicarea numelui.
+          <strong style="color:#6c3483;">Nu reprezintă un conflict activ.</strong>
+        </p>
+        <div class="cards-grid" id="expiredGrid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const NICE_CLASSES = [
+  [1,"Produse chimice pentru industrie, știință"],[2,"Vopsele, lacuri, coloranți"],
+  [3,"Produse cosmetice, detergenți, parfumuri"],[4,"Uleiuri, lubrifianți, combustibili"],
+  [5,"Produse farmaceutice, medicale"],[6,"Metale comune și aliaje"],
+  [7,"Mașini și aparate industriale"],[8,"Unelte și instrumente de mână"],
+  [9,"Aparate electronice, software, optice"],[10,"Aparate medicale și chirurgicale"],
+  [11,"Aparate de iluminat, încălzire, răcire"],[12,"Vehicule, aparate de transport"],
+  [13,"Arme de foc, muniție, artificii"],[14,"Metale prețioase, bijuterii, ceasuri"],
+  [15,"Instrumente muzicale"],[16,"Hârtie, produse de papetărie, tipărituri"],
+  [17,"Cauciuc, materiale plastice, izolante"],[18,"Piele, articole de voiaj, genți"],
+  [19,"Materiale de construcție nemetalice"],[20,"Mobilă, oglinzi, rame"],
+  [21,"Ustensile de bucătărie, sticlărie"],[22,"Funii, plase, corturi, prelate"],
+  [23,"Fire și ațe pentru țesut"],[24,"Textile, lenjerie de pat"],
+  [25,"Îmbrăcăminte, încălțăminte, pălării"],[26,"Dantelă, broderie, nasturi"],
+  [27,"Covoare, mochete, tapete"],[28,"Jocuri, jucării, articole sportive"],
+  [29,"Carne, pește, produse lactate, conserve"],[30,"Cafea, ceai, pâine, condimente, sosuri"],
+  [31,"Produse agricole, plante, animale vii"],[32,"Bere, ape minerale, sucuri"],
+  [33,"Băuturi alcoolice (exc. bere)"],[34,"Tutun, articole pentru fumători"],
+  [35,"Publicitate, management afaceri, comerț"],[36,"Asigurări, servicii financiare"],
+  [37,"Construcții, reparații, instalații"],[38,"Telecomunicații"],
+  [39,"Transport, distribuție, călătorii"],[40,"Tratarea materialelor, prelucrare"],
+  [41,"Educație, divertisment, sport, cultură"],[42,"Servicii IT, cercetare științifică"],
+  [43,"Restaurante, hoteluri, catering"],[44,"Servicii medicale, veterinare"],
+  [45,"Servicii juridice, securitate, sociale"],
+];
+
+const COUNTRIES = [
+  {code:"EM",name:"Uniunea Europeană (EUIPO)",flag:"🇪🇺",group:"supra"},
+  {code:"WO",name:"Internațional (WIPO)",flag:"🌐",group:"supra"},
+  {code:"RO",name:"România",flag:"🇷🇴",group:"eu"},{code:"DE",name:"Germania",flag:"🇩🇪",group:"eu"},
+  {code:"FR",name:"Franța",flag:"🇫🇷",group:"eu"},{code:"IT",name:"Italia",flag:"🇮🇹",group:"eu"},
+  {code:"ES",name:"Spania",flag:"🇪🇸",group:"eu"},{code:"PT",name:"Portugalia",flag:"🇵🇹",group:"eu"},
+  {code:"NL",name:"Olanda",flag:"🇳🇱",group:"eu"},{code:"BE",name:"Belgia",flag:"🇧🇪",group:"eu"},
+  {code:"AT",name:"Austria",flag:"🇦🇹",group:"eu"},{code:"PL",name:"Polonia",flag:"🇵🇱",group:"eu"},
+  {code:"CZ",name:"Cehia",flag:"🇨🇿",group:"eu"},{code:"HU",name:"Ungaria",flag:"🇭🇺",group:"eu"},
+  {code:"BG",name:"Bulgaria",flag:"🇧🇬",group:"eu"},{code:"HR",name:"Croația",flag:"🇭🇷",group:"eu"},
+  {code:"SK",name:"Slovacia",flag:"🇸🇰",group:"eu"},{code:"SI",name:"Slovenia",flag:"🇸🇮",group:"eu"},
+  {code:"GR",name:"Grecia",flag:"🇬🇷",group:"eu"},{code:"SE",name:"Suedia",flag:"🇸🇪",group:"eu"},
+  {code:"DK",name:"Danemarca",flag:"🇩🇰",group:"eu"},{code:"FI",name:"Finlanda",flag:"🇫🇮",group:"eu"},
+  {code:"IE",name:"Irlanda",flag:"🇮🇪",group:"eu"},{code:"LU",name:"Luxemburg",flag:"🇱🇺",group:"eu"},
+  {code:"MT",name:"Malta",flag:"🇲🇹",group:"eu"},{code:"CY",name:"Cipru",flag:"🇨🇾",group:"eu"},
+  {code:"LV",name:"Letonia",flag:"🇱🇻",group:"eu"},{code:"LT",name:"Lituania",flag:"🇱🇹",group:"eu"},
+  {code:"EE",name:"Estonia",flag:"🇪🇪",group:"eu"},
+  {code:"GB",name:"Marea Britanie",flag:"🇬🇧",group:"other"},{code:"CH",name:"Elveția",flag:"🇨🇭",group:"other"},
+  {code:"TR",name:"Turcia",flag:"🇹🇷",group:"other"},{code:"UA",name:"Ucraina",flag:"🇺🇦",group:"other"},
+  {code:"MD",name:"Moldova",flag:"🇲🇩",group:"other"},{code:"US",name:"SUA (USPTO)",flag:"🇺🇸",group:"other"},
+  {code:"SA",name:"Arabia Saudită",flag:"🇸🇦",group:"other"},
+  {code:"RU",name:"Rusia",flag:"🇷🇺",group:"other"},
+  {code:"AM",name:"Armenia",flag:"🇦🇲",group:"other"},
+];
+
+const FLAG_MAP = Object.fromEntries(COUNTRIES.map(c => [c.code, c.flag]));
+const NAME_MAP = Object.fromEntries(COUNTRIES.map(c => [c.code, c.name]));
+
+const selectedNice      = new Set();
+const selectedCountries = new Set();
+let lastResults      = null;
+let allResults       = [];
+let activeTab        = "all";
+let activeStatus     = "all";
+const exportSel      = new Set();   // ST13 (sau fallback idx) selectate pentru export
+let _allCardKeys     = [];          // toate cheile din cardurile vizibile
+
+// ---- Build form UI ----
+function buildNiceChips(filter = "") {
+  const grid = document.getElementById("niceChips");
+  grid.innerHTML = "";
+  const q = filter.toLowerCase();
+  NICE_CLASSES.forEach(([num, desc]) => {
+    if (q && !`${num} ${desc}`.toLowerCase().includes(q)) return;
+    const chip = document.createElement("div");
+    chip.className = "chip" + (selectedNice.has(String(num)) ? " selected" : "");
+    chip.textContent = `Cls ${num} – ${desc}`;
+    chip.onclick = () => {
+      const k = String(num);
+      selectedNice.has(k) ? selectedNice.delete(k) : selectedNice.add(k);
+      buildNiceChips(document.getElementById("niceSearch").value);
+      updateInfo();
+    };
+    grid.appendChild(chip);
+  });
+}
+
+function buildCountries() {
+  const grid = document.getElementById("countriesGrid");
+  grid.innerHTML = "";
+  COUNTRIES.forEach(c => {
+    const item = document.createElement("div");
+    item.className = "country-item" + (selectedCountries.has(c.code) ? " selected" : "");
+    item.innerHTML = `<span class="flag">${c.flag}</span><span>${c.name}</span>`;
+    item.onclick = () => {
+      selectedCountries.has(c.code) ? selectedCountries.delete(c.code) : selectedCountries.add(c.code);
+      buildCountries(); updateInfo();
+    };
+    grid.appendChild(item);
+  });
+}
+
+function selectAllNice()     { NICE_CLASSES.forEach(([n]) => selectedNice.add(String(n))); buildNiceChips(document.getElementById("niceSearch").value); updateInfo(); }
+function clearNice()         { selectedNice.clear(); buildNiceChips(document.getElementById("niceSearch").value); updateInfo(); }
+function selectAllCountries(){ COUNTRIES.forEach(c => selectedCountries.add(c.code)); buildCountries(); updateInfo(); }
+function clearCountries()    { selectedCountries.clear(); buildCountries(); updateInfo(); }
+function selectEU()          { selectedCountries.clear(); COUNTRIES.filter(c=>c.group==="eu"||c.code==="EM").forEach(c=>selectedCountries.add(c.code)); buildCountries(); updateInfo(); }
+
+function updateInfo() {
+  const n = selectedNice.size, t = selectedCountries.size;
+  document.getElementById("selectionInfo").textContent =
+    `${n} clasă NICE · ${t} teritori${t !== 1 ? "i" : "u"}`;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  buildNiceChips(); buildCountries(); updateInfo();
+  document.getElementById("niceSearch").addEventListener("input", e => buildNiceChips(e.target.value));
+  checkSessionStatus();
+});
+
+async function checkSessionStatus() {
+  try {
+    const r = await fetch("/api/session-status");
+    const d = await r.json();
+    updateSessionBadge(d.active);
+  } catch(e) {}
+}
+
+function updateSessionBadge(active) {
+  const el = document.getElementById("sessionStatus");
+  if (!el) return;
+  if (active) {
+    el.style.background = "#eafaf1"; el.style.color = "#1e8449";
+    el.textContent = "● Activă — date live TMview";
+  } else {
+    el.style.background = "#fdecea"; el.style.color = "#c0392b";
+    el.textContent = "● Inactivă — folosind date demo";
+  }
+}
+
+async function activateSession() {
+  const curl = document.getElementById("curlInput").value.trim();
+  const msg  = document.getElementById("sessionMsg");
+  if (!curl) { msg.style.display="block"; msg.style.color="#c0392b"; msg.textContent="⚠️ Lipește mai întâi cURL-ul."; return; }
+  try {
+    const r = await fetch("/api/set-curl", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({curl})
+    });
+    const d = await r.json();
+    if (r.ok) {
+      msg.style.display="block"; msg.style.color="#1e8449";
+      msg.textContent = "✅ " + d.message;
+      updateSessionBadge(true);
+      document.getElementById("curlInput").value = "";
+    } else {
+      msg.style.display="block"; msg.style.color="#c0392b";
+      msg.textContent = "⚠️ " + (d.detail || "Eroare.");
+    }
+  } catch(e) {
+    msg.style.display="block"; msg.style.color="#c0392b";
+    msg.textContent = "⚠️ Eroare la conectare cu serverul.";
+  }
+}
+
+// ---- Helpers ----
+function riskLevel(s) {
+  if (s >= 90) return "very_high";
+  if (s >= 75) return "high";
+  if (s >= 60) return "medium";
+  if (s >= 45) return "low";
+  return "low";
+}
+
+function riskBadge(score) {
+  const lvl = riskLevel(score);
+  const labels = {
+    very_high: "🔴 RISC FOARTE RIDICAT",
+    high:      "🟠 RISC RIDICAT",
+    medium:    "🟡 RISC MEDIU",
+    low:       "🟢 RISC SCĂZUT",
+  };
+  return `<span class="risk-badge risk-badge-${lvl}">${labels[lvl]}</span>`;
+}
+
+function statusBadge(status) {
+  if (!status) return "";
+  const s = status.toLowerCase();
+  if (s.includes("registered")) return `<span class="status-badge status-reg">✔ Înregistrată</span>`;
+  if (s.includes("filed") || s.includes("pending")) return `<span class="status-badge status-filed">⏳ Depusă</span>`;
+  if (s.includes("expir")) return `<span class="status-badge status-exp">✖ Expirată</span>`;
+  return `<span class="status-badge status-other">${status}</span>`;
+}
+
+function getStatusKey(status) {
+  if (!status) return "other";
+  const s = status.toLowerCase();
+  if (s.includes("registered")) return "registered";
+  if (s.includes("filed") || s.includes("pending")) return "filed";
+  if (s.includes("expir")) return "expired";
+  return "other";
+}
+
+function segBar(sim) {
+  const textPct  = Math.min(sim.textual_score * 0.70, 100);
+  const phonPct  = Math.min(sim.phonetic_score * 0.30, 100 - textPct);
+  const combined = sim.combined_score;
+  const cls = riskLevel(combined);
+  return `
+    <div class="seg-bar-wrap">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+        <span class="score-main score-${cls}">${combined}%</span>
+        ${riskBadge(combined)}
+      </div>
+      <div class="seg-bar" title="Albastru: scor textual · Violet: scor fonetic">
+        <div class="seg-text" style="width:${textPct}%"></div>
+        <div class="seg-phon" style="width:${phonPct}%"></div>
+      </div>
+      <div class="seg-labels">
+        <span>📝 ${sim.textual_score}%</span>
+        <span>🔊 ${sim.phonetic_score}%</span>
+      </div>
+    </div>`;
+}
+
+// ---- Search ----
+async function doSearch() {
+  const name = document.getElementById("trademarkName").value.trim();
+  document.getElementById("errorBox").style.display = "none";
+  if (!name) { showError("Introduceți denumirea mărcii."); return; }
+  if (!selectedNice.size) { showError("Selectați cel puțin o clasă NICE."); return; }
+  if (!selectedCountries.size) { showError("Selectați cel puțin un teritoriu."); return; }
+
+  setLoading(true);
+  document.getElementById("resultsCard").style.display = "none";
+  document.getElementById("expiredSection").style.display = "none";
+  exportSel.clear(); _allCardKeys = []; updateSelBar();
+
+  try {
+    const res = await fetch("/api/check", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        trademark_name: name,
+        nice_classes:   [...selectedNice],
+        offices:        [...selectedCountries],
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.detail || "Eroare necunoscută."); return; }
+    lastResults = data;
+    allResults  = data.results || [];
+    activeTab    = "all";
+    activeStatus = "all";
+    renderVariants(data.variants);
+    renderResults(data);
+    renderSimilar(data.similar || []);
+    renderExpired(
+      (data.expired_conflicts || []).concat(data.expired_similar || [])
+    );
+  } catch(e) {
+    showError("Nu s-a putut contacta serverul. Asigurați-vă că backend-ul rulează pe portul 8000.");
+  } finally {
+    setLoading(false);
+  }
+}
+
+function showError(msg) {
+  const box = document.getElementById("errorBox");
+  box.textContent = "⚠️ " + msg; box.style.display = "block";
+}
+
+let _progressTimer     = null;
+let _progressShowTimer = null;
+
+function setLoading(on) {
+  document.getElementById("searchBtn").disabled = on;
+  document.getElementById("spinner").style.display = on ? "inline-block" : "none";
+
+  if (on) {
+    const start = Date.now();
+    // Bara apare doar dacă căutarea durează > 800ms (nu flicker în modul demo)
+    _progressShowTimer = setTimeout(() => {
+      const prog = document.getElementById("searchProgress");
+      const txt  = document.getElementById("progressText");
+      prog.style.display = "block";
+      txt.textContent = "⏳ Căutare în progres... 1s";
+      _progressTimer = setInterval(() => {
+        const s = Math.round((Date.now() - start) / 1000);
+        txt.textContent = `⏳ Căutare în progres... ${s}s`;
+      }, 1000);
+    }, 800);
+  } else {
+    clearTimeout(_progressShowTimer);
+    clearInterval(_progressTimer);
+    _progressShowTimer = null;
+    _progressTimer     = null;
+    const prog = document.getElementById("searchProgress");
+    if (prog) {
+      prog.style.display = "none";
+      document.getElementById("progressText").textContent = "⏳ Căutare în progres...";
+    }
+  }
+}
+
+// ---- Render results ----
+function renderResults(data) {
+  const isDemo = data.source && data.source.startsWith("demo");
+  const safe   = data.risky_marks === 0;
+
+  document.getElementById("summaryBadges").innerHTML = `
+    <div class="badge badge-blue">🔎 Total găsite: <strong>${data.total_found}</strong></div>
+    <div class="badge ${safe ? "badge-green" : "badge-red"}">${safe?"✅":"⚠️"} Risc ridicat/f.ridicat ≥75%: <strong>${data.risky_marks}</strong></div>
+    ${data.similar_marks ? `<div class="badge badge-warn">🔍 Risc mediu/scăzut 35–75%: <strong>${data.similar_marks}</strong></div>` : ""}
+    <div class="badge badge-blue">📋 Clase NICE: <strong>${data.nice_classes.join(", ")}</strong></div>
+    <div class="badge ${isDemo ? "badge-warn" : "badge-green"}">
+      ${isDemo ? "⚠️ DEMO – " + data.source.replace("demo (","").replace(")","") : "✅ Sursă: TMview live"}
+    </div>
+    ${data.variants ? `<div class="badge badge-blue">🔤 Variante căutate: <strong>${(data.variants.search_terms.length||0)+(data.variants.phonetic.length||0)}</strong></div>` : ""}
+  `;
+
+  renderGeo(allResults);
+  renderTabs(allResults);
+  renderStatusFilters(allResults);
+  applyFilters();
+
+  document.getElementById("resultsCard").style.display = "block";
+  document.getElementById("resultsCard").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+// ---- Geo distribution ----
+function renderGeo(results) {
+  const section = document.getElementById("geoSection");
+  const grid    = document.getElementById("geoGrid");
+  if (!results.length) { section.style.display = "none"; return; }
+
+  const counts = {};
+  results.forEach(tm => {
+    const o = tm.office || "?";
+    counts[o] = (counts[o] || 0) + 1;
+  });
+
+  const maxCount = Math.max(...Object.values(counts));
+  const sorted   = Object.entries(counts).sort((a,b) => b[1] - a[1]);
+
+  grid.innerHTML = sorted.map(([code, cnt]) => {
+    const flag = FLAG_MAP[code] || "🏳";
+    const name = NAME_MAP[code] || code;
+    const pct  = Math.round(cnt / maxCount * 100);
+    const hi   = cnt === maxCount ? "geo-high" : "";
+    return `
+      <div class="geo-item ${hi}" title="${name}">
+        <span style="font-size:1.2rem;">${flag}</span>
+        <div>
+          <div style="font-size:.77rem;font-weight:700;color:#333;">${code}</div>
+          <div class="geo-bar-row">
+            <div class="geo-bar-bg"><div class="geo-bar-fill" style="width:${pct}%"></div></div>
+            <span class="geo-count">${cnt}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+
+  section.style.display = "block";
+}
+
+// ---- Office tabs ----
+function renderTabs(results) {
+  const tabEl = document.getElementById("officeTabs");
+
+  const groups = {all: results.length};
+  results.forEach(tm => {
+    const o = tm.office || "?";
+    if (o === "EM")      groups["EM"]  = (groups["EM"]  || 0) + 1;
+    else if (o === "WO") groups["WO"]  = (groups["WO"]  || 0) + 1;
+    else if (o === "BX") groups["BX"]  = (groups["BX"]  || 0) + 1;
+    else                 groups["nat"] = (groups["nat"] || 0) + 1;
+  });
+
+  const tabs = [
+    {id:"all", label:"Toate"},
+    {id:"EM",  label:"🇪🇺 EUIPO"},
+    {id:"WO",  label:"🌐 WIPO"},
+    {id:"BX",  label:"🇧🇪 Benelux"},
+    {id:"nat", label:"🏳 Naționale"},
+  ].filter(t => t.id === "all" || groups[t.id]);
+
+  tabEl.innerHTML = tabs.map(t =>
+    `<button class="tab-btn${activeTab===t.id?" active":""}" onclick="setTab('${t.id}')">
+      ${t.label}<span class="tab-count">${groups[t.id]||0}</span>
+    </button>`
+  ).join("");
+}
+
+function setTab(tab) {
+  activeTab = tab;
+  renderTabs(allResults);
+  applyFilters();
+}
+
+// ---- Status filters ----
+function renderStatusFilters(results) {
+  const el = document.getElementById("statusFilters");
+  const counts = {all: results.length, registered:0, filed:0, expired:0};
+  results.forEach(tm => {
+    const k = getStatusKey(tm.status);
+    if (counts[k] !== undefined) counts[k]++;
+  });
+
+  const filters = [
+    {id:"all",        label:"Toate"},
+    {id:"registered", label:"✔ Înregistrate"},
+    {id:"filed",      label:"⏳ Depuse"},
+    {id:"expired",    label:"✖ Expirate"},
+  ].filter(f => f.id === "all" || counts[f.id] > 0);
+
+  el.innerHTML = filters.map(f =>
+    `<button class="sf-btn${activeStatus===f.id?" active":""}" onclick="setStatus('${f.id}')">
+      ${f.label} <span style="font-size:.7rem;opacity:.7;">(${counts[f.id]||0})</span>
+    </button>`
+  ).join("");
+}
+
+function setStatus(s) {
+  activeStatus = s;
+  renderStatusFilters(allResults);
+  applyFilters();
+}
+
+// ---- Apply filters & render cards ----
+function applyFilters() {
+  let filtered = allResults;
+
+  if (activeTab !== "all") {
+    filtered = filtered.filter(tm => {
+      const o = tm.office || "?";
+      if (activeTab === "nat") return o !== "EM" && o !== "WO" && o !== "BX";
+      return o === activeTab;
+    });
+  }
+
+  if (activeStatus !== "all") {
+    filtered = filtered.filter(tm => getStatusKey(tm.status) === activeStatus);
+  }
+
+  renderCards(filtered);
+}
+
+function renderSimilar(results) {
+  const section = document.getElementById("similarSection");
+  const grid    = document.getElementById("similarGrid");
+  const count   = document.getElementById("similarCount");
+  if (!results.length) { section.style.display = "none"; return; }
+  count.textContent = results.length + " mărci";
+  grid.innerHTML = "";
+  results.forEach((tm, i) => _buildCard(tm, tm.similarity, `s${i}`, grid));
+  section.style.display = "block";
+}
+
+function toggleExpiredSection() {
+  const cb  = document.getElementById("includeExpired");
+  const sec = document.getElementById("expiredSection");
+  if (!sec) return;
+  // checkbox state toggles AFTER click, so we read the new value
+  setTimeout(() => { sec.style.display = cb.checked ? "block" : "none"; }, 0);
+}
+
+function renderExpired(results) {
+  const section = document.getElementById("expiredSection");
+  const grid    = document.getElementById("expiredGrid");
+  const count   = document.getElementById("expiredCount");
+  if (!results.length) { section.style.display = "none"; return; }
+  count.textContent = results.length + " mărci";
+  grid.innerHTML = "";
+  results.forEach((tm, i) => {
+    _buildCard(tm, tm.similarity, `exp${i}`, grid);
+    const card = document.getElementById(`card-exp${i}`);
+    if (card) card.classList.add("expired-card");
+  });
+  section.style.display = "block";
+}
+
+function _buildCard(tm, sim, idx, container) {
+  const lvl       = riskLevel(sim.combined_score);
+  const key       = tm.ST13 || String(idx);
+  const applicant = (tm.applicants || []).map(a => a.name || "").filter(Boolean).join(", ") || "—";
+  const applicantCountry = (tm.applicants || []).map(a => a.country || "").filter(Boolean).join(", ");
+  const niceShort = (tm.niceDetailed || []).map(nd => `Cls ${nd.class}: ${nd.short}`).join(" · ")
+                    || (tm.niceClass || []).map(c => `Cls ${c}`).join(", ");
+  const imgSrc = tm.imageUrl;
+  const isChecked = exportSel.has(key);
+
+  // Înregistrăm cheia în lista globală
+  if (!_allCardKeys.includes(key)) _allCardKeys.push(key);
+
+  // Wrapper row: [checkbox] [card]
+  const row = document.createElement("div");
+  row.className = "card-row";
+
+  // Checkbox — în afara cardului, fără conflicte CSS
+  const chkWrap = document.createElement("div");
+  chkWrap.className = "card-chk";
+  const chk = document.createElement("input");
+  chk.type = "checkbox";
+  chk.id = `chk-${idx}`;
+  chk.checked = isChecked;
+  chk.title = "Selectează pentru export";
+  chk.addEventListener("change", e => {
+    e.stopPropagation();
+    toggleExportSel(key, chk.checked, `card-${idx}`);
+  });
+  chkWrap.appendChild(chk);
+  row.appendChild(chkWrap);
+
+  // Card
+  const card = document.createElement("div");
+  card.className = `tm-card risk-${lvl}${isChecked ? " export-sel" : ""}`;
+  card.id = `card-${idx}`;
+  card.dataset.exportKey = key;
+  card.innerHTML = `
+    <div class="tm-logo">
+      ${imgSrc
+        ? `<img src="${imgSrc}" alt="marcă" onerror="this.parentElement.innerHTML='<span class=no-img>™</span>'">`
+        : `<span class="no-img">™</span>`}
+    </div>
+
+    <div class="tm-info">
+      <div class="tm-name" title="${tm.tmName||''}">${tm.tmName || "—"}</div>
+      <div class="tm-meta">
+        <span class="tm-office-badge">${tm.office||"—"}</span>
+        <span style="font-size:.72rem;color:#888;">${tm.officeName||""}</span>
+        ${statusBadge(tm.status)}
+        ${sim.is_multiword ? '<span style="font-size:.69rem;background:#f0e6ff;color:#6c3483;padding:2px 7px;border-radius:10px;font-weight:700;">multi-cuvânt</span>' : ''}
+      </div>
+      <div class="tm-rows">
+        <div class="tm-row"><strong>Titular:</strong> ${applicant}${applicantCountry ? ' <span style="font-size:.7rem;color:#888;">('+applicantCountry+')</span>' : ''}</div>
+        <div class="tm-row"><strong>Nr. marcă:</strong> ${tm.registrationNumber||"—"} &nbsp;|&nbsp; <strong>Nr. depozit:</strong> ${tm.applicationNumber||"—"}</div>
+        <div class="tm-row"><strong>Depus:</strong> ${tm.applicationDate||"—"} &nbsp;|&nbsp; <strong>Înreg.:</strong> ${tm.registrationDate||"—"} &nbsp;|&nbsp; <strong>Expiră:</strong> <span style="color:${tm.expiryDate?"#c0392b":"#aaa"}">${tm.expiryDate||"—"}</span></div>
+      </div>
+      <div class="tm-nice" title="${niceShort}">${niceShort || "—"}</div>
+    </div>
+
+    <div class="tm-score-col">
+      ${segBar(sim)}
+      <button class="tm-expand-btn" onclick="event.stopPropagation();toggleCard('${idx}',${JSON.stringify(tm).replace(/"/g,'&quot;')},${JSON.stringify(sim).replace(/"/g,'&quot;')})">
+        Detalii ▼
+      </button>
+    </div>
+
+    <div class="tm-detail" id="detail-${idx}"></div>
+  `;
+
+  card.onclick = () => toggleCard(`${idx}`, tm, sim);
+  row.appendChild(card);
+  container.appendChild(row);
+}
+
+function renderCards(results) {
+  const grid = document.getElementById("cardsGrid");
+  const empty = document.getElementById("emptyResults");
+
+  if (!results.length) {
+    grid.innerHTML = "";
+    empty.style.display = allResults.length ? "none" : "block";
+    if (allResults.length && !results.length) {
+      grid.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><strong>Niciun rezultat pentru filtrele selectate</strong></div>`;
+    }
+    return;
+  }
+
+  empty.style.display = "none";
+  grid.innerHTML = "";
+  results.forEach((tm, i) => _buildCard(tm, tm.similarity, i, grid));
+}
+
+function toggleCard(idx, tm, sim) {
+  const i = idx;
+  const det = document.getElementById(`detail-${i}`);
+  const card = det ? det.closest('.tm-card') : null;
+  if (!det) return;
+
+  const isOpen = det.classList.contains("open");
+  if (isOpen) {
+    det.classList.remove("open");
+    if (card) card.classList.remove("open");
+    const btn = det.previousElementSibling && det.previousElementSibling.querySelector('.tm-expand-btn');
+    return;
+  }
+
+  // Build detail content if empty
+  if (!det.innerHTML.trim()) {
+    const imgBig = tm.imageUrl
+      ? `<img src="${tm.imageUrl}" style="max-width:100px;max-height:80px;object-fit:contain;border:1px solid #ddd;border-radius:7px;padding:4px;background:#fff;" onerror="this.style.display='none'">`
+      : `<span style="display:inline-block;width:60px;height:50px;background:#f0f2f5;border-radius:7px;font-size:1.5rem;text-align:center;line-height:50px;">™</span>`;
+
+    const goodsHtml = (tm.goodAndServices || []).map(g =>
+      `<div class="goods-block">
+        <div class="cls-title">Clasa ${g.niceClass} — ${g.niceShort||""}</div>
+        <div class="cls-text">${g.goodsAndServices||"—"}</div>
+        <div class="cls-desc">${g.niceDescription||""}</div>
+      </div>`
+    ).join("") || (tm.niceDetailed||[]).map(nd =>
+      `<div class="goods-block">
+        <div class="cls-title">Clasa ${nd.class} — ${nd.short}</div>
+        <div class="cls-desc">${nd.description}</div>
+      </div>`
+    ).join("") || `<span style="color:#aaa;">—</span>`;
+
+    const expNote = tm.expiryIsReal
+      ? `<span style="font-size:.7rem;color:#27ae60;">✅ Confirmat de TMview</span>`
+      : `<span style="font-size:.7rem;color:#aaa;">* Estimat: înregistrare + 10 ani</span>`;
+
+    const applicantDetail = (tm.applicants||[]).map(a =>
+      `<div style="margin-bottom:4px;"><strong>${a.name||"—"}</strong>${a.address ? '<br><span style="font-size:.75rem;color:#777;">'+a.address+'</span>' : ''}${a.country ? ' <span style="font-size:.72rem;color:#aaa;">('+a.country+')</span>' : ''}</div>`
+    ).join("") || "—";
+
+    // (740) Reprezentant
+    const repDetail = (tm.representatives||[]).map(r =>
+      `<div><strong>${r.fullName||r.organizationName||"—"}</strong>${r.fullAddress?'<br><span style="font-size:.73rem;color:#777;">'+r.fullAddress+'</span>':''}</div>`
+    ).join("") || "—";
+
+    // Țări desemnate (Madrid)
+    const designatedHtml = (tm.designatedCountries||[]).length
+      ? (tm.designatedCountries).join(", ")
+      : "—";
+
+    // (531) Coduri Vienna
+    const viennaHtml = (tm.viennaCodes||[]).length
+      ? (tm.viennaCodes).join(", ")
+      : "—";
+
+    const fields = [
+      // Identificare
+      ["(540) Siglă / Reproducere",    imgBig],
+      ["ST13",                          tm.ST13||"—"],
+      ["(210) Nr. cerere",              tm.applicationNumber||"—"],
+      ["(111) Nr. înregistrare",        tm.registrationNumber||"—"],
+      // Titular
+      ["(731/732) Titular",             applicantDetail],
+      ["(740) Reprezentant",            repDetail],
+      // Oficiu
+      ["Birou (cod)",                   tm.office||"—"],
+      ["Oficiu înregistrare",           tm.officeName||"—"],
+      // Status
+      ["Status curent",                 statusBadge(tm.status)||tm.status||"—"],
+      ["Dată status",                   tm.markCurrentStatusDate||"—"],
+      // Date
+      ["(220) Data depunere",           tm.applicationDate||"—"],
+      ["(151) Data înregistrare",       tm.registrationDate||"—"],
+      ["(450) Data publicare",          tm.publicationDate||"—"],
+      ["(180) Data expirare",           tm.expiryDate ? `<span style='color:#c0392b;font-weight:700'>${tm.expiryDate}${tm.expiryIsReal?"":" *"}</span>` : "—"],
+      // Opoziție
+      ["Perioadă opoziție",             (tm.oppositionStartDate&&tm.oppositionEndDate) ? `${tm.oppositionStartDate} → ${tm.oppositionEndDate}` : "—"],
+      // Tip marcă
+      ["(550) Natura mărcii",           [tm.markFeature, tm.kindMark].filter(Boolean).join(" · ")||"—"],
+      // Vienna / Madrid
+      ["(531) Coduri Vienna",           viennaHtml],
+      ["Țări desemnate (Madrid)",       designatedHtml],
+      // Scoruri similaritate
+      ["Scor combinat",                 `<strong style="font-size:1rem;">${sim.combined_score}%</strong>`],
+      ["Scor textual",                  sim.textual_score+"%"],
+      ["Scor fonetic",                  `<span style="color:#8e44ad;font-weight:700">${sim.phonetic_score}%</span>`],
+      ["Jaro-Winkler",                  sim.jaro_winkler+"%"],
+      ["Metaphone",                     `${sim.metaphone}% <span style="font-size:.68rem;color:#aaa">(${sim.metaphone_code_query} vs ${sim.metaphone_code_candidate})</span>`],
+      ["Soundex",                       `<span style="font-size:.77rem">${sim.soundex_query} vs ${sim.soundex_candidate}</span>`],
+      ["Partial ratio",                  `${sim.partial_ratio||0}%${sim.is_multiword?' <span style="font-size:.68rem;color:#6c3483;">(multi-cuvânt)</span>':''}`],
+      ["Levenshtein",                   sim.levenshtein_distance+" car."],
+      ["Găsit prin varianta",           tm._found_by||"—"],
+    ];
+
+    // link dosar oficial
+    const officialLink = tm.officeUrl
+      ? `<a href="${tm.officeUrl}" target="_blank" style="font-size:.78rem;color:#0f3460;font-weight:600;">🔗 Dosar oficial la oficiu</a>`
+      : "";
+
+    det.innerHTML = `
+      <div class="detail-grid">
+        ${fields.map(([k,v])=>`<div class="detail-item"><label>${k}</label><span>${v}</span></div>`).join("")}
+      </div>
+      <label style="margin-bottom:8px;">(511) Clasificare integrală mărfuri/servicii</label>
+      <div style="margin-bottom:10px;">${goodsHtml}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>${expNote}</div>
+        <div>${officialLink}</div>
+      </div>
+    `;
+  }
+
+  det.classList.add("open");
+  if (card) card.classList.add("open");
+}
+
+// ---- Variants panel ----
+function renderVariants(v) {
+  if (!v) return;
+  const card    = document.getElementById("variantsCard");
+  const content = document.getElementById("variantsContent");
+
+  const termHtml = v.search_terms.map((t, i) =>
+    `<span class="chip ${i===0?'selected':''}" style="cursor:default;font-size:.74rem;">${t}</span>`
+  ).join(" ");
+
+  content.innerHTML = `
+    <div style="margin-bottom:8px;">
+      <label>Termeni trimiși la TMview (${v.search_terms.length})</label>
+      <div class="chips-grid" style="max-height:80px;">${termHtml}</div>
+    </div>`;
+
+  card.style.display = "block";
+}
+
+// ---- Selecție export ----
+function toggleExportSel(key, checked, cardId) {
+  if (checked) exportSel.add(key);
+  else exportSel.delete(key);
+  const card = document.getElementById(cardId);
+  if (card) card.classList.toggle("export-sel", checked);
+  updateSelBar();
+}
+
+function updateSelBar() {
+  const bar   = document.getElementById("selBar");
+  const count = document.getElementById("selCount");
+  if (!bar) return;
+  if (exportSel.size > 0) {
+    bar.classList.add("visible");
+    count.textContent = `${exportSel.size} ${exportSel.size === 1 ? "marcă selectată" : "mărci selectate"}`;
+  } else {
+    bar.classList.remove("visible");
+  }
+}
+
+function selectAllCards() {
+  document.querySelectorAll(".card-row").forEach(row => {
+    const card = row.querySelector(".tm-card[data-export-key]");
+    const chk  = row.querySelector("input[type=checkbox]");
+    if (!card) return;
+    const key = card.dataset.exportKey;
+    exportSel.add(key);
+    card.classList.add("export-sel");
+    if (chk) chk.checked = true;
+  });
+  updateSelBar();
+}
+
+function clearExportSel() {
+  exportSel.clear();
+  document.querySelectorAll(".card-row").forEach(row => {
+    const card = row.querySelector(".tm-card");
+    const chk  = row.querySelector("input[type=checkbox]");
+    if (card) card.classList.remove("export-sel");
+    if (chk)  chk.checked = false;
+  });
+  updateSelBar();
+}
+
+// ---- Export ----
+async function doExport(format) {
+  if (!lastResults) return;
+
+  // Filtrăm după selecție dacă există
+  const allRes = lastResults.results || [];
+  const allSim = lastResults.similar || [];
+  let exportResults, exportSimilar;
+
+  if (exportSel.size > 0) {
+    exportResults = allRes.filter(tm => exportSel.has(tm.ST13 || ""));
+    exportSimilar = allSim.filter(tm => exportSel.has(tm.ST13 || ""));
+    // Dacă nimic nu se potrivește (ST13 gol), fallback la toate selectate
+    if (exportResults.length === 0 && exportSimilar.length === 0) {
+      exportResults = allRes; exportSimilar = allSim;
+    }
+  } else {
+    exportResults = allRes; exportSimilar = allSim;
+  }
+
+  try {
+    const res = await fetch("/api/export", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        trademark_name: lastResults.query,
+        nice_classes:   lastResults.nice_classes,
+        offices:        lastResults.offices,
+        results:        exportResults,
+        similar:        exportSimilar,
+        format,
+      }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); showError("Export eșuat: " + (e.detail || res.status)); return; }
+    const blob = await res.blob();
+    const ext  = format === "excel" ? "xlsx" : format === "word" ? "docx" : "pdf";
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    const sel  = exportSel.size > 0 ? `_${exportSel.size}sel` : "";
+    a.download = `raport_${lastResults.query.replace(/ /g,"_")}${sel}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    showError("Eroare la export: " + e.message);
+  }
+}
+</script>
+</body>
+</html>
