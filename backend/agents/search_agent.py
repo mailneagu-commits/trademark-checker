@@ -1,8 +1,14 @@
 import asyncio
+import os
 import random
 import re
 import shlex
 from typing import List, Dict, Tuple, Optional
+
+# Optional HTTP/SOCKS5 proxy to bypass Imperva WAF on cloud hosts.
+# Set PROXY_URL env var, e.g.: http://scraperapi:KEY@proxy-server.scraperapi.com:8001
+_PROXY_URL = os.environ.get("PROXY_URL", "").strip()
+_PROXIES = {"https": _PROXY_URL, "http": _PROXY_URL} if _PROXY_URL else None
 
 try:
     from curl_cffi.requests import AsyncSession
@@ -242,7 +248,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     )
     phonetic_terms = list(phonetic_set)
 
-    async with AsyncSession(impersonate="chrome120") as session:
+    async with AsyncSession(impersonate="chrome120", proxies=_PROXIES) as session:
         if not has_browser_session():
             await session.get(TMVIEW_HOME, timeout=20)
             await asyncio.sleep(1)
@@ -317,7 +323,7 @@ async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices
     # Folosim aceleași loturi ca la căutarea principală
     exp_searches = [("F", upper), ("C", f"*{upper}*"), ("Z", upper)]
 
-    async with AsyncSession(impersonate="chrome120") as session:
+    async with AsyncSession(impersonate="chrome120", proxies=_PROXIES) as session:
         if not has_browser_session():
             await session.get(TMVIEW_HOME, timeout=20)
             await asyncio.sleep(1)
