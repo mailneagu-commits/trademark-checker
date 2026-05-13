@@ -9,6 +9,10 @@ from typing import List, Dict, Tuple, Optional
 # Set PROXY_URL env var, e.g.: http://scraperapi:KEY@proxy-server.scraperapi.com:8001
 _PROXY_URL = os.environ.get("PROXY_URL", "").strip()
 _PROXIES = {"https": _PROXY_URL, "http": _PROXY_URL} if _PROXY_URL else None
+if _PROXY_URL:
+    print(f"[PROXY] Configured: {_PROXY_URL[:40]}...")
+else:
+    print("[PROXY] No proxy configured — direct connection")
 
 try:
     from curl_cffi.requests import AsyncSession
