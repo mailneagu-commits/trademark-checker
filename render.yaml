@@ -2,6 +2,5 @@ services:
   - type: web
     name: trademark-checker
     runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: bash -c "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
