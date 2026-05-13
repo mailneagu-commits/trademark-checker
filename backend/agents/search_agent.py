@@ -376,14 +376,15 @@ class SearchAgent:
                     await asyncio.sleep(3)
                 marks = await asyncio.wait_for(
                     _fetch_tmview(name, nice_classes, offices),
-                    timeout=45.0      # redus de la 90s
+                    timeout=45.0
                 )
                 if marks:
                     return marks, "live:tmview"
             except asyncio.TimeoutError:
-                pass
+                print(f"[TMVIEW] attempt {attempt}: TimeoutError")
             except Exception as e:
                 err = str(e)
+                print(f"[TMVIEW] attempt {attempt}: {type(e).__name__}: {err}")
                 if "56" in err or "Connection" in err or "reset" in err.lower():
                     break
         return _demo_marks(name, nice_classes, offices), "demo (TMview indisponibil — date demonstrative)"
