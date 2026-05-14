@@ -54,6 +54,32 @@ async def set_curl(request: CurlRequest):
     return {"status": "ok", "message": "Sesiune TMview activată. Căutările vor folosi acum sesiunea ta de browser."}
 
 
+@app.get("/api/debug-tmview")
+async def debug_tmview():
+    """Test connectivity to TMview API — for diagnostics only."""
+    from agents.search_agent import AsyncSession, TMVIEW_URL, TMVIEW_HOME, _PROXIES, _build_headers, HAS_CURL_CFFI
+    if not HAS_CURL_CFFI:
+        return {"error": "curl_cffi not available"}
+    results = {}
+    try:
+        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
+            r = await session.get(TMVIEW_HOME, timeout=60)
+            results["home_status"] = r.status_code
+            results["home_cookies"] = list(session.cookies.keys())
+            results["home_body_preview"] = r.text[:300]
+            r2 = await session.post(TMVIEW_URL, json={
+                "page": "1", "pageSize": "5", "criteria": "F",
+                "basicSearch": "TEST", "newPage": True,
+                "fields": ["ST13", "tmName"],
+                "territories": ["RO"]
+            }, headers=_build_headers(), timeout=60)
+            results["api_status"] = r2.status_code
+            results["api_body_preview"] = r2.text[:500]
+    except Exception as e:
+        results["error"] = f"{type(e).__name__}: {e}"
+    return results
+
+
 @app.get("/api/session-status")
 async def session_status():
     return {"active": has_browser_session()}
