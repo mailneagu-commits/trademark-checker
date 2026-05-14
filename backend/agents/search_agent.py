@@ -170,7 +170,7 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     if territories:  payload["territories"] = territories
     if nice_classes: payload["niceClass"]   = [int(c) if c.isdigit() else c for c in nice_classes]
     try:
-        r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=25)
+        r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=55 if _PROXIES else 25)
         if r.status_code == 200:
             data  = r.json()
             marks = data.get("tradeMarks", [])
@@ -224,25 +224,24 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     # Z=Fuzzy, C=Conține, S=Începe cu, E=Se termină cu, F=Exact
     many_territories = territories and len(territories) > TERRITORY_BATCH
 
-    if many_territories:
-        # Cu multe teritorii (ex: EM=28) folosim doar criteriile principale
-        # pentru a limita nr. de apeluri API: 3 criterii × 4 loturi = 12 request-uri
-        main_searches = [
-            ("Z", upper),          # Fuzzy — prinde variante similare
-            ("C", f"*{upper}*"),   # Wildcard substring — prinde PizzaCRUST
-            ("F", upper),          # Exact match
-        ]
-    else:
-        # Teritorii puține → toate cele 8 criterii
+    if _PROXIES or many_territories:
+        # Proxy sau multe teritorii: minim de request-uri pentru a evita timeout
         main_searches = [
             ("Z", upper),          # Fuzzy
-            ("C", upper),          # Conține (word-level)
-            ("S", upper),          # Începe cu
-            ("E", upper),          # Se termină cu
-            ("F", upper),          # Exact
             ("C", f"*{upper}*"),   # Wildcard substring
-            ("C", f"{upper}*"),    # Wildcard prefix
-            ("C", f"*{upper}"),    # Wildcard suffix
+            ("F", upper),          # Exact
+        ]
+    else:
+        # Direct, teritorii puține → toate cele 8 criterii
+        main_searches = [
+            ("Z", upper),
+            ("C", upper),
+            ("S", upper),
+            ("E", upper),
+            ("F", upper),
+            ("C", f"*{upper}*"),
+            ("C", f"{upper}*"),
+            ("C", f"*{upper}"),
         ]
 
     phonetic_set = set(
@@ -250,7 +249,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         build_vowel_variants(name) +
         build_plural_stem_variants(name)[:4]
     )
-    phonetic_terms = list(phonetic_set)
+    phonetic_terms = [] if _PROXIES else list(phonetic_set)
     req_timeout = 60 if _PROXIES else 25
 
     async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
