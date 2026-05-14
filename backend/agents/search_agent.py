@@ -218,10 +218,16 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
 
 async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str]) -> List[Dict]:
     offices, territories = build_offices_and_territories(user_offices)
+
+    # Cu proxy activ nu expandăm EM în 28 teritorii (prea multe batches → timeout).
+    # Convertim EM din teritoriu în office — 1 request în loc de 5 batches.
+    if _PROXIES and "EM" in territories:
+        from agents.variant_agent import ALL_EU_TERRITORIES
+        territories = [t for t in territories if t not in ALL_EU_TERRITORIES and t != "EM"]
+        offices = list(set(offices) | {"EM"})
+
     upper = name.upper().strip()
 
-    # Criterii native TMview + wildcard substring
-    # Z=Fuzzy, C=Conține, S=Începe cu, E=Se termină cu, F=Exact
     many_territories = territories and len(territories) > TERRITORY_BATCH
 
     if _PROXIES or many_territories:
