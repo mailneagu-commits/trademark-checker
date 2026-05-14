@@ -251,10 +251,15 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         build_plural_stem_variants(name)[:4]
     )
     phonetic_terms = list(phonetic_set)
+    req_timeout = 60 if _PROXIES else 25
 
     async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
         if not has_browser_session():
-            await session.get(TMVIEW_HOME, timeout=20)
+            try:
+                r = await session.get(TMVIEW_HOME, timeout=req_timeout)
+                print(f"[TMVIEW] warmup GET status={r.status_code}")
+            except Exception as e:
+                print(f"[TMVIEW] warmup GET error: {type(e).__name__}: {e}")
             await asyncio.sleep(1)
 
         MAX_TOTAL = 100
@@ -380,13 +385,14 @@ class SearchAgent:
                      extra_terms: Optional[List[str]] = None) -> Tuple[List[Dict], str]:
         if not HAS_CURL_CFFI:
             return _demo_marks(name, nice_classes, offices), "demo (curl-cffi lipsă)"
-        for attempt in range(2):      # 2 retry-uri × 45s = max 90s total
+        _timeout = 90.0 if _PROXIES else 45.0
+        for attempt in range(2):
             try:
                 if attempt > 0:
                     await asyncio.sleep(3)
                 marks = await asyncio.wait_for(
                     _fetch_tmview(name, nice_classes, offices),
-                    timeout=45.0
+                    timeout=_timeout
                 )
                 if marks:
                     return marks, "live:tmview"
