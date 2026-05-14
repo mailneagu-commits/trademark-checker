@@ -229,7 +229,6 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         main_searches = [
             ("Z", upper),          # Fuzzy
             ("C", f"*{upper}*"),   # Wildcard substring
-            ("F", upper),          # Exact
         ]
     else:
         # Direct, teritorii puține → toate cele 8 criterii
@@ -250,10 +249,10 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         build_plural_stem_variants(name)[:4]
     )
     phonetic_terms = [] if _PROXIES else list(phonetic_set)
-    req_timeout = 60 if _PROXIES else 25
+    req_timeout = 55 if _PROXIES else 25
 
     async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
-        if not has_browser_session():
+        if not _PROXIES and not has_browser_session():
             try:
                 r = await session.get(TMVIEW_HOME, timeout=req_timeout)
                 print(f"[TMVIEW] warmup GET status={r.status_code}")
@@ -384,8 +383,9 @@ class SearchAgent:
                      extra_terms: Optional[List[str]] = None) -> Tuple[List[Dict], str]:
         if not HAS_CURL_CFFI:
             return _demo_marks(name, nice_classes, offices), "demo (curl-cffi lipsă)"
-        _timeout = 90.0 if _PROXIES else 45.0
-        for attempt in range(2):
+        _timeout = 75.0 if _PROXIES else 45.0
+        _retries = 1 if _PROXIES else 2
+        for attempt in range(_retries):
             try:
                 if attempt > 0:
                     await asyncio.sleep(3)
