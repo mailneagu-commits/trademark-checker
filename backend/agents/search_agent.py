@@ -332,12 +332,19 @@ def _demo_marks(name: str, nice_classes: List[str], offices: List[str]) -> List[
 
 async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices: List[str]) -> List[Dict]:
     offices, territories = build_offices_and_territories(user_offices)
+
+    # Aceleași optimizări proxy ca în _fetch_tmview
+    if _PROXIES and "EM" in territories:
+        from agents.variant_agent import ALL_EU_TERRITORIES
+        territories = [t for t in territories if t not in ALL_EU_TERRITORIES and t != "EM"]
+        offices = list(set(offices) | {"EM"})
+
     upper = name.upper().strip()
-    # Folosim aceleași loturi ca la căutarea principală
-    exp_searches = [("F", upper), ("C", f"*{upper}*"), ("Z", upper)]
+    exp_searches = [("Z", upper), ("C", f"*{upper}*")] if _PROXIES else [("F", upper), ("C", f"*{upper}*"), ("Z", upper)]
+    req_timeout = 55 if _PROXIES else 20
 
     async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
-        if not has_browser_session():
+        if not _PROXIES and not has_browser_session():
             await session.get(TMVIEW_HOME, timeout=20)
             await asyncio.sleep(1)
 
@@ -345,7 +352,6 @@ async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices
         seen: set = set()
         all_marks: List[Dict] = []
 
-        # Împărțim teritoriile în loturi (fix: teritoriile lipseau anterior)
         ter_batches = ([territories[i:i+TERRITORY_BATCH]
                         for i in range(0, len(territories), TERRITORY_BATCH)]
                        if territories and len(territories) > TERRITORY_BATCH
@@ -369,7 +375,7 @@ async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices
                     payload["niceClass"] = [int(c) if c.isdigit() else c for c in nice_classes]
                 try:
                     r = await session.post(TMVIEW_URL, json=payload,
-                                           headers=_build_headers(), timeout=20)
+                                           headers=_build_headers(), timeout=req_timeout)
                     if r.status_code == 200:
                         for m in r.json().get("tradeMarks", []):
                             st13 = m.get("ST13", "")
@@ -417,7 +423,7 @@ class SearchAgent:
         try:
             marks = await asyncio.wait_for(
                 _fetch_tmview_expired(name, nice_classes, offices),
-                timeout=40.0,
+                timeout=75.0 if _PROXIES else 40.0,
             )
             return marks, "live:tmview:expired"
         except Exception:
