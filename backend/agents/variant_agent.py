@@ -158,18 +158,26 @@ def build_offices_and_territories(user_offices: List[str]):
     offices_set:     Set[str] = set()
     territories_set: Set[str] = set()
 
+    has_eu_country = False
     for code in user_offices:
         c = code.upper()
         if c in _BENELUX:
             territories_set.add("BX")
+            has_eu_country = True
         elif c == "WO":
             offices_set.add("WO")
         elif c == "EM":
-            # EM → EUIPO territory + toate statele membre UE
             territories_set.add("EM")
             territories_set.update(ALL_EU_TERRITORIES)
+        elif c in _EU_COUNTRY_SET:
+            territories_set.add(c)
+            has_eu_country = True
         else:
             territories_set.add(c)
+
+    # Orice stat UE selectat → adăugăm și EUIPO (mărci europene acoperă toate țările UE)
+    if has_eu_country and "EM" not in territories_set:
+        offices_set.add("EM")
 
     return sorted(offices_set), sorted(territories_set)
 
