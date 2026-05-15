@@ -171,14 +171,16 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     if nice_classes: payload["niceClass"]   = [int(c) if c.isdigit() else c for c in nice_classes]
     try:
         r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=55 if _PROXIES else 25)
+        print(f"[TMVIEW] POST status={r.status_code} crit={criteria} term={term[:20]}")
         if r.status_code == 200:
             data  = r.json()
             marks = data.get("tradeMarks", [])
+            print(f"[TMVIEW] found {len(marks)} marks")
             for m in marks:
                 m.setdefault("_found_by", term)
             return marks, int(data.get("total") or 0)
-    except Exception:
-        pass
+    except Exception as _e:
+        print(f"[TMVIEW] _search_page error: {type(_e).__name__}: {_e}")
     return [], 0
 
 
@@ -383,8 +385,8 @@ async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices
                                 seen.add(st13)
                                 m.setdefault("_found_by", term)
                                 all_marks.append(m)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    print(f"[TMVIEW] POST error: {type(_e).__name__}: {_e}")
                 await asyncio.sleep(0.15)
 
         return all_marks[:MAX_TOTAL]
