@@ -11,7 +11,6 @@ import io
 from agents.search_agent import SearchAgent, set_browser_session, has_browser_session
 from agents.similarity_agent import SimilarityAgent
 from agents.variant_agent import generate_all_variants
-from agents.euipo_agent import search_euipo, euipo_available
 from export import build_excel, build_pdf, build_word
 
 app = FastAPI(title="Trademark Checker")

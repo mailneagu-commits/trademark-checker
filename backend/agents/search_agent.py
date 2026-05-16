@@ -406,52 +406,25 @@ async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices
 class SearchAgent:
     async def search(self, name: str, nice_classes: List[str], offices: List[str],
                      extra_terms: Optional[List[str]] = None) -> Tuple[List[Dict], str]:
-        from agents.euipo_agent import search_euipo, euipo_available
+        if not HAS_CURL_CFFI:
+            return _demo_marks(name, nice_classes, offices), "demo (curl-cffi lipsă)"
 
-        # Rulează EUIPO API și TMview în paralel
-        async def _euipo_async():
-            if not euipo_available():
-                return []
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, search_euipo, name, nice_classes)
-
-        async def _tmview_async():
-            if not HAS_CURL_CFFI:
-                return None
-            candidates = _PROXY_LIST + [""]
-            for proxy_url in candidates:
-                label = proxy_url[:30] if proxy_url else "direct"
-                try:
-                    marks = await asyncio.wait_for(
-                        _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url),
-                        timeout=75.0 if proxy_url else 45.0
-                    )
-                    if marks is not None:
-                        print(f"[TMVIEW] success via {label}, {len(marks)} marks")
-                        return marks
-                    print(f"[TMVIEW] internal error via {label}, trying next")
-                except asyncio.TimeoutError:
-                    print(f"[TMVIEW] timeout via {label}")
-                except Exception as e:
-                    print(f"[TMVIEW] error via {label}: {type(e).__name__}: {e}")
-            return []
-
-        euipo_marks, tmview_marks = await asyncio.gather(_euipo_async(), _tmview_async())
-        tmview_marks = tmview_marks or []
-
-        # Combină rezultatele, evitând duplicate după tmName+tmOffice
-        seen_keys: set = set()
-        combined: List[Dict] = []
-        for m in (euipo_marks + tmview_marks):
-            key = (m.get("ST13") or m.get("applicationNumber") or m.get("tmName", ""))
-            if key and key not in seen_keys:
-                seen_keys.add(key)
-                combined.append(m)
-
-        if combined:
-            source = "live:euipo+tmview" if euipo_marks and tmview_marks else (
-                "live:euipo" if euipo_marks else "live:tmview")
-            return combined, source
+        candidates = _PROXY_LIST + [""]
+        for proxy_url in candidates:
+            label = proxy_url[:30] if proxy_url else "direct"
+            try:
+                marks = await asyncio.wait_for(
+                    _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url),
+                    timeout=75.0 if proxy_url else 45.0
+                )
+                if marks is not None:
+                    print(f"[TMVIEW] success via {label}, {len(marks)} marks")
+                    return marks, "live:tmview"
+                print(f"[TMVIEW] internal error via {label}, trying next")
+            except asyncio.TimeoutError:
+                print(f"[TMVIEW] timeout via {label}")
+            except Exception as e:
+                print(f"[TMVIEW] error via {label}: {type(e).__name__}: {e}")
 
         return _demo_marks(name, nice_classes, offices), "demo (TMview indisponibil — date demonstrative)"
 
