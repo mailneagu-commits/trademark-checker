@@ -8,6 +8,11 @@ EUIPO_CLIENT_SECRET = os.environ.get("EUIPO_CLIENT_SECRET", "")
 EUIPO_TOKEN_URL     = "https://euipo.europa.eu/cas-server-webapp/oidc/accessToken"
 EUIPO_SEARCH_URL    = "https://api.euipo.europa.eu/trademark-search/trademarks"
 
+if EUIPO_CLIENT_ID:
+    print(f"[EUIPO] Configured with Client ID: {EUIPO_CLIENT_ID[:8]}...")
+else:
+    print("[EUIPO] Not configured — set EUIPO_CLIENT_ID and EUIPO_CLIENT_SECRET env vars")
+
 _token_cache: Dict = {"token": None, "expires_at": 0}
 
 
