@@ -264,10 +264,12 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
             ("F", upper), ("C", f"*{upper}*"), ("C", f"{upper}*"), ("C", f"*{upper}"),
         ]
 
-    phonetic_terms = [] if use_proxy else list(set(
+    all_phonetic = list(set(
         build_phonetic_variants(name) + build_vowel_variants(name) +
         build_plural_stem_variants(name)[:4]
     ))
+    # Cu proxy: max 3 variante fonetice pentru a nu depăși timeout-ul
+    phonetic_terms = all_phonetic[:3] if use_proxy else all_phonetic
     req_timeout = 55 if use_proxy else 25
 
     async with AsyncSession(impersonate="chrome120", proxies=proxies, verify=not use_proxy) as session:
@@ -293,8 +295,8 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
 
         all_marks = all_marks[:MAX_TOTAL]
 
-        # Variante fonetice (doar fără proxy)
-        phon_ter = territories[:TERRITORY_BATCH] if many_territories else territories
+        # Variante fonetice (max 3 cu proxy, toate fără proxy)
+        phon_ter = territories[:TERRITORY_BATCH] if (many_territories or use_proxy) else territories
         for term in phonetic_terms:
             if len(all_marks) >= MAX_TOTAL:
                 break
@@ -302,6 +304,8 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
             for m in marks:
                 m["_phonetic"] = True
             all_marks.extend(marks)
+            if use_proxy:
+                await asyncio.sleep(1.0)
         all_marks = all_marks[:MAX_TOTAL]
 
         # Fetch detalii în paralel
