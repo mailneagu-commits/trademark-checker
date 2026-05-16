@@ -3,13 +3,20 @@ import os
 import random
 import re
 import shlex
+import requests as _std_requests
 from typing import List, Dict, Tuple, Optional
+
+# ScraperAPI direct API (alternativă la proxy mode)
+_SCRAPERAPI_KEY = os.environ.get("SCRAPERAPI_KEY", "")
+_SCRAPERAPI_URL = "https://api.scraperapi.com"
 
 # Proxy rotation: citește PROXY_URL (singur) sau PROXY_URLS (listă separată cu virgulă)
 _proxy_list_raw = os.environ.get("PROXY_URLS", "") or os.environ.get("PROXY_URL", "")
 _PROXY_LIST: List[str] = [p.strip() for p in _proxy_list_raw.split(",") if p.strip()]
 _PROXY_URL  = _PROXY_LIST[0] if _PROXY_LIST else ""
 _PROXIES    = {"https": _PROXY_URL, "http": _PROXY_URL} if _PROXY_URL else None
+if _SCRAPERAPI_KEY:
+    print(f"[SCRAPERAPI] Direct API configured: {_SCRAPERAPI_KEY[:8]}...")
 if _PROXY_LIST:
     print(f"[PROXY] {len(_PROXY_LIST)} proxy(s) configured. First: {_PROXY_URL[:40]}...")
 else:
@@ -343,6 +350,47 @@ def _demo_marks(name: str, nice_classes: List[str], offices: List[str]) -> List[
     return results
 
 
+def _search_via_scraperapi(name: str, nice_classes: List[str], offices: List[str]) -> List[Dict]:
+    """Caută mărci via ScraperAPI direct API — ocolește Imperva fără proxy mode."""
+    if not _SCRAPERAPI_KEY:
+        return []
+    from agents.variant_agent import build_offices_and_territories
+    off, ter = build_offices_and_territories(offices)
+    upper = name.upper()
+    seen: set = set()
+    all_marks: List[Dict] = []
+
+    for crit, term in [("Z", upper), ("C", f"*{upper}*")]:
+        payload = {
+            "page": "1", "pageSize": "30", "criteria": crit,
+            "basicSearch": term, "newPage": True, "fields": FIELDS,
+        }
+        if off: payload["offices"] = off
+        if ter: payload["territories"] = ter[:7]
+        if nice_classes:
+            payload["niceClass"] = [int(c) if c.isdigit() else c for c in nice_classes]
+        try:
+            r = _std_requests.post(
+                _SCRAPERAPI_URL,
+                params={"api_key": _SCRAPERAPI_KEY, "url": TMVIEW_URL},
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=30,
+            )
+            print(f"[SCRAPERAPI] {r.status_code} crit={crit}")
+            if r.status_code == 200:
+                for m in r.json().get("tradeMarks", []):
+                    st13 = m.get("ST13", "")
+                    if st13 and st13 not in seen:
+                        seen.add(st13)
+                        all_marks.append(m)
+        except Exception as e:
+            print(f"[SCRAPERAPI] error: {e}")
+
+    print(f"[SCRAPERAPI] found {len(all_marks)} marks")
+    return all_marks
+
+
 async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices: List[str]) -> List[Dict]:
     offices, territories = build_offices_and_territories(user_offices)
 
@@ -408,6 +456,13 @@ class SearchAgent:
                      extra_terms: Optional[List[str]] = None) -> Tuple[List[Dict], str]:
         if not HAS_CURL_CFFI:
             return _demo_marks(name, nice_classes, offices), "demo (curl-cffi lipsă)"
+
+        # Încearcă ScraperAPI direct API dacă e configurat
+        if _SCRAPERAPI_KEY:
+            loop = asyncio.get_event_loop()
+            marks = await loop.run_in_executor(None, _search_via_scraperapi, name, nice_classes, offices)
+            if marks is not None:
+                return marks, "live:tmview"
 
         candidates = _PROXY_LIST + [""]
         for proxy_url in candidates:
