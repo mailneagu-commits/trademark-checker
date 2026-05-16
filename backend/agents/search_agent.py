@@ -414,10 +414,11 @@ class SearchAgent:
                     _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url),
                     timeout=75.0 if proxy_url else 45.0
                 )
-                if marks:
+                # None = eroare internă; [] = căutare reușită dar fără rezultate
+                if marks is not None:
                     print(f"[TMVIEW] success via {label}, {len(marks)} marks")
                     return marks, "live:tmview"
-                print(f"[TMVIEW] 0 marks via {label}, trying next")
+                print(f"[TMVIEW] internal error via {label}, trying next")
             except asyncio.TimeoutError:
                 print(f"[TMVIEW] timeout via {label}")
             except Exception as e:
