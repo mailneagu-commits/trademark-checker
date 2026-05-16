@@ -5,14 +5,32 @@ import re
 import shlex
 from typing import List, Dict, Tuple, Optional
 
-# Optional HTTP/SOCKS5 proxy to bypass Imperva WAF on cloud hosts.
-# Set PROXY_URL env var, e.g.: http://scraperapi:KEY@proxy-server.scraperapi.com:8001
-_PROXY_URL = os.environ.get("PROXY_URL", "").strip()
-_PROXIES = {"https": _PROXY_URL, "http": _PROXY_URL} if _PROXY_URL else None
-if _PROXY_URL:
-    print(f"[PROXY] Configured: {_PROXY_URL[:40]}...")
+# Proxy rotation: citește PROXY_URL (singur) sau PROXY_URLS (listă separată cu virgulă)
+_proxy_list_raw = os.environ.get("PROXY_URLS", "") or os.environ.get("PROXY_URL", "")
+_PROXY_LIST: List[str] = [p.strip() for p in _proxy_list_raw.split(",") if p.strip()]
+_PROXY_URL  = _PROXY_LIST[0] if _PROXY_LIST else ""
+_PROXIES    = {"https": _PROXY_URL, "http": _PROXY_URL} if _PROXY_URL else None
+if _PROXY_LIST:
+    print(f"[PROXY] {len(_PROXY_LIST)} proxy(s) configured. First: {_PROXY_URL[:40]}...")
 else:
     print("[PROXY] No proxy configured — direct connection")
+
+
+def _make_proxies(url: str) -> dict:
+    return {"https": url, "http": url}
+
+
+async def _try_with_proxies(coro_factory):
+    """Încearcă corutina cu fiecare proxy din listă. Dacă toate eșuează, încearcă direct."""
+    candidates = _PROXY_LIST + [""]   # "" = conexiune directă ca fallback
+    for proxy_url in candidates:
+        try:
+            result = await coro_factory(proxy_url)
+            if result:
+                return result
+        except Exception as e:
+            print(f"[PROXY] Failed with {'direct' if not proxy_url else proxy_url[:30]}: {e}")
+    return []
 
 try:
     from curl_cffi.requests import AsyncSession
@@ -218,7 +236,7 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
     return collected
 
 
-async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str]) -> List[Dict]:
+async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str], proxy_url: str = _PROXY_URL) -> List[Dict]:
     offices, territories = build_offices_and_territories(user_offices)
 
     # Cu proxy activ nu expandăm EM în 28 teritorii (prea multe batches → timeout).
@@ -232,41 +250,35 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
 
     many_territories = territories and len(territories) > TERRITORY_BATCH
 
-    if _PROXIES or many_territories:
-        # Proxy sau multe teritorii: minim de request-uri pentru a evita timeout
-        main_searches = [
-            ("Z", upper),          # Fuzzy
-            ("C", f"*{upper}*"),   # Wildcard substring
-        ]
-    else:
-        # Direct, teritorii puține → toate cele 8 criterii
+    use_proxy = bool(proxy_url)
+    proxies   = _make_proxies(proxy_url) if use_proxy else None
+
+    if use_proxy or many_territories:
         main_searches = [
             ("Z", upper),
-            ("C", upper),
-            ("S", upper),
-            ("E", upper),
-            ("F", upper),
             ("C", f"*{upper}*"),
-            ("C", f"{upper}*"),
-            ("C", f"*{upper}"),
+        ]
+    else:
+        main_searches = [
+            ("Z", upper), ("C", upper), ("S", upper), ("E", upper),
+            ("F", upper), ("C", f"*{upper}*"), ("C", f"{upper}*"), ("C", f"*{upper}"),
         ]
 
-    phonetic_set = set(
-        build_phonetic_variants(name) +
-        build_vowel_variants(name) +
+    phonetic_terms = [] if use_proxy else list(set(
+        build_phonetic_variants(name) + build_vowel_variants(name) +
         build_plural_stem_variants(name)[:4]
-    )
-    phonetic_terms = [] if _PROXIES else list(phonetic_set)
-    req_timeout = 55 if _PROXIES else 25
+    ))
+    req_timeout = 55 if use_proxy else 25
 
-    async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
-        if not _PROXIES and not has_browser_session():
+    async with AsyncSession(impersonate="chrome120", proxies=proxies, verify=not use_proxy) as session:
+        # Warmup GET — esențial pentru cookie-uri Imperva (atât direct cât și prin proxy)
+        if not has_browser_session():
             try:
                 r = await session.get(TMVIEW_HOME, timeout=req_timeout)
-                print(f"[TMVIEW] warmup GET status={r.status_code}")
+                print(f"[TMVIEW] warmup GET status={r.status_code} proxy={'yes' if use_proxy else 'no'}")
             except Exception as e:
                 print(f"[TMVIEW] warmup GET error: {type(e).__name__}: {e}")
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
 
         MAX_TOTAL = 100
         seen: set = set()
@@ -397,25 +409,25 @@ class SearchAgent:
                      extra_terms: Optional[List[str]] = None) -> Tuple[List[Dict], str]:
         if not HAS_CURL_CFFI:
             return _demo_marks(name, nice_classes, offices), "demo (curl-cffi lipsă)"
-        _timeout = 75.0 if _PROXIES else 45.0
-        _retries = 1 if _PROXIES else 2
-        for attempt in range(_retries):
+
+        # Încearcă fiecare proxy din listă, apoi conexiune directă
+        candidates = _PROXY_LIST + [""]
+        for proxy_url in candidates:
+            label = proxy_url[:30] if proxy_url else "direct"
             try:
-                if attempt > 0:
-                    await asyncio.sleep(3)
                 marks = await asyncio.wait_for(
-                    _fetch_tmview(name, nice_classes, offices),
-                    timeout=_timeout
+                    _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url),
+                    timeout=75.0 if proxy_url else 45.0
                 )
                 if marks:
+                    print(f"[TMVIEW] success via {label}, {len(marks)} marks")
                     return marks, "live:tmview"
+                print(f"[TMVIEW] 0 marks via {label}, trying next")
             except asyncio.TimeoutError:
-                print(f"[TMVIEW] attempt {attempt}: TimeoutError")
+                print(f"[TMVIEW] timeout via {label}")
             except Exception as e:
-                err = str(e)
-                print(f"[TMVIEW] attempt {attempt}: {type(e).__name__}: {err}")
-                if "56" in err or "Connection" in err or "reset" in err.lower():
-                    break
+                print(f"[TMVIEW] error via {label}: {type(e).__name__}: {e}")
+
         return _demo_marks(name, nice_classes, offices), "demo (TMview indisponibil — date demonstrative)"
 
     async def search_expired(self, name: str, nice_classes: List[str],
