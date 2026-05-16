@@ -282,20 +282,22 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
 
         MAX_TOTAL = 100
         seen: set = set()
+
+        # Căutări principale în PARALEL (reduce timpul de la ~60s la ~20s)
+        async def _run_search(crit, term):
+            return await _search_batched(session, term, nice_classes, offices, territories, crit, seen)
+
+        results = await asyncio.gather(*[_run_search(c, t) for c, t in main_searches], return_exceptions=True)
         all_marks: List[Dict] = []
+        for r in results:
+            if isinstance(r, list):
+                for m in r:
+                    if m.get("ST13") not in seen:
+                        seen.add(m.get("ST13", ""))
+                        all_marks.append(m)
+        all_marks = all_marks[:MAX_TOTAL]
 
-        # Termenul principal
-        for crit, term in main_searches:
-            if len(all_marks) >= MAX_TOTAL:
-                break
-            marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen)
-            all_marks.extend(marks)
-            if len(all_marks) >= MAX_TOTAL:
-                all_marks = all_marks[:MAX_TOTAL]
-                break
-            await asyncio.sleep(0.15)
-
-        # Variante fonetice/vocale/plurale (fără batching — territoriile principale deja acoperite)
+        # Variante fonetice (doar fără proxy)
         phon_ter = territories[:TERRITORY_BATCH] if many_territories else territories
         for term in phonetic_terms:
             if len(all_marks) >= MAX_TOTAL:
@@ -304,10 +306,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
             for m in marks:
                 m["_phonetic"] = True
             all_marks.extend(marks)
-            if len(all_marks) >= MAX_TOTAL:
-                all_marks = all_marks[:MAX_TOTAL]
-                break
-            await asyncio.sleep(0.15)
+        all_marks = all_marks[:MAX_TOTAL]
 
         # Fetch detalii în paralel
         detail_tasks = [_fetch_detail(session, m.get("ST13", "")) for m in all_marks]
