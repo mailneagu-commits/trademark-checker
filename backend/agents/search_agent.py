@@ -254,8 +254,8 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     proxies   = _make_proxies(proxy_url) if use_proxy else None
 
     if use_proxy:
-        # Cu proxy: un singur criteriu pentru a nu declanșa detecția bot Imperva
-        main_searches = [("Z", upper)]
+        # Cu proxy: 2 criterii secvențiale cu pauză între ele (evită detecția bot Imperva)
+        main_searches = [("Z", upper), ("C", f"*{upper}*")]
     elif many_territories:
         main_searches = [("Z", upper), ("C", f"*{upper}*")]
     else:
@@ -289,8 +289,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
                 break
             marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen)
             all_marks.extend(marks)
-            if not use_proxy:
-                await asyncio.sleep(0.15)
+            await asyncio.sleep(1.0 if use_proxy else 0.15)
 
         all_marks = all_marks[:MAX_TOTAL]
 
