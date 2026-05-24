@@ -338,11 +338,24 @@ def fetch_euipo_for_date(target: date) -> Tuple[List[Dict], dict]:
             processed[slug] = info
             _save_processed(processed)
             return marks, info
+        # Bulletin found but download requires EUIPO portal authentication
+        info["status"] = "auth_required"
+        info["error"]  = (
+            f"Buletinul EUIPO {bulletin['id']} ({bulletin['date'].isoformat()}) a fost identificat, "
+            "dar descărcarea necesită sesiune autentificată în portalul EUIPO (OIDC/CAS). "
+            "Monitorizarea continuă prin căutare TMview."
+        )
 
     # Fallback: EUIPO Search API
     marks = _fetch_via_api(working)
-    info["status"] = "ok_api" if marks else "no_results"
-    info["source"] = "api"
+    if marks:
+        info["status"] = "ok_api"
+        info["source"] = "api"
+    else:
+        if "status" not in info:
+            info["status"] = "no_results"
+            info["error"]  = "Buletin EUIPO: descărcarea necesită autentificare în portalul EUIPO. Configurați EUIPO_CLIENT_ID/SECRET pentru acces API."
+        info["source"] = info.get("source", "none")
     info["marks"]  = len(marks)
     info["at"]     = datetime.utcnow().isoformat()
     processed[slug] = info
