@@ -730,6 +730,15 @@
     </div>
     <div id="runResultContent"></div>
   </div>
+
+  <!-- Settings card -->
+  <div class="card" id="settingsCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <h2 style="margin:0;">⚙️ Configurare sistem</h2>
+      <button class="btn-sm" onclick="loadSettings()">🔄 Actualizează</button>
+    </div>
+    <div id="settingsContent"><em style="color:#aaa;font-size:.84rem;">Se încarcă...</em></div>
+  </div>
 </div>
 
 <script>
@@ -1544,6 +1553,7 @@ function showPage(page) {
   document.getElementById("tab-monitorizare").classList.toggle("active", page === "monitorizare");
   if (page === "monitorizare") {
     loadWatches();
+    loadSettings();
     // Setează data implicită = azi
     const today = new Date().toISOString().slice(0,10);
     document.getElementById("osimDate").value  = today;
@@ -1817,6 +1827,90 @@ async function loadWatches() {
   } catch(e) {
     document.getElementById("watchList").innerHTML =
       '<div class="import-err" style="font-size:.84rem;">Eroare la încărcarea listei.</div>';
+  }
+}
+
+async function loadSettings() {
+  const el = document.getElementById("settingsContent");
+  try {
+    const r   = await fetch("/api/settings");
+    const cfg = await r.json();
+
+    const row = (icon, label, ok, detail, hint) => `
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f0f2f5;">
+        <span style="font-size:1.1rem;margin-top:1px;">${icon}</span>
+        <div style="flex:1;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <strong style="font-size:.84rem;">${label}</strong>
+            ${ok
+              ? '<span style="font-size:.74rem;color:#1e8449;background:#eafaf1;padding:2px 7px;border-radius:10px;font-weight:700;">✓ Configurat</span>'
+              : '<span style="font-size:.74rem;color:#c0392b;background:#fdecea;padding:2px 7px;border-radius:10px;font-weight:700;">✗ Neconfigurat</span>'
+            }
+            ${detail ? `<span style="font-size:.76rem;color:#888;">${detail}</span>` : ''}
+          </div>
+          ${hint ? `<div style="font-size:.74rem;color:#777;margin-top:3px;">${hint}</div>` : ''}
+        </div>
+      </div>`;
+
+    const smtp    = cfg.smtp;
+    const euipo   = cfg.euipo_api;
+    const tmview  = cfg.tmview;
+    const scraper = cfg.scraperapi;
+    const db      = cfg.database;
+
+    el.innerHTML = `
+      <div style="font-size:.82rem;">
+        ${row('📧', 'Email SMTP (alerte monitoring)',
+          smtp.configured,
+          smtp.configured ? `${smtp.user} → ${smtp.host}:${smtp.port}` : '',
+          smtp.configured
+            ? `<button class="btn-sm" style="margin-top:4px;" onclick="testSmtp()">📤 Trimite email test</button><span id="smtpTestResult" style="margin-left:8px;"></span>`
+            : 'Setați variabilele: <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code> (opțional: <code>SMTP_FROM</code>)'
+        )}
+        ${row('🇪🇺', 'EUIPO API (căutare extinsă EUIPO)',
+          euipo.configured,
+          euipo.configured ? `Client ID: ${euipo.client_id}` : '',
+          euipo.configured ? '' : 'Setați <code>EUIPO_CLIENT_ID</code> și <code>EUIPO_CLIENT_SECRET</code> din portalul de dezvoltatori EUIPO'
+        )}
+        ${row('🌍', 'TMview (căutare internațională)',
+          true,
+          'Disponibil fără autentificare', ''
+        )}
+        ${row('🔑', 'ScraperAPI (proxy anti-blocare TMview)',
+          scraper.configured,
+          '',
+          scraper.configured ? '' : 'Setați <code>SCRAPERAPI_KEY</code> dacă TMview blochează cererile directe'
+        )}
+        ${row('🗄', 'Baza de date',
+          true,
+          db.type === 'postgresql' ? 'PostgreSQL (persistent)' : 'SQLite (local — date se pierd la redeploy)',
+          db.type === 'sqlite' ? 'Pe Railway: adăugați serviciul PostgreSQL și setați <code>DATABASE_URL</code> pentru persistență' : ''
+        )}
+      </div>`;
+  } catch(e) {
+    el.innerHTML = '<span style="color:#c0392b;font-size:.84rem;">Eroare la încărcare configurație.</span>';
+  }
+}
+
+async function testSmtp() {
+  const email = prompt("Adresă email destinatar pentru test:");
+  if (!email || !email.includes("@")) return;
+  const res = document.getElementById("smtpTestResult");
+  if (res) res.innerHTML = '<em style="color:#888;">Se trimite...</em>';
+  try {
+    const r = await fetch("/api/settings/test-smtp", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({email}),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      if (res) res.innerHTML = `<span style="color:#1e8449;">✅ ${d.message}</span>`;
+    } else {
+      if (res) res.innerHTML = `<span style="color:#c0392b;">❌ ${d.detail}</span>`;
+    }
+  } catch(e) {
+    if (res) res.innerHTML = `<span style="color:#c0392b;">❌ ${e.message}</span>`;
   }
 }
 

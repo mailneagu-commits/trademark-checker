@@ -107,6 +107,63 @@ async def session_status():
     return {"active": has_browser_session()}
 
 
+class TestSmtpRequest(BaseModel):
+    email: str
+
+
+@app.post("/api/settings/test-smtp")
+async def test_smtp(request: TestSmtpRequest):
+    """Trimite un email de test la adresa specificată."""
+    from monitor_service import _email_available, _send_email
+    if not _email_available():
+        raise HTTPException(400, "SMTP neconfigurate. Setați SMTP_USER și SMTP_PASSWORD.")
+    if "@" not in request.email:
+        raise HTTPException(400, "Adresă email invalidă.")
+    try:
+        _send_email(
+            request.email,
+            "[Trademark Monitor] Test SMTP ✓",
+            "<p>Dacă primiți acest email, configurarea SMTP funcționează corect.</p>",
+        )
+        return {"status": "ok", "message": f"Email test trimis la {request.email}"}
+    except Exception as e:
+        raise HTTPException(500, f"Eroare SMTP: {e}")
+
+
+@app.get("/api/settings")
+async def get_settings():
+    """Returnează starea configurației (fără parole/chei)."""
+    from monitor_service import SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_FROM, _email_available
+    from agents.euipo_agent import euipo_available, EUIPO_CLIENT_ID
+
+    smtp_ok = _email_available()
+    euipo_ok = euipo_available()
+
+    return {
+        "smtp": {
+            "configured": smtp_ok,
+            "host":       SMTP_HOST if smtp_ok else None,
+            "port":       SMTP_PORT if smtp_ok else None,
+            "user":       SMTP_USER if smtp_ok else None,
+            "from_addr":  SMTP_FROM if smtp_ok else None,
+        },
+        "euipo_api": {
+            "configured": euipo_ok,
+            "client_id":  (EUIPO_CLIENT_ID[:8] + "…") if (euipo_ok and EUIPO_CLIENT_ID) else None,
+        },
+        "tmview": {
+            "configured": True,
+            "note":       "Disponibil fără autentificare",
+        },
+        "scraperapi": {
+            "configured": bool(os.environ.get("SCRAPERAPI_KEY")),
+        },
+        "database": {
+            "type": "postgresql" if os.environ.get("DATABASE_URL") else "sqlite",
+        },
+    }
+
+
 @app.post("/api/check")
 async def check_trademark(request: SearchRequest):
     if not request.trademark_name.strip():
