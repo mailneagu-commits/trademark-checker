@@ -1,5 +1,6 @@
 import os
 import traceback
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -12,8 +13,20 @@ from agents.search_agent import SearchAgent, set_browser_session, has_browser_se
 from agents.similarity_agent import SimilarityAgent
 from agents.variant_agent import generate_all_variants
 from export import build_excel, build_pdf, build_word
+from db import init_db
+from scheduler import start_scheduler, stop_scheduler
+from routes.monitor import router as monitor_router
 
-app = FastAPI(title="Trademark Checker")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    start_scheduler()
+    yield
+    stop_scheduler()
+
+
+app = FastAPI(title="Trademark Checker", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,6 +34,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(monitor_router)
 
 search_agent    = SearchAgent()
 similarity_agent = SimilarityAgent(threshold_very_high=90.0, threshold_high=75.0, threshold_medium=60.0, threshold_small=35.0)

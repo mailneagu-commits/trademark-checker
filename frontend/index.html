@@ -320,6 +320,44 @@
     .form-row { display: flex; gap: 20px; flex-wrap: wrap; }
     .form-col  { flex: 1; min-width: 220px; }
 
+    /* Page nav tabs */
+    .page-tab {
+      padding:8px 18px; border-radius:7px; border:1.5px solid rgba(255,255,255,.35);
+      background:transparent; color:rgba(255,255,255,.8); font-size:.85rem; font-weight:600;
+      cursor:pointer; transition:all .15s;
+    }
+    .page-tab:hover { background:rgba(255,255,255,.15); color:#fff; }
+    .page-tab.active { background:rgba(255,255,255,.22); color:#fff; border-color:rgba(255,255,255,.7); }
+
+    /* Watch table */
+    .watch-table { width:100%; border-collapse:collapse; font-size:.83rem; }
+    .watch-table th { background:#f0f4fa; color:#0f3460; font-weight:700; font-size:.75rem;
+                      text-transform:uppercase; letter-spacing:.4px; padding:9px 12px;
+                      text-align:left; border-bottom:2px solid #d0d9ee; }
+    .watch-table td { padding:10px 12px; border-bottom:1px solid #eef1f6; vertical-align:middle; }
+    .watch-table tr:last-child td { border-bottom:none; }
+    .watch-table tr:hover td { background:#f7faff; }
+
+    .freq-badge { display:inline-block; padding:2px 9px; border-radius:10px; font-size:.72rem; font-weight:700; }
+    .freq-daily   { background:#fef9e7; color:#b7950b; }
+    .freq-weekly  { background:#e8f0fb; color:#0f3460; }
+    .freq-monthly { background:#eafaf1; color:#1e8449; }
+    .active-badge { display:inline-block; padding:2px 9px; border-radius:10px; font-size:.72rem; font-weight:700; }
+    .active-yes { background:#eafaf1; color:#1e8449; }
+    .active-no  { background:#f9ebea; color:#922b21; }
+
+    .btn-action { padding:4px 10px; border-radius:6px; border:1.5px solid #d0d9ee; background:#fff;
+                  font-size:.74rem; font-weight:600; cursor:pointer; transition:all .15s; white-space:nowrap; }
+    .btn-action:hover { border-color:#0f3460; color:#0f3460; }
+    .btn-action.danger:hover { border-color:#c0392b; color:#c0392b; }
+    .btn-action.run-btn { background:#eafaf1; border-color:#a9dfbf; color:#1e8449; }
+    .btn-action.run-btn:hover { background:#1e8449; color:#fff; border-color:#1e8449; }
+    .btn-action.run-btn.running { opacity:.6; cursor:not-allowed; }
+
+    .import-ok  { background:#eafaf1; border-left:4px solid #1e8449; padding:12px 16px; border-radius:0 8px 8px 0; }
+    .import-err { background:#fdecea; border-left:4px solid #c0392b; padding:12px 16px; border-radius:0 8px 8px 0; }
+    .import-warn{ background:#fff3cd; border-left:4px solid #f39c12; padding:12px 16px; border-radius:0 8px 8px 0; }
+
     @media (max-width: 700px) {
       header { padding: 18px; }
       .card  { padding: 16px; }
@@ -327,6 +365,8 @@
       .tm-card { grid-template-columns: 54px 1fr; }
       .tm-score-col { display:none; }
       .card-chk { width:20px; }
+      .watch-table th:nth-child(n+4), .watch-table td:nth-child(n+4) { display:none; }
+      .bulletin-grid { grid-template-columns: 1fr !important; }
     }
   </style>
 </head>
@@ -334,13 +374,17 @@
 
 <header>
   <div class="logo">⚖️</div>
-  <div>
+  <div style="flex:1">
     <h1>Verificare Disponibilitate Marcă</h1>
     <p>Algoritm ProtectMARK · Fuzzy · Fonetic · TMview / EUIPO / WIPO</p>
   </div>
+  <nav style="display:flex;gap:6px;">
+    <button class="page-tab active" id="tab-verificare" onclick="showPage('verificare')">🔍 Verificare</button>
+    <button class="page-tab" id="tab-monitorizare" onclick="showPage('monitorizare')">👁 Monitorizare</button>
+  </nav>
 </header>
 
-<div class="container">
+<div class="container" id="page-verificare">
 
   <!-- FORM -->
   <div class="card">
@@ -509,6 +553,173 @@
         <div class="cards-grid" id="expiredGrid"></div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ MONITORIZARE PAGE ═══════════════════════════ -->
+<div class="container" id="page-monitorizare" style="display:none;">
+
+  <!-- Import + Template bar -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+      <h2 style="margin:0;">📋 Mărci monitorizate</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a href="/api/monitor/template" class="btn-export">📥 Descarcă template Excel</a>
+        <button class="btn-primary" style="padding:9px 18px;font-size:.85rem;" onclick="document.getElementById('excelFileInput').click()">
+          📤 Import Excel
+        </button>
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display:none" onchange="importExcel(this)">
+        <button class="btn-export" onclick="toggleAddForm()">➕ Adaugă manual</button>
+      </div>
+    </div>
+
+    <!-- Bulletin panel -->
+    <div style="background:#f7f9fc;border:1px solid #e0e7f0;border-radius:10px;padding:18px;margin-bottom:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+        <strong style="color:#0f3460;font-size:.92rem;">📰 Buletine oficiale</strong>
+        <button class="btn-sm" onclick="toggleBulletinHistory()" id="bulletinHistoryToggle">
+          📋 Istoric buletine
+        </button>
+      </div>
+
+      <!-- Date pickers row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px;" class="bulletin-grid">
+
+        <!-- OSIM -->
+        <div style="background:#fff;border:1.5px solid #d0d9ee;border-radius:8px;padding:14px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+            <span style="font-size:1.1rem;">🇷🇴</span>
+            <strong style="font-size:.85rem;color:#0f3460;">BOPI OSIM</strong>
+            <span style="font-size:.72rem;color:#888;margin-left:4px;">publicat pe 1 și 16 ale lunii</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input type="date" id="osimDate" style="padding:7px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.85rem;flex:1;min-width:130px;"
+                   max="" />
+            <button class="btn-primary" style="padding:7px 14px;font-size:.82rem;white-space:nowrap;" onclick="fetchBulletin('osim')" id="osimFetchBtn">
+              ⬇ Descarcă
+            </button>
+          </div>
+          <div id="osimBulletinResult" style="margin-top:8px;font-size:.78rem;color:#888;">—</div>
+        </div>
+
+        <!-- EUIPO -->
+        <div style="background:#fff;border:1.5px solid #d0d9ee;border-radius:8px;padding:14px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+            <span style="font-size:1.1rem;">🇪🇺</span>
+            <strong style="font-size:.85rem;color:#0f3460;">Buletin EUIPO</strong>
+            <span style="font-size:.72rem;color:#888;margin-left:4px;">publicat zilnic (zile lucrătoare)</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input type="date" id="euipoDate" style="padding:7px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.85rem;flex:1;min-width:130px;"
+                   max="" />
+            <button class="btn-primary" style="padding:7px 14px;font-size:.82rem;white-space:nowrap;" onclick="fetchBulletin('euipo')" id="euipoFetchBtn">
+              ⬇ Descarcă
+            </button>
+          </div>
+          <div id="euipoBulletinResult" style="margin-top:8px;font-size:.78rem;color:#888;">—</div>
+        </div>
+      </div>
+
+      <!-- Ambele surse simultan -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:.8rem;color:#888;">Descarcă ambele surse pentru data de mai sus</span>
+        <button class="btn-sm" onclick="fetchBulletin('both')" id="bothFetchBtn">🔄 Descarcă ambele</button>
+      </div>
+    </div>
+
+    <!-- Bulletin history table (collapsed by default) -->
+    <div id="bulletinHistoryPanel" style="display:none;background:#fff;border:1.5px solid #d0d9ee;border-radius:10px;padding:16px;margin-bottom:18px;">
+      <h3 style="font-size:.88rem;color:#0f3460;margin-bottom:12px;">📋 Istoric buletine descărcate</h3>
+      <div id="bulletinHistoryContent"><em style="color:#aaa;font-size:.83rem;">Se încarcă...</em></div>
+    </div>
+
+    <!-- Drop zone -->
+    <div id="dropZone"
+         style="border:2px dashed #c8d5ea;border-radius:10px;padding:24px;text-align:center;color:#888;font-size:.88rem;
+                background:#f7f9fc;margin-bottom:16px;transition:all .2s;cursor:pointer;"
+         onclick="document.getElementById('excelFileInput').click()"
+         ondragover="event.preventDefault();this.style.borderColor='#0f3460';this.style.background='#e8f0fb';"
+         ondragleave="this.style.borderColor='#c8d5ea';this.style.background='#f7f9fc';"
+         ondrop="handleDrop(event)">
+      <div style="font-size:2rem;margin-bottom:6px;">📊</div>
+      <strong>Trage fișierul Excel aici</strong> sau apasă pentru a selecta<br>
+      <span style="font-size:.77rem;">Coloane: Denumire Marcă, Titular, Clase NICE, Teritorii, Email, Frecvență</span>
+    </div>
+
+    <!-- Import result -->
+    <div id="importResult" style="display:none;margin-bottom:14px;"></div>
+
+    <!-- Add form -->
+    <div id="addForm" style="display:none;background:#f7f9fc;border-radius:10px;border:1.5px solid #d0d9ee;padding:20px;margin-bottom:18px;">
+      <h3 style="font-size:.92rem;color:#0f3460;margin-bottom:14px;">Adaugă marcă de monitorizat</h3>
+      <div class="form-row" style="margin-bottom:12px;">
+        <div class="form-col">
+          <label>Denumire marcă *</label>
+          <input type="text" id="wTmName" placeholder="ex: ACME" />
+        </div>
+        <div class="form-col">
+          <label>Titular</label>
+          <input type="text" id="wHolder" placeholder="ex: ACME România SRL" />
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:12px;">
+        <div class="form-col">
+          <label>Clase NICE (separate prin virgulă) *</label>
+          <input type="text" id="wClasses" placeholder="ex: 35, 42" />
+        </div>
+        <div class="form-col">
+          <label>Teritorii (separate prin virgulă) *</label>
+          <input type="text" id="wOffices" placeholder="ex: RO, EM" value="RO, EM" />
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:16px;">
+        <div class="form-col">
+          <label>Email notificare *</label>
+          <input type="text" id="wEmail" placeholder="ex: office@firma.ro" />
+        </div>
+        <div class="form-col">
+          <label>Frecvență verificare</label>
+          <select id="wFreq" style="width:100%;padding:11px 14px;border:2px solid #e0e0e0;border-radius:8px;font-size:.95rem;outline:none;">
+            <option value="daily">Zilnic (07:00 UTC)</option>
+            <option value="weekly" selected>Săptămânal (Luni 07:30 UTC)</option>
+            <option value="monthly">Lunar (1 ale lunii 08:00 UTC)</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-primary" style="padding:9px 22px;font-size:.88rem;" onclick="addWatch()">Salvează</button>
+        <button class="btn-export" onclick="toggleAddForm()">Anulează</button>
+      </div>
+      <div id="addFormMsg" style="margin-top:8px;font-size:.82rem;display:none;"></div>
+    </div>
+
+    <!-- Watch items table -->
+    <div id="watchTable">
+      <div class="empty-state" id="watchEmpty" style="display:none;">
+        <div class="icon">👁</div>
+        <strong>Nicio marcă de monitorizat</strong>
+        <div style="font-size:.83rem;margin-top:5px;color:#aaa;">Importați un fișier Excel sau adăugați manual o marcă</div>
+      </div>
+      <div id="watchList"></div>
+    </div>
+  </div>
+
+  <!-- History panel (shown below list) -->
+  <div class="card" id="historyPanel" style="display:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <h2 style="margin:0;font-size:.95rem;">📜 Istoric alerte — <span id="historyTitle"></span></h2>
+      <button class="btn-export" onclick="closeHistory()">Închide</button>
+    </div>
+    <div id="historyContent"></div>
+  </div>
+
+  <!-- Run result -->
+  <div class="card" id="runResult" style="display:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <h2 style="margin:0;font-size:.95rem;">🔍 Rezultat verificare manuală</h2>
+      <button class="btn-export" onclick="document.getElementById('runResult').style.display='none'">Închide</button>
+    </div>
+    <div id="runResultContent"></div>
   </div>
 </div>
 
@@ -1311,6 +1522,452 @@ async function doExport(format) {
   } catch(e) {
     showError("Eroare la export: " + e.message);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MONITORIZARE
+// ═══════════════════════════════════════════════════════════════════════════
+
+function showPage(page) {
+  document.getElementById("page-verificare").style.display  = page === "verificare"  ? "" : "none";
+  document.getElementById("page-monitorizare").style.display = page === "monitorizare" ? "" : "none";
+  document.getElementById("tab-verificare").classList.toggle("active",  page === "verificare");
+  document.getElementById("tab-monitorizare").classList.toggle("active", page === "monitorizare");
+  if (page === "monitorizare") {
+    loadWatches();
+    // Setează data implicită = azi
+    const today = new Date().toISOString().slice(0,10);
+    document.getElementById("osimDate").value  = today;
+    document.getElementById("euipoDate").value = today;
+    document.getElementById("osimDate").max    = today;
+    document.getElementById("euipoDate").max   = today;
+  }
+}
+
+// ── Bulletin fetch ────────────────────────────────────────────────────────
+
+async function fetchBulletin(source) {
+  const isOsim  = source === "osim"  || source === "both";
+  const isEuipo = source === "euipo" || source === "both";
+
+  const osimDate  = document.getElementById("osimDate").value;
+  const euipoDate = document.getElementById("euipoDate").value;
+  // Când "both", folosim data OSIM (sau EUIPO dacă e setată)
+  const targetDate = source === "euipo" ? euipoDate : osimDate;
+
+  const btnId = source === "osim" ? "osimFetchBtn" : source === "euipo" ? "euipoFetchBtn" : "bothFetchBtn";
+  const btn   = document.getElementById(btnId);
+  const origText = btn.textContent;
+  btn.disabled = true; btn.textContent = "⏳...";
+
+  const params = new URLSearchParams({ source });
+  if (targetDate) params.set("target_date", targetDate);
+
+  try {
+    const r    = await fetch("/api/monitor/bulletin-fetch?" + params.toString(), { method: "POST" });
+    const data = await r.json();
+
+    if (!r.ok) {
+      const err = data.detail || "Eroare";
+      if (isOsim)  _setBulletinResult("osim",  `<span style="color:#c0392b;">❌ ${err}</span>`);
+      if (isEuipo) _setBulletinResult("euipo", `<span style="color:#c0392b;">❌ ${err}</span>`);
+      return;
+    }
+
+    if (data.osim) {
+      const info = data.osim;
+      const ok   = info.status === "ok" || info.status === "ok_api" || info.status === "ok_xml";
+      const day  = info.working_day || info.bopi_date || targetDate;
+      _setBulletinResult("osim", ok
+        ? `<span style="color:#1e8449;">✅ ${info.marks} mărci · BOPI ${day}</span>`
+        : `<span style="color:#e67e22;">⚠ ${info.error || "Nedisponibil pentru această dată"}</span>`
+      );
+    }
+    if (data.euipo) {
+      const info = data.euipo;
+      const ok   = info.status === "ok" || info.status === "ok_api" || info.status === "ok_xml" || info.status === "ok_bulletin";
+      const day  = info.bulletin_date || info.working_day || targetDate;
+      const src  = info.source === "copla_bulletin" ? "buletin XML" : "API";
+      _setBulletinResult("euipo", ok
+        ? `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>`
+        : info.bulletin_id
+          ? `<span style="color:#e67e22;">⚠ Buletin ${info.bulletin_id} găsit (${info.bulletin_date||"?"}) dar date indisponibile fără credențiale API</span>`
+          : `<span style="color:#e67e22;">⚠ ${info.error || "Nicio marcă pentru această dată"}</span>`
+      );
+    }
+  } catch(e) {
+    if (isOsim)  _setBulletinResult("osim",  `<span style="color:#c0392b;">❌ ${e.message}</span>`);
+    if (isEuipo) _setBulletinResult("euipo", `<span style="color:#c0392b;">❌ ${e.message}</span>`);
+  } finally {
+    btn.disabled = false; btn.textContent = origText;
+  }
+}
+
+function _setBulletinResult(source, html) {
+  const el = document.getElementById(source + "BulletinResult");
+  if (el) el.innerHTML = html;
+}
+
+// ── Bulletin history ──────────────────────────────────────────────────────
+
+function toggleBulletinHistory() {
+  const panel = document.getElementById("bulletinHistoryPanel");
+  const isHidden = panel.style.display === "none";
+  panel.style.display = isHidden ? "block" : "none";
+  if (isHidden) loadBulletinHistory();
+}
+
+async function loadBulletinHistory() {
+  document.getElementById("bulletinHistoryContent").innerHTML = "<em style='color:#aaa;font-size:.83rem;'>Se încarcă...</em>";
+  try {
+    const r    = await fetch("/api/monitor/bulletin-status");
+    const data = await r.json();
+    renderBulletinHistory(data);
+  } catch(e) {
+    document.getElementById("bulletinHistoryContent").innerHTML = "<span style='color:#c0392b;font-size:.83rem;'>Eroare la încărcare.</span>";
+  }
+}
+
+function renderBulletinHistory(data) {
+  const allEntries = [
+    ...(data.osim  || []).map(e => ({...e, _src: "BOPI OSIM 🇷🇴"})),
+    ...(data.euipo || []).map(e => ({...e, _src: "EUIPO 🇪🇺"})),
+  ].sort((a,b) => (b.at||"").localeCompare(a.at||""));
+
+  if (!allEntries.length) {
+    document.getElementById("bulletinHistoryContent").innerHTML =
+      "<span style='color:#aaa;font-size:.83rem;'>Niciun buletin descărcat încă.</span>";
+    return;
+  }
+
+  const statusLabel = {
+    ok:            '<span style="color:#1e8449;font-weight:700;">OK</span>',
+    ok_api:        '<span style="color:#1e8449;font-weight:700;">OK (API)</span>',
+    ok_xml:        '<span style="color:#1e8449;font-weight:700;">OK (XML)</span>',
+    ok_bulletin:   '<span style="color:#1e8449;font-weight:700;">OK (Buletin)</span>',
+    not_found:     '<span style="color:#e67e22;">Indisponibil</span>',
+    no_results:    '<span style="color:#888;">Fără rezultate</span>',
+  };
+
+  const rows = allEntries.map(e => {
+    const at       = e.at ? new Date(e.at).toLocaleString("ro-RO",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+    const dateInfo = e.bopi_date || e.working_day || e.target_date || "—";
+    const issueInfo = e.issue_nr ? ` · nr. ${e.issue_nr}` : "";
+    return `<tr>
+      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${e._src}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${dateInfo}${issueInfo}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${e.marks ?? "—"}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${statusLabel[e.status] || e.status || "—"}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;font-size:.75rem;color:#888;">${at}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("bulletinHistoryContent").innerHTML = `
+    <table class="watch-table">
+      <thead><tr>
+        <th>Sursă</th><th>Data buletinului</th><th>Mărci găsite</th><th>Status</th><th>Descărcat la</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function toggleAddForm() {
+  const f = document.getElementById("addForm");
+  f.style.display = f.style.display === "none" ? "block" : "none";
+}
+
+// ── Watch list ────────────────────────────────────────────────────────────
+
+async function loadWatches() {
+  try {
+    const r = await fetch("/api/monitor/watches");
+    const items = await r.json();
+    renderWatches(items);
+  } catch(e) {
+    document.getElementById("watchList").innerHTML =
+      '<div class="import-err" style="font-size:.84rem;">Eroare la încărcarea listei.</div>';
+  }
+}
+
+function renderWatches(items) {
+  const empty = document.getElementById("watchEmpty");
+  const list  = document.getElementById("watchList");
+
+  if (!items.length) { empty.style.display = "block"; list.innerHTML = ""; return; }
+  empty.style.display = "none";
+
+  const freqLabel = { daily:"Zilnic", weekly:"Săptămânal", monthly:"Lunar" };
+  const rows = items.map(it => {
+    const lastCheck = it.last_checked_at
+      ? new Date(it.last_checked_at).toLocaleString("ro-RO", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})
+      : "—";
+    const classes = (it.nice_classes||[]).join(", ") || "—";
+    const offices = (it.offices||[]).join(", ") || "—";
+    return `
+      <tr>
+        <td><strong>${it.trademark_name}</strong>${it.holder_name?'<br><span style="font-size:.75rem;color:#888;">'+it.holder_name+'</span>':''}</td>
+        <td>${classes}</td>
+        <td>${offices}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${it.notification_email}">${it.notification_email}</td>
+        <td><span class="freq-badge freq-${it.frequency}">${freqLabel[it.frequency]||it.frequency}</span></td>
+        <td style="font-size:.78rem;color:#888;">${lastCheck}</td>
+        <td><span class="active-badge ${it.active?'active-yes':'active-no'}">${it.active?'Activ':'Inactiv'}</span></td>
+        <td>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button class="btn-action run-btn" id="run-${it.id}" onclick="runWatch(${it.id})">▶ Rulează</button>
+            <button class="btn-action" onclick="toggleActive(${it.id})">${it.active?'Dezactivează':'Activează'}</button>
+            <button class="btn-action" onclick="showHistory(${it.id},'${it.trademark_name.replace(/'/g,"\\'")}')">Istoric</button>
+            <button class="btn-action danger" onclick="deleteWatch(${it.id})">Șterge</button>
+          </div>
+        </td>
+      </tr>`;
+  }).join("");
+
+  list.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="watch-table">
+        <thead>
+          <tr>
+            <th>Marcă / Titular</th>
+            <th>Clase NICE</th>
+            <th>Teritorii</th>
+            <th>Email</th>
+            <th>Frecvență</th>
+            <th>Ultima verificare</th>
+            <th>Status</th>
+            <th>Acțiuni</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── Add / delete / toggle ─────────────────────────────────────────────────
+
+async function addWatch() {
+  const msg  = document.getElementById("addFormMsg");
+  const name = document.getElementById("wTmName").value.trim();
+  const cls  = document.getElementById("wClasses").value.trim();
+  const off  = document.getElementById("wOffices").value.trim();
+  const email= document.getElementById("wEmail").value.trim();
+
+  if (!name || !cls || !email) {
+    msg.style.display="block"; msg.style.color="#c0392b";
+    msg.textContent="Completați câmpurile obligatorii (*)"; return;
+  }
+  const nice_classes = cls.split(/[,;\s]+/).map(s=>s.trim()).filter(s=>s);
+  const offices      = off.split(/[,;\s]+/).map(s=>s.trim().toUpperCase()).filter(s=>s);
+
+  try {
+    const r = await fetch("/api/monitor/watch", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        trademark_name: name,
+        holder_name: document.getElementById("wHolder").value.trim(),
+        nice_classes, offices, notification_email: email,
+        frequency: document.getElementById("wFreq").value,
+      }),
+    });
+    if (!r.ok) { const e=await r.json(); msg.style.display="block"; msg.style.color="#c0392b"; msg.textContent="Eroare: "+(e.detail||r.status); return; }
+    msg.style.display="block"; msg.style.color="#1e8449"; msg.textContent="Salvat!";
+    ["wTmName","wHolder","wClasses","wEmail"].forEach(id=>document.getElementById(id).value="");
+    document.getElementById("wOffices").value="RO, EM";
+    setTimeout(()=>{ document.getElementById("addForm").style.display="none"; msg.style.display="none"; loadWatches(); }, 800);
+  } catch(e) {
+    msg.style.display="block"; msg.style.color="#c0392b"; msg.textContent="Eroare conexiune.";
+  }
+}
+
+async function deleteWatch(id) {
+  if (!confirm("Ești sigur că vrei să ștergi această marcă din monitorizare?")) return;
+  await fetch(`/api/monitor/watch/${id}`, {method:"DELETE"});
+  loadWatches();
+}
+
+async function toggleActive(id) {
+  await fetch(`/api/monitor/watch/${id}/toggle`, {method:"PATCH"});
+  loadWatches();
+}
+
+// ── Manual run ────────────────────────────────────────────────────────────
+
+async function runWatch(id) {
+  const btn = document.getElementById(`run-${id}`);
+  if (btn) { btn.textContent = "⏳..."; btn.classList.add("running"); btn.disabled = true; }
+
+  document.getElementById("runResult").style.display = "none";
+
+  try {
+    const r   = await fetch(`/api/monitor/watch/${id}/run`, {method:"POST"});
+    const res = await r.json();
+    if (!r.ok) { alert("Eroare: " + (res.detail||r.status)); return; }
+    renderRunResult(res);
+  } catch(e) {
+    alert("Eroare la rulare: " + e.message);
+  } finally {
+    if (btn) { btn.textContent = "▶ Rulează"; btn.classList.remove("running"); btn.disabled = false; }
+    loadWatches();
+  }
+}
+
+function renderRunResult(res) {
+  const panel   = document.getElementById("runResult");
+  const content = document.getElementById("runResultContent");
+
+  const emailStatus = {
+    sent:    '<span style="color:#1e8449;font-weight:700;">✅ Email trimis</span>',
+    error:   '<span style="color:#c0392b;font-weight:700;">❌ Eroare la trimitere email</span>',
+    skipped: '<span style="color:#888;">— Nicio noutate</span>',
+    no_smtp: '<span style="color:#e67e22;">⚠ SMTP neconfigurat (email nesendas)</span>',
+  }[res.email_status] || res.email_status;
+
+  const mkTable = (marks, title, color) => {
+    if (!marks || !marks.length) return "";
+    const rows = marks.map(m => {
+      const score = m._score ? `${m._score.toFixed(0)}%` : "—";
+      return `<tr>
+        <td style="padding:5px 10px;border:1px solid #eee;"><strong>${m.tmName||"—"}</strong></td>
+        <td style="padding:5px 10px;border:1px solid #eee;">${m.tmOffice||"—"}</td>
+        <td style="padding:5px 10px;border:1px solid #eee;">${(m.applicantName||[]).join(", ")||"—"}</td>
+        <td style="padding:5px 10px;border:1px solid #eee;">${(m.niceClass||[]).join(", ")||"—"}</td>
+        <td style="padding:5px 10px;border:1px solid #eee;color:${color};font-weight:700;">${score}</td>
+      </tr>`;
+    }).join("");
+    return `
+      <h4 style="color:${color};margin:16px 0 6px">${title} (${marks.length})</h4>
+      <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+        <thead><tr style="background:#f5f5f5;">
+          <th style="padding:6px 10px;border:1px solid #eee;text-align:left;">Marcă</th>
+          <th style="padding:6px 10px;border:1px solid #eee;text-align:left;">Oficiu</th>
+          <th style="padding:6px 10px;border:1px solid #eee;text-align:left;">Titular</th>
+          <th style="padding:6px 10px;border:1px solid #eee;text-align:left;">Clase</th>
+          <th style="padding:6px 10px;border:1px solid #eee;text-align:left;">Similaritate</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  };
+
+  content.innerHTML = `
+    <div class="summary" style="margin-bottom:14px;">
+      <div class="badge badge-blue">🔎 Total găsite: <strong>${res.total_found}</strong></div>
+      <div class="badge badge-red">⚠ Conflicte noi: <strong>${res.new_conflicts}</strong></div>
+      <div class="badge badge-warn">🔍 Similare noi: <strong>${res.new_similar}</strong></div>
+      <div class="badge badge-blue">Email: ${emailStatus}</div>
+    </div>
+    ${mkTable(res.new_conflict_marks, "Conflicte noi (risc ridicat)", "#c0392b")}
+    ${mkTable(res.new_similar_marks,  "Similare noi (risc mediu)",   "#e67e22")}
+    ${(!res.new_conflicts && !res.new_similar) ? '<div class="empty-state"><div class="icon">✅</div><strong>Nicio marcă nouă detectată față de ultima verificare</strong></div>' : ""}
+  `;
+
+  panel.style.display = "block";
+  panel.scrollIntoView({behavior:"smooth"});
+}
+
+// ── History ───────────────────────────────────────────────────────────────
+
+async function showHistory(id, name) {
+  document.getElementById("historyTitle").textContent = name;
+  document.getElementById("historyPanel").style.display = "block";
+  document.getElementById("historyContent").innerHTML = "<em>Se încarcă...</em>";
+
+  try {
+    const r    = await fetch(`/api/monitor/history/${id}`);
+    const logs = await r.json();
+
+    if (!logs.length) {
+      document.getElementById("historyContent").innerHTML =
+        '<div style="color:#888;font-size:.85rem;">Nicio alertă trimisă încă.</div>'; return;
+    }
+
+    const statusLabel = {
+      sent: '<span style="color:#1e8449;font-weight:700;">Trimis</span>',
+      error: '<span style="color:#c0392b;font-weight:700;">Eroare</span>',
+      skipped: '<span style="color:#888;">Fără noutăți</span>',
+      no_smtp: '<span style="color:#e67e22;">SMTP lipsă</span>',
+    };
+
+    const rows = logs.map(l => {
+      const date = new Date(l.sent_at).toLocaleString("ro-RO",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
+      return `<tr>
+        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${date}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${l.num_new_marks}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${l.email_to}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${statusLabel[l.status]||l.status}</td>
+      </tr>`;
+    }).join("");
+
+    document.getElementById("historyContent").innerHTML = `
+      <table class="watch-table">
+        <thead><tr>
+          <th>Data</th><th>Mărci noi</th><th>Email</th><th>Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch(e) {
+    document.getElementById("historyContent").innerHTML =
+      '<div style="color:#c0392b;font-size:.84rem;">Eroare la încărcare.</div>';
+  }
+
+  document.getElementById("historyPanel").scrollIntoView({behavior:"smooth"});
+}
+
+function closeHistory() {
+  document.getElementById("historyPanel").style.display = "none";
+}
+
+// ── Excel import ──────────────────────────────────────────────────────────
+
+function handleDrop(event) {
+  event.preventDefault();
+  const dz = document.getElementById("dropZone");
+  dz.style.borderColor = "#c8d5ea"; dz.style.background = "#f7f9fc";
+  const file = event.dataTransfer.files[0];
+  if (file) uploadExcel(file);
+}
+
+function importExcel(input) {
+  if (input.files[0]) uploadExcel(input.files[0]);
+}
+
+async function uploadExcel(file) {
+  const res = document.getElementById("importResult");
+  res.style.display = "block";
+  res.innerHTML = '<em style="color:#888;">Se importă...</em>';
+
+  const form = new FormData();
+  form.append("file", file);
+
+  try {
+    const r    = await fetch("/api/monitor/import", { method:"POST", body: form });
+    const data = await r.json();
+
+    if (!r.ok) {
+      res.innerHTML = `<div class="import-err">❌ ${data.detail || "Eroare la import."}</div>`;
+      return;
+    }
+
+    let html = `<div class="${data.errors > 0 ? 'import-warn' : 'import-ok'}">`;
+    html += `<strong>${data.imported} mărci importate</strong>`;
+    if (data.skipped > 0) html += ` · ${data.skipped} rânduri ignorate`;
+    if (data.errors  > 0) html += ` · <span style="color:#c0392b;">${data.errors} erori</span>`;
+    html += "</div>";
+
+    if (data.details.errors.length) {
+      html += `<div style="margin-top:8px;font-size:.8rem;color:#c0392b;">
+        <strong>Erori:</strong><ul style="margin:4px 0 0 16px;">
+        ${data.details.errors.map(e=>`<li>Rând ${e.row}: ${e.trademark} — ${e.reason}</li>`).join("")}
+        </ul></div>`;
+    }
+
+    res.innerHTML = html;
+    loadWatches();
+  } catch(e) {
+    res.innerHTML = `<div class="import-err">❌ Eroare conexiune: ${e.message}</div>`;
+  }
+
+  // reset file input so same file can be re-imported
+  document.getElementById("excelFileInput").value = "";
 }
 </script>
 </body>

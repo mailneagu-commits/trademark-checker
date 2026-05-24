@@ -1,0 +1,230 @@
+"""
+OSIM BOPI scraper — Buletinul Oficial de Proprietate Industrială (Mărci).
+
+BOPI este publicat zilnic (zile lucrătoare).
+URL: https://www.osim.ro/images/Publicatii/Marci/{YYYY}/bopi{DDMMYYYY}.pdf
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+from datetime import date, datetime, timedelta
+from typing import List, Dict, Optional, Tuple
+
+import requests
+
+OSIM_BASE      = "https://www.osim.ro/images/Publicatii/Marci"
+CACHE_DIR      = os.path.join(os.path.dirname(__file__), "..", "..", "data", "bulletins", "osim")
+PROCESSED_FILE = os.path.join(CACHE_DIR, "_processed.json")
+REQUEST_TIMEOUT = 30
+
+RE_APP_NUM = re.compile(r'\bM[\s\-]?(\d{4})[\s\-]?(\d{4,6})\b', re.IGNORECASE)
+RE_NICE    = re.compile(r'(?:Cl(?:ase?)?\.?\s*:?\s*)((?:\d{1,2}[,;\s]+)*\d{1,2})', re.IGNORECASE)
+RE_DATE    = re.compile(r'(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})')
+
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+
+# ── Processed index ───────────────────────────────────────────────────────────
+
+def _load_processed() -> dict:
+    if os.path.exists(PROCESSED_FILE):
+        with open(PROCESSED_FILE) as f:
+            return json.load(f)
+    return {}
+
+
+def _save_processed(data: dict) -> None:
+    with open(PROCESSED_FILE, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+# ── Date helpers ──────────────────────────────────────────────────────────────
+
+def _prev_working_day(d: date) -> date:
+    """Întoarce ultima zi lucrătoare <= d."""
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def _bopi_url(d: date) -> str:
+    """URL-ul PDF-ului BOPI pentru o zi lucrătoare."""
+    return f"{OSIM_BASE}/{d.year}/bopi{d.day:02d}{d.month:02d}{d.year}.pdf"
+
+
+def _date_slug(d: date) -> str:
+    return f"osim-{d.isoformat()}"
+
+
+# ── Download ──────────────────────────────────────────────────────────────────
+
+def _download_pdf(d: date) -> Optional[str]:
+    slug  = _date_slug(d)
+    local = os.path.join(CACHE_DIR, f"{slug}.pdf")
+    if os.path.exists(local):
+        print(f"[OSIM] Using cached {local}")
+        return local
+
+    url = _bopi_url(d)
+    print(f"[OSIM] Trying {url}")
+    try:
+        r = requests.get(
+            url, timeout=REQUEST_TIMEOUT, stream=True,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; TrademarkMonitor/1.0)"},
+        )
+        if r.status_code == 404:
+            print(f"[OSIM] 404 for {url}")
+            return None
+        r.raise_for_status()
+        with open(local, "wb") as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+        size_kb = os.path.getsize(local) // 1024
+        print(f"[OSIM] Downloaded {local} ({size_kb} KB)")
+        return local
+    except Exception as e:
+        print(f"[OSIM] Download error: {e}")
+        return None
+
+
+# ── PDF parsing ───────────────────────────────────────────────────────────────
+
+def _clean_cell(val: Optional[str]) -> str:
+    """Elimină literele-watermark (caractere singure pe linie) din celule."""
+    if not val:
+        return ""
+    lines = [l for l in val.split("\n") if not (len(l.strip()) == 1 and l.strip().isalpha())]
+    return " ".join(l.strip() for l in lines if l.strip())
+
+
+def _parse_pdf(path: str) -> List[Dict]:
+    try:
+        import pdfplumber
+    except ImportError:
+        print("[OSIM] pdfplumber not installed")
+        return []
+
+    marks:   List[Dict] = []
+    seen_nums: set      = set()
+
+    try:
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                for table in tables:
+                    if not table or len(table) < 2:
+                        continue
+                    # Check if this looks like the BOPI trademark table (5 columns)
+                    if len(table[0]) < 5:
+                        continue
+                    for row in table[1:]:   # skip header
+                        if len(row) < 5:
+                            continue
+                        app_raw  = _clean_cell(row[1])
+                        date_raw = _clean_cell(row[2])
+                        holder   = _clean_cell(row[3])
+                        tm_raw   = _clean_cell(row[4])
+
+                        m = RE_APP_NUM.search(app_raw)
+                        if not m:
+                            continue
+                        year_str, num_str = m.group(1), m.group(2)
+                        app_num = f"M{year_str}{num_str}"
+                        if app_num in seen_nums:
+                            continue
+                        seen_nums.add(app_num)
+
+                        app_date = None
+                        dm = RE_DATE.search(date_raw)
+                        if dm:
+                            try:
+                                d, mo, y = int(dm.group(1)), int(dm.group(2)), int(dm.group(3))
+                                app_date = f"{y}-{mo:02d}-{d:02d}T00:00:00.000Z"
+                            except ValueError:
+                                pass
+
+                        tm_name = tm_raw.strip()
+                        if not tm_name or len(tm_name) < 2:
+                            continue
+
+                        marks.append({
+                            "ST13":              f"RO{app_num}",
+                            "tmName":            tm_name,
+                            "tmOffice":          "RO",
+                            "tradeMarkStatus":   "Filed",
+                            "niceClass":         [],
+                            "applicantName":     [holder] if holder else [],
+                            "applicationDate":   app_date,
+                            "applicationNumber": app_num,
+                            "registrationDate":  None,
+                            "expiryDate":        None,
+                            "markImageURI":      None,
+                            "goodAndServices":   [],
+                            "_source":           "osim_bopi",
+                        })
+    except Exception as e:
+        print(f"[OSIM] PDF parse error: {e}")
+
+    print(f"[OSIM] Extracted {len(marks)} marks from {os.path.basename(path)}")
+    return marks
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def fetch_osim_for_date(target: date) -> Tuple[List[Dict], dict]:
+    """
+    Descarcă și parsează buletinul BOPI pentru data specificată (sau ultima zi lucrătoare).
+    Returnează (marks, info_dict).
+    """
+    processed = _load_processed()
+    working   = _prev_working_day(target)
+    slug      = _date_slug(working)
+
+    info = {
+        "slug":        slug,
+        "target_date": target.isoformat(),
+        "working_day": working.isoformat(),
+        "url":         _bopi_url(working),
+    }
+
+    local = _download_pdf(working)
+    if not local:
+        info["status"] = "not_found"
+        info["error"]  = f"PDF indisponibil pentru {working.isoformat()} — buletinul poate să nu fi apărut încă"
+        info["at"]     = datetime.utcnow().isoformat()
+        processed[slug] = info
+        _save_processed(processed)
+        return [], info
+
+    marks = _parse_pdf(local)
+    info["status"] = "ok"
+    info["marks"]  = len(marks)
+    info["at"]     = datetime.utcnow().isoformat()
+    processed[slug] = info
+    _save_processed(processed)
+    return marks, info
+
+
+def fetch_latest_osim(max_days: int = 3) -> List[Dict]:
+    """Descarcă buletinele pentru ultimele N zile lucrătoare neprocesate."""
+    all_marks: List[Dict] = []
+    processed = _load_processed()
+    d         = _prev_working_day(date.today())
+    tried     = 0
+
+    while tried < max_days:
+        slug = _date_slug(d)
+        if slug not in processed:
+            marks, _ = fetch_osim_for_date(d)
+            all_marks.extend(marks)
+            tried += 1
+        d = _prev_working_day(d - timedelta(days=1))
+
+    return all_marks
+
+
+def list_processed() -> List[dict]:
+    processed = _load_processed()
+    return sorted(processed.values(), key=lambda x: x.get("at", ""), reverse=True)
