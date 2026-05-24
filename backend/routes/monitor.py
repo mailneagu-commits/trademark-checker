@@ -214,6 +214,46 @@ def bulletin_status():
     }
 
 
+@router.get("/bulletin-marks")
+def get_bulletin_marks(source: str, date: str):
+    """
+    Returnează mărcile dintr-un buletin descărcat anterior.
+    source: 'osim' | 'euipo'
+    date: 'YYYY-MM-DD'
+    """
+    from datetime import date as date_type
+
+    try:
+        td = date_type.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(400, f"Dată invalidă: {date}")
+
+    if source == "osim":
+        from scrapers.osim_bulletin import _prev_working_day, _date_slug, _parse_pdf, CACHE_DIR
+        import os
+        working = _prev_working_day(td)
+        slug    = _date_slug(working)
+        pdf     = os.path.join(CACHE_DIR, f"{slug}.pdf")
+        if not os.path.exists(pdf):
+            raise HTTPException(404, "Buletinul OSIM pentru această dată nu a fost descărcat încă.")
+        marks = _parse_pdf(pdf)
+
+    elif source == "euipo":
+        from scrapers.euipo_bulletin import _prev_working_day, _date_slug, _parse_bulletin_xml, CACHE_DIR
+        import os
+        working = _prev_working_day(td)
+        slug    = _date_slug(working)
+        xml     = os.path.join(CACHE_DIR, f"{slug}.xml")
+        if not os.path.exists(xml):
+            raise HTTPException(404, "Buletinul EUIPO pentru această dată nu a fost descărcat încă.")
+        marks = _parse_bulletin_xml(xml)
+
+    else:
+        raise HTTPException(400, "source trebuie să fie 'osim' sau 'euipo'")
+
+    return {"source": source, "date": date, "total": len(marks), "marks": marks}
+
+
 @router.post("/bulletin-fetch")
 async def trigger_bulletin_fetch(
     source: str = "both",          # "osim" | "euipo" | "both"
