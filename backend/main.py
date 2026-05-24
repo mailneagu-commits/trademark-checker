@@ -18,8 +18,15 @@ from scheduler import start_scheduler, stop_scheduler
 from routes.monitor import router as monitor_router
 
 
+def _ensure_data_dirs():
+    base = os.path.join(os.path.dirname(__file__), "..", "data", "bulletins")
+    os.makedirs(os.path.join(base, "osim"),  exist_ok=True)
+    os.makedirs(os.path.join(base, "euipo"), exist_ok=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _ensure_data_dirs()
     init_db()
     start_scheduler()
     yield
