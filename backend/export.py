@@ -19,16 +19,39 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 # Înregistrare fonturi cu suport complet Unicode/diacritice
-_FONT_DIR = "/System/Library/Fonts/Supplemental"
-try:
-    pdfmetrics.registerFont(TTFont("Arial",      f"{_FONT_DIR}/Arial.ttf"))
-    pdfmetrics.registerFont(TTFont("Arial-Bold", f"{_FONT_DIR}/Arial Bold.ttf"))
-    pdfmetrics.registerFont(TTFont("Arial-Italic",f"{_FONT_DIR}/Arial Italic.ttf"))
-    _PDF_FONT      = "Arial"
-    _PDF_FONT_BOLD = "Arial-Bold"
-except Exception:
-    _PDF_FONT      = "Helvetica"
-    _PDF_FONT_BOLD = "Helvetica-Bold"
+def _try_register_fonts() -> tuple:
+    """Try to register a Unicode-capable font; fallback to Helvetica."""
+    # Candidate font sets: (regular, bold, name_prefix)
+    candidates = [
+        # macOS system fonts
+        ("/System/Library/Fonts/Supplemental/Arial.ttf",
+         "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+         "Arial"),
+        # Linux: DejaVu (pre-installed on most distros including Railway/Debian)
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+         "DejaVu"),
+        # Linux: Ubuntu fonts
+        ("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+         "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+         "Ubuntu"),
+        # Liberation fonts (RHEL/CentOS/Alpine)
+        ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+         "Liberation"),
+    ]
+    import os
+    for reg, bold, prefix in candidates:
+        if os.path.exists(reg) and os.path.exists(bold):
+            try:
+                pdfmetrics.registerFont(TTFont(prefix, reg))
+                pdfmetrics.registerFont(TTFont(f"{prefix}-Bold", bold))
+                return prefix, f"{prefix}-Bold"
+            except Exception:
+                pass
+    return "Helvetica", "Helvetica-Bold"
+
+_PDF_FONT, _PDF_FONT_BOLD = _try_register_fonts()
 
 from PIL import Image as PILImage
 
