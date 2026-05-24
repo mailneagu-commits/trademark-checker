@@ -488,11 +488,36 @@
   <div class="card" id="resultsCard" style="display:none;">
     <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
       <h2 style="margin:0;">📊 Rezultate analiză similaritate</h2>
-      <div style="display:flex; gap:8px;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn-export" onclick="doExport('excel')">📥 Export Excel</button>
         <button class="btn-export" onclick="doExport('pdf')">📄 Export PDF</button>
         <button class="btn-export" onclick="doExport('word')">📝 Export Word</button>
+        <button class="btn-export" style="background:#e8f5e9;border-color:#c8e6c9;color:#1e8449;" onclick="openAddToMonitor()">👁 Adaugă la monitorizare</button>
       </div>
+    </div>
+
+    <!-- Add to monitoring inline form -->
+    <div id="addToMonitorForm" style="display:none;background:#f0faf3;border:1.5px solid #c8e6c9;border-radius:8px;padding:14px;margin-bottom:14px;">
+      <strong style="font-size:.86rem;color:#1e8449;">👁 Adaugă marca curentă la monitorizare</strong>
+      <div style="display:flex;gap:10px;align-items:flex-end;margin-top:10px;flex-wrap:wrap;">
+        <div style="flex:2;min-width:200px;">
+          <label style="font-size:.74rem;font-weight:700;color:#666;text-transform:uppercase;">Email notificare *</label>
+          <input type="email" id="monitorEmail" placeholder="office@firma.ro" style="width:100%;padding:8px 11px;border:1.5px solid #c8e6c9;border-radius:6px;font-size:.88rem;margin-top:3px;" />
+        </div>
+        <div style="flex:1;min-width:140px;">
+          <label style="font-size:.74rem;font-weight:700;color:#666;text-transform:uppercase;">Frecvență</label>
+          <select id="monitorFreq" style="width:100%;padding:8px 11px;border:1.5px solid #c8e6c9;border-radius:6px;font-size:.88rem;margin-top:3px;">
+            <option value="daily">Zilnic</option>
+            <option value="weekly" selected>Săptămânal</option>
+            <option value="monthly">Lunar</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-primary" style="padding:8px 16px;background:#1e8449;font-size:.84rem;" onclick="saveToMonitor()">Salvează</button>
+          <button class="btn-export" style="padding:8px 12px;font-size:.84rem;" onclick="document.getElementById('addToMonitorForm').style.display='none'">✕</button>
+        </div>
+      </div>
+      <div id="monitorSaveMsg" style="margin-top:6px;font-size:.8rem;display:none;"></div>
     </div>
 
     <!-- Bara selecție export -->
@@ -1495,6 +1520,50 @@ function clearExportSel() {
 }
 
 // ---- Export ----
+function openAddToMonitor() {
+  if (!lastResults) return;
+  const form = document.getElementById("addToMonitorForm");
+  form.style.display = form.style.display === "none" ? "" : "none";
+  document.getElementById("monitorSaveMsg").style.display = "none";
+}
+
+async function saveToMonitor() {
+  if (!lastResults) return;
+  const email = document.getElementById("monitorEmail").value.trim();
+  const msg   = document.getElementById("monitorSaveMsg");
+  if (!email || !email.includes("@")) {
+    msg.style.display = "block"; msg.style.color = "#c0392b";
+    msg.textContent = "Introduceți un email valid."; return;
+  }
+  msg.style.display = "block"; msg.style.color = "#888"; msg.textContent = "Se salvează...";
+
+  const name    = lastResults.query || "";
+  const classes = lastResults.nice_classes || [];
+  const offices = lastResults.offices || [];
+  const freq    = document.getElementById("monitorFreq").value;
+
+  try {
+    const r = await fetch("/api/monitor/watch", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        trademark_name: name, holder_name: "", nice_classes: classes,
+        offices, notification_email: email, frequency: freq,
+      }),
+    });
+    if (r.ok) {
+      msg.style.color = "#1e8449";
+      msg.textContent = `✅ "${name}" adăugată la monitorizare (${freq})`;
+      setTimeout(() => { document.getElementById("addToMonitorForm").style.display = "none"; }, 2000);
+    } else {
+      const e = await r.json();
+      msg.style.color = "#c0392b"; msg.textContent = "Eroare: " + (e.detail || r.status);
+    }
+  } catch(e) {
+    msg.style.color = "#c0392b"; msg.textContent = "Eroare conexiune.";
+  }
+}
+
 async function doExport(format) {
   if (!lastResults) return;
 
