@@ -159,14 +159,13 @@ def build_offices_and_territories(user_offices: List[str]):
 
     Logică:
     - EM       → territories = ["EM"] + toate cele 27 state membre UE
-                 Reproduce exact comportamentul TMview când selectezi 'EUIPO':
-                 · mărci EUIPO (office EM)
-                 · mărci WIPO care desemnează UE sau state membre individual
-                 · mărci naționale din fiecare stat UE
     - WO       → offices = ["WO"]
-                 (mărci internaționale WIPO indiferent de teritorii desemnate)
-    - BE/NL/LU → territories = ["BX"]   (teritoriu Benelux)
-    - Orice altă țară → territories = [cod_țară]
+    - BE/NL/LU → territories = ["BX"], offices += ["BX", "WO", "EM"]
+    - Stat UE  → territories = [cod], offices += [cod, "WO", "EM"]
+                 Adăugăm oficiul național (ex. "RO" pentru OSIM), WIPO (mărci cu
+                 teritoriul desemnat) și EUIPO (mărci UE valabile în orice stat UE).
+    - Altele   → territories = [cod]  (non-UE: offices rămâne gol → TMview returnează
+                 mărci din orice oficiu cu acoperire pe acel teritoriu)
     """
     offices_set:     Set[str] = set()
     territories_set: Set[str] = set()
@@ -176,6 +175,8 @@ def build_offices_and_territories(user_offices: List[str]):
         c = code.upper()
         if c in _BENELUX:
             territories_set.add("BX")
+            offices_set.add("BX")   # BOIP — oficiu Benelux
+            offices_set.add("WO")   # WIPO cu Benelux desemnat
             has_eu_country = True
         elif c == "WO":
             offices_set.add("WO")
@@ -184,11 +185,13 @@ def build_offices_and_territories(user_offices: List[str]):
             territories_set.update(ALL_EU_TERRITORIES)
         elif c in _EU_COUNTRY_SET:
             territories_set.add(c)
+            offices_set.add(c)      # oficiu național (ex. RO → OSIM, DE → DPMA)
+            offices_set.add("WO")   # WIPO cu acest teritoriu desemnat
             has_eu_country = True
         else:
             territories_set.add(c)
 
-    # Orice stat UE selectat → adăugăm și EUIPO (mărci europene acoperă toate țările UE)
+    # Stat UE selectat → adăugăm și EUIPO (mărci UE acoperă toate statele membre)
     if has_eu_country and "EM" not in territories_set:
         offices_set.add("EM")
 
