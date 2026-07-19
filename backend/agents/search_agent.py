@@ -3,6 +3,7 @@ import os
 import random
 import re
 import shlex
+from datetime import date
 import requests as _std_requests
 from typing import List, Dict, Tuple, Optional
 
@@ -27,6 +28,35 @@ def _make_proxies(url: str) -> dict:
     return {"https": url, "http": url}
 
 
+def _is_expired_mark(mark: Dict) -> bool:
+    status_raw = str(mark.get("status") or mark.get("tradeMarkStatus") or "").lower()
+    if any(w in status_raw for w in (
+        "expir", "lapsed", "cancelled", "refused", "withdrawn",
+        "surrendered", "invalidated", "abandoned",
+    )):
+        return True
+
+    exp_str = str(mark.get("expiryDate") or "")
+    if exp_str and str(mark.get("expiryIsReal", True)).lower() not in ("false", "0", "none", ""):
+        try:
+            return date.fromisoformat(exp_str[:10]) < date.today()
+        except Exception:
+            return False
+    return False
+
+
+def _unique_terms(terms: Optional[List[str]]) -> List[str]:
+    seen = set()
+    result = []
+    for term in terms or []:
+        cleaned = (term or "").strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        result.append(cleaned)
+    return result
+
+
 async def _try_with_proxies(coro_factory):
     """Încearcă corutina cu fiecare proxy din listă. Dacă toate eșuează, încearcă direct."""
     candidates = _PROXY_LIST + [""]   # "" = conexiune directă ca fallback
@@ -49,6 +79,7 @@ from agents.variant_agent import (build_input_list, build_phonetic_variants,
                                    build_plural_stem_variants, build_vowel_variants,
                                    build_abbreviation_variants,
                                    build_offices_and_territories, MAX_PAGES_PER_TERM)
+from agents.euipo_agent import euipo_available, search_euipo
 
 TMVIEW_URL    = "https://www.tmdn.org/tmview/api/search/results?translate=true"
 TMVIEW_DETAIL = "https://www.tmdn.org/tmview/api/trademark/detail/{st13}"
@@ -243,7 +274,7 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
     return collected
 
 
-async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str], proxy_url: str = _PROXY_URL) -> List[Dict]:
+async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str], proxy_url: str = _PROXY_URL, include_expired: bool = True, extra_terms: Optional[List[str]] = None) -> List[Dict]:
     offices, territories = build_offices_and_territories(user_offices)
 
     # Cu proxy activ nu expandăm EM în 28 teritorii (prea multe batches → timeout).
@@ -278,6 +309,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     # Cu proxy: max 3 variante fonetice pentru a nu depăși timeout-ul
     phonetic_terms = all_phonetic[:3] if use_proxy else all_phonetic
     req_timeout = 55 if use_proxy else 25
+    extra_searches = [("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper]
 
     async with AsyncSession(impersonate="chrome120", proxies=proxies, verify=not use_proxy) as session:
         # Warmup GET — esențial pentru cookie-uri Imperva (atât direct cât și prin proxy)
@@ -300,6 +332,13 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
             all_marks.extend(marks)
             await asyncio.sleep(1.0 if use_proxy else 0.15)
 
+        for crit, term in extra_searches:
+            if len(all_marks) >= MAX_TOTAL:
+                break
+            marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen)
+            all_marks.extend(marks)
+            await asyncio.sleep(1.0 if use_proxy else 0.15)
+
         all_marks = all_marks[:MAX_TOTAL]
 
         # Variante fonetice (max 3 cu proxy, toate fără proxy)
@@ -314,6 +353,9 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
             if use_proxy:
                 await asyncio.sleep(1.0)
         all_marks = all_marks[:MAX_TOTAL]
+
+        if not include_expired:
+            all_marks = [m for m in all_marks if not _is_expired_mark(m)]
 
         # Fetch detalii în paralel
         detail_tasks = [_fetch_detail(session, m.get("ST13", "")) for m in all_marks]
@@ -350,7 +392,7 @@ def _demo_marks(name: str, nice_classes: List[str], offices: List[str]) -> List[
     return results
 
 
-def _search_via_scraperapi(name: str, nice_classes: List[str], offices: List[str]) -> List[Dict]:
+def _search_via_scraperapi(name: str, nice_classes: List[str], offices: List[str], extra_terms: Optional[List[str]] = None) -> List[Dict]:
     """Caută mărci via ScraperAPI direct API — ocolește Imperva fără proxy mode."""
     if not _SCRAPERAPI_KEY:
         return []
@@ -360,7 +402,10 @@ def _search_via_scraperapi(name: str, nice_classes: List[str], offices: List[str
     seen: set = set()
     all_marks: List[Dict] = []
 
-    for crit, term in [("Z", upper), ("C", f"*{upper}*")]:
+    search_terms = [("Z", upper), ("C", f"*{upper}*")]
+    search_terms.extend(("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper)
+
+    for crit, term in search_terms:
         payload = {
             "page": "1", "pageSize": "30", "criteria": crit,
             "basicSearch": term, "newPage": True, "fields": FIELDS,
@@ -453,15 +498,35 @@ async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices
 
 class SearchAgent:
     async def search(self, name: str, nice_classes: List[str], offices: List[str],
-                     extra_terms: Optional[List[str]] = None) -> Tuple[List[Dict], str]:
+                     extra_terms: Optional[List[str]] = None,
+                     include_expired: bool = True) -> Tuple[List[Dict], str]:
         if not HAS_CURL_CFFI:
-            return _demo_marks(name, nice_classes, offices), "demo (curl-cffi lipsă)"
+            marks = _demo_marks(name, nice_classes, offices)
+            if not include_expired:
+                marks = [m for m in marks if not _is_expired_mark(m)]
+            return marks, "demo (curl-cffi lipsă)"
+
+        def _merge_marks(primary: List[Dict], secondary: List[Dict]) -> List[Dict]:
+            merged = []
+            seen = set()
+
+            for mark in primary + secondary:
+                key = mark.get("ST13") or mark.get("applicationNumber") or mark.get("tmName") or ""
+                if key and key in seen:
+                    continue
+                if key:
+                    seen.add(key)
+                merged.append(mark)
+
+            return merged
 
         # Încearcă ScraperAPI direct API dacă e configurat
         if _SCRAPERAPI_KEY:
             loop = asyncio.get_event_loop()
-            marks = await loop.run_in_executor(None, _search_via_scraperapi, name, nice_classes, offices)
+            marks = await loop.run_in_executor(None, _search_via_scraperapi, name, nice_classes, offices, extra_terms)
             if marks is not None:
+                if not include_expired:
+                    marks = [m for m in marks if not _is_expired_mark(m)]
                 return marks, "live:tmview"
 
         candidates = _PROXY_LIST + [""]
@@ -469,19 +534,46 @@ class SearchAgent:
             label = proxy_url[:30] if proxy_url else "direct"
             try:
                 marks = await asyncio.wait_for(
-                    _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url),
+                    _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url, include_expired=include_expired, extra_terms=extra_terms),
                     timeout=75.0 if proxy_url else 45.0
                 )
                 if marks is not None:
                     print(f"[TMVIEW] success via {label}, {len(marks)} marks")
-                    return marks, "live:tmview"
+                    source = "live:tmview"
+                    merged_marks = marks
+
+                    if euipo_available():
+                        try:
+                            loop = asyncio.get_event_loop()
+                            euipo_marks = await loop.run_in_executor(None, search_euipo, name, nice_classes)
+                            if euipo_marks:
+                                merged_marks = _merge_marks(merged_marks, euipo_marks)
+                                source = "live:tmview+euipo"
+                        except Exception as e:
+                            print(f"[EUIPO] search error: {type(e).__name__}: {e}")
+
+                    if not include_expired:
+                        merged_marks = [m for m in merged_marks if not _is_expired_mark(m)]
+
+                    return merged_marks, source
                 print(f"[TMVIEW] internal error via {label}, trying next")
             except asyncio.TimeoutError:
                 print(f"[TMVIEW] timeout via {label}")
             except Exception as e:
                 print(f"[TMVIEW] error via {label}: {type(e).__name__}: {e}")
 
-        return _demo_marks(name, nice_classes, offices), "demo (TMview indisponibil — date demonstrative)"
+        if euipo_available():
+            try:
+                loop = asyncio.get_event_loop()
+                euipo_marks = await loop.run_in_executor(None, search_euipo, name, nice_classes)
+                if euipo_marks:
+                    if not include_expired:
+                        euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
+                    return euipo_marks, "live:euipo"
+            except Exception as e:
+                print(f"[EUIPO] search error: {type(e).__name__}: {e}")
+
+        return _demo_marks(name, nice_classes, offices), "demo (TMview/EUIPO indisponibil — date demonstrative)"
 
     async def search_expired(self, name: str, nice_classes: List[str],
                              offices: List[str]) -> Tuple[List[Dict], str]:

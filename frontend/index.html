@@ -12,6 +12,7 @@
       background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
       color: #fff; padding: 22px 40px;
       display: flex; align-items: center; gap: 16px;
+      position: sticky; top: 0; z-index: 1000; width: 100%;
       box-shadow: 0 2px 12px rgba(0,0,0,0.25);
     }
     header .logo { font-size: 2rem; }
@@ -19,6 +20,8 @@
     header p   { font-size: 0.8rem; opacity: 0.65; margin-top: 3px; }
 
     .container { max-width: 1280px; margin: 0 auto; padding: 28px 18px; }
+
+    body { padding-top: 0; }
 
     .card {
       background: #fff; border-radius: 14px;
@@ -433,6 +436,16 @@
       <span id="progressText">⏳ Căutare în progres...</span>
     </div>
 
+    <div id="exportQuickBar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:14px; padding:12px 14px; border:1.5px solid #d9e3f1; border-radius:10px; background:#fbfcfe; opacity:.55; pointer-events:none;">
+      <strong style="font-size:.9rem;color:#0f3460;">📤 Export și monitorizare</strong>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn-export" id="quickExportExcel" onclick="doExport('excel')">📥 Export Excel</button>
+        <button class="btn-export" id="quickExportPdf" onclick="doExport('pdf')">📄 Export PDF</button>
+        <button class="btn-export" id="quickExportWord" onclick="doExport('word')">📝 Export Word</button>
+        <button class="btn-export" id="quickOpenMonitor" style="background:#e8f5e9;border-color:#c8e6c9;color:#1e8449;" onclick="openAddToMonitor()">👁 Adaugă la monitorizare</button>
+      </div>
+    </div>
+
     <div class="info-box" id="sessionBox">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
         <strong style="font-size:.95rem;">🔑 Activează date live TMview</strong>
@@ -488,12 +501,6 @@
   <div class="card" id="resultsCard" style="display:none;">
     <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
       <h2 style="margin:0;">📊 Rezultate analiză similaritate</h2>
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn-export" onclick="doExport('excel')">📥 Export Excel</button>
-        <button class="btn-export" onclick="doExport('pdf')">📄 Export PDF</button>
-        <button class="btn-export" onclick="doExport('word')">📝 Export Word</button>
-        <button class="btn-export" style="background:#e8f5e9;border-color:#c8e6c9;color:#1e8449;" onclick="openAddToMonitor()">👁 Adaugă la monitorizare</button>
-      </div>
     </div>
 
     <!-- Add to monitoring inline form -->
@@ -530,6 +537,15 @@
 
     <!-- Summary badges -->
     <div class="summary" id="summaryBadges"></div>
+
+    <!-- Variante de căutare inline -->
+    <div id="variantsInline" style="display:none; margin:14px 0 18px; padding:14px; border:1.5px solid #d9e3f1; border-radius:10px; background:#fbfcfe;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <h2 style="margin:0; font-size:.95rem; color:#0f3460;">🔤 Variante de căutare generate</h2>
+        <span id="variantsInlineCount" class="badge badge-blue"></span>
+      </div>
+      <div id="variantsInlineContent"></div>
+    </div>
 
     <!-- Geo distribution -->
     <div id="geoSection" style="margin-bottom:18px; display:none;">
@@ -997,6 +1013,7 @@ async function doSearch() {
   if (!selectedCountries.size) { showError("Selectați cel puțin un teritoriu."); return; }
 
   setLoading(true);
+  setExportControlsEnabled(false);
   document.getElementById("resultsCard").style.display = "none";
   document.getElementById("expiredSection").style.display = "none";
   exportSel.clear(); _allCardKeys = []; updateSelBar();
@@ -1009,6 +1026,7 @@ async function doSearch() {
         trademark_name: name,
         nice_classes:   [...selectedNice],
         offices:        [...selectedCountries],
+        include_expired: document.getElementById("includeExpired")?.checked ?? true,
       }),
     });
     const data = await res.json();
@@ -1024,6 +1042,7 @@ async function doSearch() {
       (data.expired_conflicts || []).concat(data.expired_similar || [])
     );
   } catch(e) {
+    setExportControlsEnabled(false);
     showError("Nu s-a putut contacta serverul. Asigurați-vă că backend-ul rulează pe portul 8000.");
   } finally {
     setLoading(false);
@@ -1037,6 +1056,13 @@ function showError(msg) {
 
 let _progressTimer     = null;
 let _progressShowTimer = null;
+
+function setExportControlsEnabled(on) {
+  const bar = document.getElementById("exportQuickBar");
+  if (!bar) return;
+  bar.style.opacity = on ? "1" : ".55";
+  bar.style.pointerEvents = on ? "auto" : "none";
+}
 
 function setLoading(on) {
   document.getElementById("searchBtn").disabled = on;
@@ -1072,6 +1098,15 @@ function setLoading(on) {
 function renderResults(data) {
   const isDemo = data.source && data.source.startsWith("demo");
   const safe   = data.risky_marks === 0;
+  const variantTotal = data.variants
+    ? (data.variants.search_terms?.length || 0) +
+      (data.variants.fragments4?.length || 0) +
+      (data.variants.progressive_truncations?.length || 0) +
+      (data.variants.phonetic?.length || 0) +
+      (data.variants.plurals?.length || 0) +
+      (data.variants.vowels?.length || 0) +
+      (data.variants.abbreviations?.length || 0)
+    : 0;
 
   document.getElementById("summaryBadges").innerHTML = `
     <div class="badge badge-blue">🔎 Total găsite: <strong>${data.total_found}</strong></div>
@@ -1081,16 +1116,75 @@ function renderResults(data) {
     <div class="badge ${isDemo ? "badge-warn" : "badge-green"}">
       ${isDemo ? "⚠️ DEMO – " + data.source.replace("demo (","").replace(")","") : "✅ Sursă: TMview live"}
     </div>
-    ${data.variants ? `<div class="badge badge-blue">🔤 Variante căutate: <strong>${(data.variants.search_terms.length||0)+(data.variants.phonetic.length||0)}</strong></div>` : ""}
+    ${data.variants ? `<div class="badge badge-blue">🔤 Variante căutate: <strong>${variantTotal}</strong></div>` : ""}
   `;
+
+  const variantsCard = document.getElementById("variantsCard");
+  const variantsInline = document.getElementById("variantsInline");
+  const variantsInlineContent = document.getElementById("variantsInlineContent");
+  const variantsInlineCount = document.getElementById("variantsInlineCount");
+  if (data.variants && variantsInline && variantsInlineContent && variantsInlineCount) {
+    const fragments4 = data.variants.fragments4 || [];
+    const progressive = data.variants.progressive_truncations || [];
+    const wildcard = data.variants.wildcard || [];
+    const phonetic = data.variants.phonetic || [];
+    const plurals = data.variants.plurals || [];
+    const vowels = data.variants.vowels || [];
+    const abbreviations = data.variants.abbreviations || [];
+    const chips = (items) => (items || []).map(t => `<span class="chip" style="cursor:default;font-size:.74rem;">${t}</span>`).join(" ");
+
+    variantsInlineCount.textContent = `${variantTotal} variante`;
+    variantsInlineContent.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+        <div>
+          <label>Termen original</label>
+          <div class="chips-grid" style="max-height:54px;">${chips([data.variants.original || ""])}</div>
+        </div>
+        <div>
+          <label>Căutări pe 4 litere (${fragments4.length})</label>
+          <div class="chips-grid" style="max-height:76px;">${chips(fragments4)}</div>
+        </div>
+        <div>
+          <label>Tăieri progresive (${progressive.length})</label>
+          <div class="chips-grid" style="max-height:76px;">${chips(progressive)}</div>
+        </div>
+        <div>
+          <label>Wildcard (${wildcard.length})</label>
+          <div class="chips-grid" style="max-height:76px;">${chips(wildcard)}</div>
+        </div>
+        <div>
+          <label>Fonetice (${phonetic.length})</label>
+          <div class="chips-grid" style="max-height:76px;">${chips(phonetic)}</div>
+        </div>
+        <div>
+          <label>Pluraluri / stemuri (${plurals.length})</label>
+          <div class="chips-grid" style="max-height:76px;">${chips(plurals)}</div>
+        </div>
+        <div>
+          <label>Vocale similare (${vowels.length})</label>
+          <div class="chips-grid" style="max-height:76px;">${chips(vowels)}</div>
+        </div>
+        <div>
+          <label>Abrevieri (${abbreviations.length})</label>
+          <div class="chips-grid" style="max-height:76px;">${chips(abbreviations)}</div>
+        </div>
+      </div>
+    `;
+    variantsInline.style.display = "block";
+  }
 
   renderGeo(allResults);
   renderTabs(allResults);
   renderStatusFilters(allResults);
   applyFilters();
+  setExportControlsEnabled(true);
 
   document.getElementById("resultsCard").style.display = "block";
-  document.getElementById("resultsCard").scrollIntoView({behavior:"smooth", block:"start"});
+  if (variantsCard && variantsCard.style.display !== "none") {
+    variantsCard.scrollIntoView({behavior:"smooth", block:"start"});
+  } else {
+    document.getElementById("resultsCard").scrollIntoView({behavior:"smooth", block:"start"});
+  }
 }
 
 // ---- Geo distribution ----
@@ -1461,14 +1555,50 @@ function renderVariants(v) {
   const card    = document.getElementById("variantsCard");
   const content = document.getElementById("variantsContent");
 
-  const termHtml = v.search_terms.map((t, i) =>
-    `<span class="chip ${i===0?'selected':''}" style="cursor:default;font-size:.74rem;">${t}</span>`
+  const termHtml = (items, selectedIndex = -1) => items.map((t, i) =>
+    `<span class="chip ${i===selectedIndex?'selected':''}" style="cursor:default;font-size:.74rem;">${t}</span>`
   ).join(" ");
+
+  const fragments4 = v.fragments4 || [];
+  const progressiveTruncations = v.progressive_truncations || [];
+  const wildcard = v.wildcard || [];
+  const phonetic = v.phonetic || [];
+  const plurals = v.plurals || [];
+  const vowels = v.vowels || [];
+  const abbreviations = v.abbreviations || [];
 
   content.innerHTML = `
     <div style="margin-bottom:8px;">
-      <label>Termeni trimiși la TMview (${v.search_terms.length})</label>
-      <div class="chips-grid" style="max-height:80px;">${termHtml}</div>
+      <label>Termenul original</label>
+      <div class="chips-grid" style="max-height:60px;">${termHtml([v.original || ""], 0)}</div>
+    </div>
+    <div style="margin-bottom:8px;">
+      <label>Căutări pe 4 litere (${fragments4.length})</label>
+      <div class="chips-grid" style="max-height:80px;">${termHtml(fragments4)}</div>
+    </div>
+    <div style="margin-bottom:8px;">
+      <label>Tăieri progresive stânga/dreapta până la 4 litere (${progressiveTruncations.length})</label>
+      <div class="chips-grid" style="max-height:120px;">${termHtml(progressiveTruncations)}</div>
+    </div>
+    <div style="margin-bottom:8px;">
+      <label>Wildcard și termeni exact / prefix / sufix (${wildcard.length})</label>
+      <div class="chips-grid" style="max-height:80px;">${termHtml(wildcard)}</div>
+    </div>
+    <div style="margin-bottom:8px;">
+      <label>Variante fonetice (${phonetic.length})</label>
+      <div class="chips-grid" style="max-height:80px;">${termHtml(phonetic)}</div>
+    </div>
+    <div style="margin-bottom:8px;">
+      <label>Pluraluri / stemuri (${plurals.length})</label>
+      <div class="chips-grid" style="max-height:80px;">${termHtml(plurals)}</div>
+    </div>
+    <div style="margin-bottom:8px;">
+      <label>Vocale similare (${vowels.length})</label>
+      <div class="chips-grid" style="max-height:80px;">${termHtml(vowels)}</div>
+    </div>
+    <div style="margin-bottom:8px;">
+      <label>Abrevieri (${abbreviations.length})</label>
+      <div class="chips-grid" style="max-height:80px;">${termHtml(abbreviations)}</div>
     </div>`;
 
   card.style.display = "block";
@@ -1570,17 +1700,24 @@ async function doExport(format) {
   // Filtrăm după selecție dacă există
   const allRes = lastResults.results || [];
   const allSim = lastResults.similar || [];
+  const allExpiredRes = lastResults.expired_conflicts || [];
+  const allExpiredSim = lastResults.expired_similar || [];
   let exportResults, exportSimilar;
+  let exportExpiredConflicts, exportExpiredSimilar;
 
   if (exportSel.size > 0) {
     exportResults = allRes.filter(tm => exportSel.has(tm.ST13 || ""));
     exportSimilar = allSim.filter(tm => exportSel.has(tm.ST13 || ""));
+    exportExpiredConflicts = allExpiredRes.filter(tm => exportSel.has(tm.ST13 || ""));
+    exportExpiredSimilar = allExpiredSim.filter(tm => exportSel.has(tm.ST13 || ""));
     // Dacă nimic nu se potrivește (ST13 gol), fallback la toate selectate
-    if (exportResults.length === 0 && exportSimilar.length === 0) {
+    if (exportResults.length === 0 && exportSimilar.length === 0 && exportExpiredConflicts.length === 0 && exportExpiredSimilar.length === 0) {
       exportResults = allRes; exportSimilar = allSim;
+      exportExpiredConflicts = allExpiredRes; exportExpiredSimilar = allExpiredSim;
     }
   } else {
     exportResults = allRes; exportSimilar = allSim;
+    exportExpiredConflicts = allExpiredRes; exportExpiredSimilar = allExpiredSim;
   }
 
   try {
@@ -1593,6 +1730,8 @@ async function doExport(format) {
         offices:        lastResults.offices,
         results:        exportResults,
         similar:        exportSimilar,
+        expired_conflicts: exportExpiredConflicts,
+        expired_similar:   exportExpiredSimilar,
         format,
       }),
     });

@@ -39,7 +39,20 @@ def build_input_list(name: str) -> List[str]:
     add(f"*{upper}")
     add(f"{upper}*")
 
-    # 3. Variante cu ? la fiecare poziție
+    # 3. Căutări pe fragmente de 4 caractere: început, sfârșit, mijloc
+    if n >= 4:
+        add(f"*{upper[:4]}*")
+        add(f"*{upper[-4:]}*")
+        mid = max(0, (n - 4) // 2)
+        add(f"*{upper[mid:mid + 4]}*")
+
+    # 4. Excluderi progresive din început și sfârșit până rămân 4 litere
+    if n > 4:
+        for cut in range(1, n - 3):
+            add(f"*{upper[cut:]}*")
+            add(f"*{upper[:-cut]}*")
+
+    # 5. Variante cu ? la fiecare poziție
     for i in range(n):
         prefix = upper[:i]
         suffix_full = upper[i:]        # inclusiv char[i]
@@ -55,7 +68,7 @@ def build_input_list(name: str) -> List[str]:
             # Ultima literă — și variantă cu suffix wildcard
             add(f"*{prefix}?*")
 
-    # 4. Subșiruri finale (ultimele 2 litere eliminate, prima literă eliminată)
+    # 6. Subșiruri finale (ultimele 2 litere eliminate, prima literă eliminată)
     if n >= 4:
         add(f"*{upper[:-1]}*")    # fără ultima literă
         add(f"*{upper[1:]}*")     # fără prima literă
@@ -304,12 +317,30 @@ def generate_all_variants(name: str) -> dict:
     vowels        = build_vowel_variants(name)
     abbreviations = build_abbreviation_variants(name)
 
+    upper = name.upper().strip()
+    n = len(upper)
+    fragment_variants = []
+    progressive_truncations = []
+    if n >= 4:
+        mid = max(0, (n - 4) // 2)
+        fragment_variants = [
+            f"*{upper[:4]}*",
+            f"*{upper[-4:]}*",
+            f"*{upper[mid:mid + 4]}*",
+        ]
+    if n > 4:
+        for cut in range(1, n - 3):
+            progressive_truncations.append(f"*{upper[cut:]}*")
+            progressive_truncations.append(f"*{upper[:-cut]}*")
+
     all_extra = phonetic + plurals + vowels + abbreviations
 
     return {
         "original":      name.upper().strip(),
         "search_terms":  inputs,
         "wildcard":      [t for t in inputs if "*" in t or "?" in t],
+        "fragments4":    fragment_variants,
+        "progressive_truncations": progressive_truncations,
         "phonetic":      phonetic,
         "plurals":       plurals,
         "vowels":        vowels,

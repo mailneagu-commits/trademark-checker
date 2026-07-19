@@ -52,7 +52,7 @@ class SearchRequest(BaseModel):
     trademark_name: str
     nice_classes: List[str]
     offices: List[str]
-    include_expired: bool = False
+    include_expired: bool = True
 
 
 class CurlRequest(BaseModel):
@@ -65,6 +65,8 @@ class ExportRequest(BaseModel):
     offices: List[str]
     results: List[dict]
     similar: List[dict] = []
+    expired_conflicts: List[dict] = []
+    expired_similar: List[dict] = []
     format: str  # "excel", "pdf" or "word"
 
 
@@ -182,6 +184,8 @@ async def check_trademark(request: SearchRequest):
         name,
         request.nice_classes,
         request.offices,
+        extra_terms=variants.get("search_terms", []),
+        include_expired=request.include_expired,
     )
     analysis = similarity_agent.analyze(name, trademarks, request.nice_classes)
 
@@ -210,18 +214,20 @@ async def export_report(request: ExportRequest):
     fmt     = request.format.lower()
 
     similar = request.similar
+    expired_conflicts = request.expired_conflicts
+    expired_similar = request.expired_similar
 
     try:
         if fmt == "excel":
-            data = build_excel(name, classes, offices, results, similar)
+            data = build_excel(name, classes, offices, results, similar, expired_conflicts, expired_similar)
             filename = f"raport_marca_{name.replace(' ', '_')}.xlsx"
             media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         elif fmt == "pdf":
-            data = build_pdf(name, classes, offices, results, similar)
+            data = build_pdf(name, classes, offices, results, similar, expired_conflicts, expired_similar)
             filename = f"raport_marca_{name.replace(' ', '_')}.pdf"
             media_type = "application/pdf"
         elif fmt == "word":
-            data = build_word(name, classes, offices, results, similar)
+            data = build_word(name, classes, offices, results, similar, expired_conflicts, expired_similar)
             filename = f"raport_marca_{name.replace(' ', '_')}.docx"
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:
