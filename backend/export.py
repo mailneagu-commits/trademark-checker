@@ -149,6 +149,13 @@ def _fix_table_layout(table, col_widths_cm: List[float]):
     tblW.set(qn("w:type"), "dxa")
     tblPr.append(tblW)
 
+    # Center table horizontally on the page
+    for el in tblPr.findall(qn("w:jc")):
+        tblPr.remove(el)
+    jc = OxmlElement("w:jc")
+    jc.set(qn("w:val"), "center")
+    tblPr.append(jc)
+
     # ── tblGrid ────────────────────────────────────────────────────────
     old_grid = tbl.find(qn("w:tblGrid"))
     if old_grid is not None:
