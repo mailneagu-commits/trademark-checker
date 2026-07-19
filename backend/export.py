@@ -1527,9 +1527,9 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
     ]
     active_extra = [(l, v) for l, v in extra_w if v]
     if active_extra:
-        det_col = (page_w_cm - 0.1) / 2
+        det_col = page_w_cm / 2
         det_tbl = doc.add_table(rows=1, cols=2); det_tbl.style = "Table Grid"; det_tbl.autofit = False
-        fit_det = _scale_widths([det_col, det_col], page_w_cm * 0.975)
+        fit_det = _scale_widths([det_col, det_col], page_w_cm)
         det_tbl.cell(0,0).width = Cm(fit_det[0]); det_tbl.cell(0,1).width = Cm(fit_det[1])
         _set_cell_bg(det_tbl.cell(0,0), "FAFBFD"); _set_cell_bg(det_tbl.cell(0,1), "FAFBFD")
         lc2 = det_tbl.cell(0,0); rc2 = det_tbl.cell(0,1)
@@ -1567,7 +1567,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
         for nc in sorted(all_cls_w.keys(), key=lambda x: int(x)):
             info = all_cls_w[nc]
             gs_t = doc.add_table(rows=1, cols=1); gs_t.style = "Table Grid"; gs_t.autofit = False
-            gs_c2 = gs_t.cell(0,0); gs_c2.width = Cm(page_w_cm * 0.975)
+            gs_c2 = gs_t.cell(0,0); gs_c2.width = Cm(page_w_cm)
             _set_cell_bg(gs_c2, "FFFFFF"); _set_left_accent(gs_c2, "0F3460")
 
             _p(gs_c2, f"Clasa {nc}", bold=True, size=8.5, color=BLUE, first=True)
@@ -1581,7 +1581,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
                 rd2.font.size = Pt(7); rd2.font.name = "Arial"; rd2.italic = True
                 rd2.font.color.rgb = RGBColor(0xAA,0xAA,0xAA)
             _set_borders(gs_t)
-            _fix_table_layout(gs_t, [page_w_cm * 0.975])
+            _fix_table_layout(gs_t, [page_w_cm])
 
             sp2 = doc.add_paragraph()
             sp2.paragraph_format.space_before = Pt(0); sp2.paragraph_format.space_after = Pt(3)
@@ -1699,7 +1699,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
 
     badge_tbl = doc.add_table(rows=2, cols=3)
     badge_tbl.style = "Table Grid"; badge_tbl.autofit = False
-    CW = [Cm(w) for w in _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM * 0.975)]
+    CW = [Cm(w) for w in _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM)]
     for ci in range(3):
         badge_tbl.cell(0, ci).width = CW[ci]
         badge_tbl.cell(1, ci).width = CW[ci]
@@ -1721,14 +1721,14 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         expired_badge.style = "Table Grid"
         expired_badge.autofit = False
         expired_cell = expired_badge.cell(0, 0)
-        expired_cell.width = Cm(PAGE_W_CM * 0.975)
+        expired_cell.width = Cm(PAGE_W_CM)
         _set_cell_bg(expired_cell, "F4ECF7")
         p_exp_badge = expired_cell.paragraphs[0]
         r_exp_badge = p_exp_badge.add_run(f"Mărci expirate / anulate / respinse: {expired_count}")
         r_exp_badge.bold = True; r_exp_badge.font.size = Pt(9); r_exp_badge.font.name = "Arial"; r_exp_badge.font.color.rgb = RGBColor(0x6C,0x34,0x83)
         _remove_borders(expired_badge)
-        _fix_table_layout(expired_badge, [PAGE_W_CM * 0.975])
-    badge_cw = _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM * 0.975)
+        _fix_table_layout(expired_badge, [PAGE_W_CM])
+    badge_cw = _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM)
     _remove_borders(badge_tbl)
     _fix_table_layout(badge_tbl, badge_cw)
     doc.add_paragraph()
@@ -1752,7 +1752,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         geo_max = geo_sorted[0][1] if geo_sorted else 1
         geo_tbl_w = doc.add_table(rows=1, cols=3)
         geo_tbl_w.style = "Table Grid"; geo_tbl_w.autofit = False
-        geo_fit = _scale_widths([2.0, PAGE_W_CM - 5.5, 3.5], PAGE_W_CM * 0.975)
+        geo_fit = _scale_widths([2.0, PAGE_W_CM - 5.5, 3.5], PAGE_W_CM)
         geo_tbl_w.cell(0,0).width = Cm(geo_fit[0])
         geo_tbl_w.cell(0,1).width = Cm(geo_fit[1])
         geo_tbl_w.cell(0,2).width = Cm(geo_fit[2])
@@ -1832,7 +1832,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         tbl = doc.add_table(rows=1, cols=3)
         tbl.style = "Table Grid"
         tbl.autofit = False
-        row_cw = _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM * 0.975)
+        row_cw = _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM)
         for c_i, (label, value, bg_hex, fg_hex) in enumerate(items):
             cell = tbl.cell(0, c_i)
             _set_cell_bg(cell, bg_hex)
