@@ -117,6 +117,64 @@ def _scale_widths(widths: List[float], target_total: float) -> List[float]:
     return [w * factor for w in widths]
 
 
+def _fix_table_layout(table, col_widths_cm: List[float]):
+    """Force exact fixed-width layout on a Word table via low-level XML.
+
+    python-docx's cell.width alone is insufficient — Word ignores it without
+    w:tblLayout[fixed], w:tblW and w:tblGrid being set at the table level.
+    """
+    CM_TO_TWIPS = 567  # 1 cm = 567 twips (EMU/20)
+
+    tbl = table._tbl
+
+    # ── tblPr ──────────────────────────────────────────────────────────
+    tblPr = tbl.find(qn("w:tblPr"))
+    if tblPr is None:
+        tblPr = OxmlElement("w:tblPr")
+        tbl.insert(0, tblPr)
+
+    # Fixed layout prevents Word from auto-resizing columns
+    for el in tblPr.findall(qn("w:tblLayout")):
+        tblPr.remove(el)
+    layout = OxmlElement("w:tblLayout")
+    layout.set(qn("w:type"), "fixed")
+    tblPr.append(layout)
+
+    # Total table width
+    total_twips = int(sum(col_widths_cm) * CM_TO_TWIPS)
+    for el in tblPr.findall(qn("w:tblW")):
+        tblPr.remove(el)
+    tblW = OxmlElement("w:tblW")
+    tblW.set(qn("w:w"), str(total_twips))
+    tblW.set(qn("w:type"), "dxa")
+    tblPr.append(tblW)
+
+    # ── tblGrid ────────────────────────────────────────────────────────
+    old_grid = tbl.find(qn("w:tblGrid"))
+    if old_grid is not None:
+        tbl.remove(old_grid)
+    tblGrid = OxmlElement("w:tblGrid")
+    for w_cm in col_widths_cm:
+        gc = OxmlElement("w:gridCol")
+        gc.set(qn("w:w"), str(int(w_cm * CM_TO_TWIPS)))
+        tblGrid.append(gc)
+    tbl.insert(list(tbl).index(tblPr) + 1, tblGrid)
+
+    # ── Cell widths ────────────────────────────────────────────────────
+    for row in table.rows:
+        for j, cell in enumerate(row.cells):
+            if j >= len(col_widths_cm):
+                break
+            tc = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            for el in tcPr.findall(qn("w:tcW")):
+                tcPr.remove(el)
+            tcW = OxmlElement("w:tcW")
+            tcW.set(qn("w:w"), str(int(col_widths_cm[j] * CM_TO_TWIPS)))
+            tcW.set(qn("w:type"), "dxa")
+            tcPr.append(tcW)
+
+
 def _configure_excel_page(ws):
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
@@ -1428,6 +1486,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
         r = p_sc2.add_run(lbl_s + "\n"); r.font.size = Pt(7); r.font.name = "Arial"; r.font.color.rgb = col_s
 
     _set_borders(card)
+    _fix_table_layout(card, [STRIP_W, LOGO_W, INFO_W, SCORE_W])
 
     # ── Detalii suplimentare (2 coloane egale) ───────────────────────────
     extra_w = [
@@ -1475,6 +1534,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
             rl3 = pd.add_run(f"{lbl_d}: "); rl3.bold = True; rl3.font.size = Pt(7); rl3.font.name = "Arial"; rl3.font.color.rgb = LGRAY
             rv3 = pd.add_run(str(val_d));   rv3.font.size = Pt(7.5); rv3.font.name = "Arial"
         _set_borders(det_tbl)
+        _fix_table_layout(det_tbl, fit_det)
 
     # ── G&S: blocuri cu chenar sortate crescator (fara repetare short) ───
     all_cls_w: dict = {}
@@ -1514,6 +1574,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
                 rd2.font.size = Pt(7); rd2.font.name = "Arial"; rd2.italic = True
                 rd2.font.color.rgb = RGBColor(0xAA,0xAA,0xAA)
             _set_borders(gs_t)
+            _fix_table_layout(gs_t, [page_w_cm * 0.975])
 
             sp2 = doc.add_paragraph()
             sp2.paragraph_format.space_before = Pt(0); sp2.paragraph_format.space_after = Pt(3)
@@ -1659,7 +1720,10 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         r_exp_badge = p_exp_badge.add_run(f"Mărci expirate / anulate / respinse: {expired_count}")
         r_exp_badge.bold = True; r_exp_badge.font.size = Pt(9); r_exp_badge.font.name = "Arial"; r_exp_badge.font.color.rgb = RGBColor(0x6C,0x34,0x83)
         _remove_borders(expired_badge)
+        _fix_table_layout(expired_badge, [PAGE_W_CM * 0.975])
+    badge_cw = _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM * 0.975)
     _remove_borders(badge_tbl)
+    _fix_table_layout(badge_tbl, badge_cw)
     doc.add_paragraph()
 
     # Distributie pe oficii
@@ -1706,6 +1770,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
             r2.bold = True; r2.font.size = Pt(10); r2.font.name = "Arial"; r2.font.color.rgb = fg_w
             row_w.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         _remove_borders(geo_tbl_w)
+        _fix_table_layout(geo_tbl_w, geo_fit)
         doc.add_paragraph()
 
     doc.add_page_break()
@@ -1760,10 +1825,9 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         tbl = doc.add_table(rows=1, cols=3)
         tbl.style = "Table Grid"
         tbl.autofit = False
-        col_w = [Cm(w) for w in _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM * 0.975)]
+        row_cw = _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM * 0.975)
         for c_i, (label, value, bg_hex, fg_hex) in enumerate(items):
             cell = tbl.cell(0, c_i)
-            cell.width = col_w[c_i]
             _set_cell_bg(cell, bg_hex)
             p = cell.paragraphs[0]
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1773,6 +1837,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
             run.font.size = Pt(9 if c_i != 1 else 10)
             run.font.color.rgb = RGBColor(int(fg_hex[0:2],16), int(fg_hex[2:4],16), int(fg_hex[4:6],16))
         _remove_borders(tbl)
+        _fix_table_layout(tbl, row_cw)
         doc.add_paragraph()
 
     _badge_row([
