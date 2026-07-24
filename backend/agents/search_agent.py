@@ -8,20 +8,28 @@ from datetime import date
 import requests as _std_requests
 from typing import List, Dict, Tuple, Optional
 
-# ScraperAPI direct API (alternativă la proxy mode)
+# ScraperAPI proxy mode — suportă POST requests prin proxy HTTP
 _SCRAPERAPI_KEY = os.environ.get("SCRAPERAPI_KEY", "")
-_SCRAPERAPI_URL = "https://api.scraperapi.com"
+_SCRAPERAPI_URL = "https://api.scraperapi.com"  # kept for reference
+# Dacă SCRAPERAPI_KEY e setat, construiește proxy URL automat
+_SCRAPERAPI_PROXY = (
+    f"http://scraperapi:{_SCRAPERAPI_KEY}@proxy-server.scraperapi.com:8001"
+    if _SCRAPERAPI_KEY else ""
+)
 
 # Proxy rotation: citește PROXY_URL (singur) sau PROXY_URLS (listă separată cu virgulă)
+# ScraperAPI proxy are prioritate dacă nu există un alt proxy explicit configurat
 _proxy_list_raw = os.environ.get("PROXY_URLS", "") or os.environ.get("PROXY_URL", "")
 _PROXY_LIST: List[str] = [p.strip() for p in _proxy_list_raw.split(",") if p.strip()]
+if not _PROXY_LIST and _SCRAPERAPI_PROXY:
+    _PROXY_LIST = [_SCRAPERAPI_PROXY]
 _PROXY_URL  = _PROXY_LIST[0] if _PROXY_LIST else ""
 _PROXIES    = {"https": _PROXY_URL, "http": _PROXY_URL} if _PROXY_URL else None
 if _SCRAPERAPI_KEY:
-    print(f"[SCRAPERAPI] Direct API configured: {_SCRAPERAPI_KEY[:8]}...")
-if _PROXY_LIST:
+    print(f"[SCRAPERAPI] Proxy mode configured: scraperapi:{_SCRAPERAPI_KEY[:8]}...@proxy-server.scraperapi.com:8001")
+if _PROXY_LIST and not _SCRAPERAPI_KEY:
     print(f"[PROXY] {len(_PROXY_LIST)} proxy(s) configured. First: {_PROXY_URL[:40]}...")
-else:
+elif not _PROXY_LIST:
     print("[PROXY] No proxy configured — direct connection")
 
 
@@ -502,48 +510,7 @@ def _demo_marks(name: str, nice_classes: List[str], offices: List[str]) -> List[
     return results
 
 
-def _search_via_scraperapi(name: str, nice_classes: List[str], offices: List[str], extra_terms: Optional[List[str]] = None) -> List[Dict]:
-    """Caută mărci via ScraperAPI direct API — ocolește Imperva fără proxy mode."""
-    if not _SCRAPERAPI_KEY:
-        return []
-    from agents.variant_agent import build_offices_and_territories
-    off, ter = build_offices_and_territories(offices)
-    upper = name.upper()
-    seen: set = set()
-    all_marks: List[Dict] = []
 
-    search_terms = [("Z", upper), ("C", f"*{upper}*")]
-    search_terms.extend(("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper)
-
-    for crit, term in search_terms:
-        payload = {
-            "page": "1", "pageSize": "30", "criteria": crit,
-            "basicSearch": term, "newPage": True, "fields": FIELDS,
-        }
-        if off: payload["offices"] = off
-        if ter: payload["territories"] = ter[:7]
-        if nice_classes:
-            payload["niceClass"] = [int(c) if c.isdigit() else c for c in nice_classes]
-        try:
-            r = _std_requests.post(
-                _SCRAPERAPI_URL,
-                params={"api_key": _SCRAPERAPI_KEY, "url": TMVIEW_URL},
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=30,
-            )
-            print(f"[SCRAPERAPI] {r.status_code} crit={crit}")
-            if r.status_code == 200:
-                for m in r.json().get("tradeMarks", []):
-                    st13 = m.get("ST13", "")
-                    if st13 and st13 not in seen:
-                        seen.add(st13)
-                        all_marks.append(m)
-        except Exception as e:
-            print(f"[SCRAPERAPI] error: {e}")
-
-    print(f"[SCRAPERAPI] found {len(all_marks)} marks")
-    return all_marks
 
 
 async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices: List[str]) -> List[Dict]:
@@ -631,15 +598,7 @@ class SearchAgent:
 
             return merged
 
-        # Încearcă ScraperAPI direct API dacă e configurat
-        if _SCRAPERAPI_KEY:
-            loop = asyncio.get_event_loop()
-            marks = await loop.run_in_executor(None, _search_via_scraperapi, name, nice_classes, offices, extra_terms)
-            if marks is not None:
-                if not include_expired:
-                    marks = [m for m in marks if not _is_expired_mark(m)]
-                return marks, "live:tmview"
-
+        # _PROXY_LIST include ScraperAPI proxy dac\u0103 SCRAPERAPI_KEY e setat
         candidates = _PROXY_LIST + [""]
         for proxy_url in candidates:
             label = proxy_url[:30] if proxy_url else "direct"
