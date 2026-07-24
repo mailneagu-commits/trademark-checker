@@ -382,7 +382,7 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
 async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str], proxy_url: str = _PROXY_URL, include_expired: bool = True, extra_terms: Optional[List[str]] = None, wildcard_patterns: Optional[List[str]] = None) -> List[Dict]:
     if _cb_is_open():
         print("[CIRCUIT BREAKER] Circuit deschis — TMview requests oprite")
-        return []
+        return None  # Return None to signal unavailability (not empty list)
 
     offices, territories = build_offices_and_territories(user_offices)
 
@@ -648,7 +648,7 @@ class SearchAgent:
                     _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url, include_expired=include_expired, extra_terms=extra_terms, wildcard_patterns=wildcard_patterns),
                     timeout=75.0 if proxy_url else 45.0
                 )
-                if marks is not None:
+                if marks is not None and len(marks) > 0:  # Only success if we have actual results
                     print(f"[TMVIEW] success via {label}, {len(marks)} marks")
                     source = "live:tmview"
                     merged_marks = marks
