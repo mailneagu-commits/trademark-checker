@@ -64,6 +64,21 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 
+def _translate_to_ro(text: str, _cache: dict = {}) -> str:
+    """Traduce text în română via Google Translate. Fallback la original dacă eșuează."""
+    if not text or not text.strip():
+        return text
+    if text in _cache:
+        return _cache[text]
+    try:
+        from deep_translator import GoogleTranslator
+        result = GoogleTranslator(source="auto", target="ro").translate(text[:4999])
+        _cache[text] = result or text
+    except Exception:
+        _cache[text] = text
+    return _cache[text]
+
+
 # ── Risk thresholds ────────────────────────────────────────────────────
 # VERY HIGH ≥ 91%  →  roșu
 # HIGH      76–90% →  portocaliu
@@ -182,6 +197,42 @@ def _fix_table_layout(table, col_widths_cm: List[float]):
             tcPr.append(tcW)
 
 
+def _clear_table_borders(table):
+    tbl = table._tbl
+    tblPr = tbl.find(qn("w:tblPr"))
+    if tblPr is None:
+        tblPr = OxmlElement("w:tblPr"); tbl.insert(0, tblPr)
+    for el in tblPr.findall(qn("w:tblBorders")):
+        tblPr.remove(el)
+    tblBorders = OxmlElement("w:tblBorders")
+    for name in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        b = OxmlElement(f"w:{name}")
+        b.set(qn("w:val"), "none"); b.set(qn("w:sz"), "0")
+        b.set(qn("w:space"), "0"); b.set(qn("w:color"), "auto")
+        tblBorders.append(b)
+    tblPr.append(tblBorders)
+
+
+def _set_cell_valign(cell, val="center"):
+    tcPr = cell._tc.get_or_add_tcPr()
+    for el in tcPr.findall(qn("w:vAlign")):
+        tcPr.remove(el)
+    v = OxmlElement("w:vAlign"); v.set(qn("w:val"), val)
+    tcPr.append(v)
+
+
+def _zero_cell_margins(cell):
+    tcPr = cell._tc.get_or_add_tcPr()
+    for el in tcPr.findall(qn("w:tcMar")):
+        tcPr.remove(el)
+    tcMar = OxmlElement("w:tcMar")
+    for side in ("top", "left", "bottom", "right"):
+        m = OxmlElement(f"w:{side}")
+        m.set(qn("w:w"), "0"); m.set(qn("w:type"), "dxa")
+        tcMar.append(m)
+    tcPr.append(tcMar)
+
+
 def _configure_excel_page(ws):
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
@@ -205,23 +256,61 @@ _IMG_HEADERS = {
 }
 
 
-def _fetch_image_bytes(url: str, size=(60, 60)) -> Optional[bytes]:
+def _fetch_image_bytes(url: str, size=(60, 60), _cache: dict = {}) -> Optional[bytes]:
     if not url:
+        print(f"[IMG] No URL provided")
         return None
-    # URL-uri relative de la TMview → prefix cu domeniul
     if url.startswith("/"):
         url = _TMDN_BASE + url
+    key = (url, size)
+    if key in _cache:
+        result = _cache[key]
+        if result:
+            print(f"[IMG] Cache hit: {url[:60]}... → {len(result)} bytes")
+        else:
+            print(f"[IMG] Cache hit (failed): {url[:60]}...")
+        return result
     try:
-        r = requests.get(url, timeout=10, headers=_IMG_HEADERS)
-        if r.status_code == 200 and len(r.content) > 100:
+        print(f"[IMG] Fetching: {url[:70]}...")
+        
+        # Try using browser session's cookies if available
+        from agents.search_agent import _browser_session, has_browser_session
+        hdrs = dict(_IMG_HEADERS)
+        cookies_dict = None
+        
+        if has_browser_session():
+            cookies = _browser_session.get("cookies", {})
+            if cookies:
+                hdrs["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
+                cookies_dict = cookies
+                print(f"[IMG] Using browser session cookies")
+        
+        # Try with requests first
+        r = requests.get(url, timeout=8, headers=hdrs, cookies=cookies_dict)
+        ct = r.headers.get("Content-Type", "")
+        print(f"[IMG] Response: status={r.status_code}, type={ct}, size={len(r.content)}")
+        
+        if r.status_code == 200 and "image" in ct and len(r.content) > 100:
             img = PILImage.open(io.BytesIO(r.content)).convert("RGBA")
             img.thumbnail(size, PILImage.LANCZOS)
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             buf.seek(0)
-            return buf.read()
-    except Exception:
-        pass
+            result = buf.read()
+            _cache[key] = result
+            print(f"[IMG] ✅ Success: {len(result)} bytes")
+            return result
+        else:
+            print(f"[IMG] ⚠️  Bad status/type or too small (may be blocked)")
+            # Try alternative: maybe it's a relative URL that needs different domain
+            if url.startswith("https://www.tmdn.org") and r.status_code == 200 and r.text and len(r.text) < 500:
+                # Looks like an error page, might need different approach
+                print(f"[IMG] Content length: {len(r.text)}, first 100 chars: {r.text[:100]}")
+                
+    except Exception as e:
+        print(f"[IMG] ❌ Exception: {type(e).__name__}: {e}")
+    
+    _cache[key] = None
     return None
 
 
@@ -403,15 +492,20 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         ws.row_dimensions[row_idx].height = 52
 
         # Imagine logo (înlocuiește textul "TM" dacă există)
-        img_bytes = _fetch_image_bytes(tm.get("imageUrl"), size=(48, 48))
+        img_url = tm.get("imageUrl")
+        print(f"[EXCEL] Mark: {tm.get('tmName')} | imageUrl: {img_url}")
+        img_bytes = _fetch_image_bytes(img_url, size=(48, 48))
         if img_bytes:
             try:
+                print(f"[EXCEL] ✅ Inserted logo for {tm.get('tmName')}")
                 xl_img = XLImage(io.BytesIO(img_bytes))
                 xl_img.width = 42; xl_img.height = 42
                 ws.add_image(xl_img, f"D{row_idx}")
                 ws.cell(row=row_idx, column=4).value = ""  # sterge textul TM
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[EXCEL] ❌ Failed to insert image: {e}")
+        else:
+            print(f"[EXCEL] ℹ️  No image bytes for {tm.get('tmName')}")
 
     # ── Nota subsol ────────────────────────────────────────────────────
     fn_row = len(all_results) + 6
@@ -473,10 +567,10 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         key=lambda x: x.get("similarity", {}).get("combined_score", 0),
         reverse=True
     )
-    very_high = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "very_high"]
-    high      = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "high"]
-    medium    = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "medium"]
-    low       = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "low"]
+    very_high = [r for r in all_results if r.get("risk_level") == "very_high"]
+    high      = [r for r in all_results if r.get("risk_level") == "high"]
+    medium    = [r for r in all_results if r.get("risk_level") == "medium"]
+    low       = [r for r in all_results if r.get("risk_level") == "low"]
 
     def fmt_date(d):
         if not d: return "—"
@@ -981,7 +1075,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         story.append(KeepTogether([card_tbl] + detail_elements))
         if gs_blocks:
             story.append(Paragraph(
-                '<font color="#0F3460"><b>Clasificare integrală mărfuri / servicii (511):</b></font>',
+                '<font color="#0F3460"><b>CLASE NISA PRODUSE/SERVICII (511):</b></font>',
                 sty(f"gsh{i}", fontSize=9, spaceAfter=5, spaceBefore=7)
             ))
             for el in gs_blocks:
@@ -1103,7 +1197,7 @@ def _extract_gs_lang(goods_list: list, lang: str) -> Dict[str, str]:
     return {}
 
 
-def _set_borders(table, color_hex="D0D7E3"):
+def _set_borders(table, color_hex="D0D7E3", sz="4"):
     for row in table.rows:
         for cell in row.cells:
             tc   = cell._tc
@@ -1112,7 +1206,7 @@ def _set_borders(table, color_hex="D0D7E3"):
             for side in ("top","left","bottom","right","insideH","insideV"):
                 b = OxmlElement(f"w:{side}")
                 b.set(qn("w:val"),   "single")
-                b.set(qn("w:sz"),    "4")
+                b.set(qn("w:sz"),    str(sz))
                 b.set(qn("w:space"), "0")
                 b.set(qn("w:color"), color_hex)
                 tcBorders.append(b)
@@ -1136,6 +1230,21 @@ def _remove_borders(table):
             tcPr.append(tcBorders)
 
 
+def _keep_next(paragraph):
+    """Keep paragraph on same page as next block element (paragraph or table)."""
+    pPr = paragraph._p.get_or_add_pPr()
+    pPr.append(OxmlElement("w:keepNext"))
+
+
+def _cant_split(table):
+    """Prevent each row from being split across a page boundary."""
+    for row in table.rows:
+        trPr = row._tr.get_or_add_trPr()
+        cs = OxmlElement("w:cantSplit")
+        cs.set(qn("w:val"), "1")
+        trPr.append(cs)
+
+
 def _set_row_bg(row, color_hex: str):
     """Set background color for all cells in a row."""
     for cell in row.cells:
@@ -1156,39 +1265,123 @@ def _add_section_title(doc, text: str):
     return p
 
 
-def _add_protectmark_header(doc: Document):
-    for sec in doc.sections:
-        header = sec.header
-        header.is_linked_to_previous = False
-        for para in list(header.paragraphs):
-            p = para._element
-            p.getparent().remove(p)
+def _add_protectmark_header(doc: Document, query: str = ""):
+    _LOGO_H    = Cm(2.25)
+    _LOGO_COL  = 3.5
+    _TITLE_COL = 27.1 - 2 * _LOGO_COL  # 20.1 cm
 
-        p = header.add_paragraph()
-        p.paragraph_format.space_after = Pt(0)
-        p.paragraph_format.space_before = Pt(0)
+    _fe = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
+    _pm_bytes = (open(os.path.join(_fe, "protectmark-logo.png"), "rb").read()
+                 if os.path.exists(os.path.join(_fe, "protectmark-logo.png")) else None)
+    _ps_bytes = (open(os.path.join(_fe, "ProSearch-logo.png"), "rb").read()
+                 if os.path.exists(os.path.join(_fe, "ProSearch-logo.png")) else None)
 
-        r1 = p.add_run("Protect")
-        r1.bold = True
-        r1.font.name = "Arial"
-        r1.font.size = Pt(16)
-        r1.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
+    sec = doc.sections[0]
+    sec.different_first_page_header_footer = True
 
-        r2 = p.add_run("MARK")
-        r2.bold = True
-        r2.font.name = "Arial"
-        r2.font.size = Pt(16)
-        r2.font.color.rgb = RGBColor(0xC0, 0x39, 0x2B)
+    # ── First-page header: logo table (cover page only) ──────────────────
+    fph = sec.first_page_header
+    fph.is_linked_to_previous = False
+    for el in list(fph._element):
+        fph._element.remove(el)
 
-        p2 = header.add_paragraph()
-        p2.paragraph_format.space_after = Pt(0)
-        p2.paragraph_format.space_before = Pt(0)
-        r3 = p2.add_run("Trademark Checker")
-        r3.font.name = "Arial"
-        r3.font.size = Pt(8)
-        r3.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+    table = fph.add_table(rows=1, cols=3, width=Cm(27.1))
+    _fix_table_layout(table, [_LOGO_COL, _TITLE_COL, _LOGO_COL])
+    _clear_table_borders(table)
+    row = table.rows[0]
 
-        sec.header_distance = Cm(0.6)
+    c0 = row.cells[0]; _set_cell_valign(c0, "center"); _zero_cell_margins(c0)
+    p0 = c0.paragraphs[0]; p0.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p0.paragraph_format.space_before = Pt(0); p0.paragraph_format.space_after = Pt(0)
+    if _pm_bytes:
+        p0.add_run().add_picture(io.BytesIO(_pm_bytes), height=_LOGO_H)
+    else:
+        r = p0.add_run("ProtectMARK"); r.bold = True
+        r.font.name = "Arial"; r.font.size = Pt(14)
+        r.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
+
+    c1 = row.cells[1]; _set_cell_valign(c1, "center"); _zero_cell_margins(c1)
+    # Rand 1: titlu raport
+    p1 = c1.paragraphs[0]; p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p1.paragraph_format.space_before = Pt(0); p1.paragraph_format.space_after = Pt(2)
+    r1 = p1.add_run("RAPORT VERIFICARE DISPONIBILITATE MARCA")
+    r1.bold = True; r1.font.name = "Arial"; r1.font.size = Pt(11)
+    r1.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
+    # Rand 2: denumirea marcii
+    if query:
+        p1b = c1.add_paragraph(); p1b.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p1b.paragraph_format.space_before = Pt(0); p1b.paragraph_format.space_after = Pt(0)
+        r1b = p1b.add_run(f"„{query.upper()}”")
+        r1b.bold = True; r1b.font.name = "Arial"; r1b.font.size = Pt(11)
+        r1b.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
+
+    c2 = row.cells[2]; _set_cell_valign(c2, "center"); _zero_cell_margins(c2)
+    p2 = c2.paragraphs[0]; p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p2.paragraph_format.space_before = Pt(0); p2.paragraph_format.space_after = Pt(0)
+    if _ps_bytes:
+        p2.add_run().add_picture(io.BytesIO(_ps_bytes), height=_LOGO_H)
+    else:
+        r = p2.add_run("ProSearch"); r.bold = True
+        r.font.name = "Arial"; r.font.size = Pt(14)
+        r.font.color.rgb = RGBColor(0xE6, 0x7E, 0x22)
+
+    p_end = fph.add_paragraph()
+    p_end.paragraph_format.space_before = Pt(0)
+    p_end.paragraph_format.space_after  = Pt(0)
+
+    # ── Regular header (pages 2+ of section 1): empty ────────────────────
+    reg_hdr = sec.header
+    reg_hdr.is_linked_to_previous = False
+    for el in list(reg_hdr._element):
+        reg_hdr._element.remove(el)
+    p_empty = reg_hdr.add_paragraph()
+    p_empty.paragraph_format.space_before = Pt(0)
+    p_empty.paragraph_format.space_after  = Pt(0)
+
+    # ── First-page footer: empty (no page number on cover) ───────────────
+    fpf = sec.first_page_footer
+    fpf.is_linked_to_previous = False
+    for el in list(fpf._element):
+        fpf._element.remove(el)
+    p_fpf = fpf.add_paragraph()
+    p_fpf.paragraph_format.space_before = Pt(0)
+    p_fpf.paragraph_format.space_after  = Pt(0)
+
+    sec.header_distance = Cm(0.4)
+
+
+def _add_page_number_footer(section):
+    """Add right-aligned page number (Arial 8pt gray) to the section's footer."""
+    footer = section.footer
+    footer.is_linked_to_previous = False
+    for el in list(footer._element):
+        footer._element.remove(el)
+
+    p = footer.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after  = Pt(0)
+
+    def _fr(paragraph):
+        r = paragraph.add_run()
+        r.font.name = "Arial"
+        r.font.size = Pt(8)
+        r.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+        return r
+
+    r1 = _fr(p)
+    fc1 = OxmlElement("w:fldChar"); fc1.set(qn("w:fldCharType"), "begin")
+    r1._r.append(fc1)
+
+    r2 = _fr(p)
+    instr = OxmlElement("w:instrText"); instr.set(qn("xml:space"), "preserve"); instr.text = " PAGE "
+    r2._r.append(instr)
+
+    r3 = _fr(p)
+    fc2 = OxmlElement("w:fldChar"); fc2.set(qn("w:fldCharType"), "end")
+    r3._r.append(fc2)
+
+    section.footer_distance = Cm(0.7)
 
 
 def _p(cell, text, bold=False, size=8, color=None, align=WD_ALIGN_PARAGRAPH.LEFT, first=False):
@@ -1339,6 +1532,16 @@ def _set_left_accent(cell, color_hex="0F3460"):
 
 
 def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False):
+    # Dacă ultimul element la nivel body este un paragraf, setăm keepNext pe el
+    # → cardul se mută pe pagina următoare dacă nu mai încape pe cea curentă
+    _body = doc.element.body
+    for _el in reversed(list(_body)):
+        if _el.tag == qn("w:p"):
+            _el.get_or_add_pPr().append(OxmlElement("w:keepNext"))
+            break
+        if _el.tag == qn("w:tbl"):
+            break
+
     BLUE   = RGBColor(0x0F, 0x34, 0x60)
     GRAY   = RGBColor(0x44, 0x44, 0x44)
     LGRAY  = RGBColor(0x88, 0x88, 0x88)
@@ -1423,7 +1626,9 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
     sc, lc, ic, rc = card.cell(0,0), card.cell(0,1), card.cell(0,2), card.cell(0,3)
     sc.width = Cm(STRIP_W)
     lc.width = Cm(LOGO_W)
+    _set_cell_valign(lc, "center")
     ic.width = Cm(INFO_W)
+    _set_cell_valign(ic, "center")
     rc.width = Cm(SCORE_W)
 
     # Strip (culoare risc)
@@ -1431,14 +1636,19 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
     sc.paragraphs[0].add_run("")
 
     # Logo
-    img_bytes = _fetch_image_bytes(tm.get("imageUrl"), size=(65, 65))
+    img_url = tm.get("imageUrl")
+    print(f"[CARD] Mark: {tm.get('tmName')} | imageUrl: {img_url}")
+    img_bytes = _fetch_image_bytes(img_url, size=(65, 65))
     p_logo = lc.paragraphs[0]; p_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
     if img_bytes:
         try:
+            print(f"[CARD] ✅ Inserted logo for {tm.get('tmName')}")
             p_logo.add_run().add_picture(io.BytesIO(img_bytes), width=Cm(1.9))
-        except Exception:
+        except Exception as e:
+            print(f"[CARD] ❌ Failed to insert image: {e}")
             r = p_logo.add_run("TM"); r.font.size = Pt(20); r.font.color.rgb = RGBColor(0xBB,0xBB,0xBB)
     else:
+        print(f"[CARD] ℹ️  No image bytes for {tm.get('tmName')}")
         r = p_logo.add_run("TM"); r.font.size = Pt(20); r.font.name = "Arial"
         r.font.color.rgb = RGBColor(0xBB,0xBB,0xBB)
 
@@ -1460,6 +1670,11 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
     p_own = ic.add_paragraph()
     rl = p_own.add_run("Titular: "); rl.bold = True; rl.font.size = Pt(9); rl.font.name = "Arial"
     rv = p_own.add_run(owner);       rv.font.size = Pt(9); rv.font.name = "Arial"
+
+    if reps_w:
+        p_rep = ic.add_paragraph()
+        rrl = p_rep.add_run("Reprezentant: "); rrl.bold = True; rrl.font.size = Pt(8); rrl.font.name = "Arial"; rrl.font.color.rgb = LGRAY
+        rrv = p_rep.add_run(reps_w);            rrv.font.size = Pt(8); rrv.font.name = "Arial"; rrv.font.color.rgb = GRAY
 
     _p(ic, f"Nr. marcă: {rn}   |   Nr. depozit: {an}", size=8, color=GRAY)
 
@@ -1494,10 +1709,11 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
 
     _set_borders(card)
     _fix_table_layout(card, [STRIP_W, LOGO_W, INFO_W, SCORE_W])
+    _cant_split(card)
 
     # ── Detalii suplimentare (2 coloane egale) ───────────────────────────
     extra_w = [
-        ("(540) Siglă / Reproducere", "TM" if not tm.get("imageUrl") else "Imagine atașată în card"),
+        ("(540) Siglă / Reproducere", "MARCA VERBALA" if not tm.get("imageUrl") else "Imagine atașată în card"),
         ("ST13",                 tm.get("ST13") or "—"),
         ("(210) Nr. cerere",      an),
         ("(111) Nr. înregistrare", rn),
@@ -1515,14 +1731,6 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
         ("(550) Natura mărcii",   mark_feat or "—"),
         ("(531) Coduri Vienna",   vienna or "—"),
         ("Țări desemnate (Madrid)", designated or "—"),
-        ("Scor combinat",         f"{score}%"),
-        ("Scor textual",          f"{t_score}%"),
-        ("Scor fonetic",          f"{p_score}%"),
-        ("Jaro-Winkler",          f"{sim.get('jaro_winkler',0)}%"),
-        ("Metaphone",             f"{sim.get('metaphone',0)}%"),
-        ("Soundex",               f"{sim.get('soundex_query','—')} vs {sim.get('soundex_candidate','—')}"),
-        ("Partial ratio",         f"{sim.get('partial_ratio',0)}%"),
-        ("Levenshtein",           f"{sim.get('levenshtein_distance',0)} car."),
         ("Găsit prin varianta",   found_by),
     ]
     active_extra = [(l, v) for l, v in extra_w if v]
@@ -1542,6 +1750,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
             rv3 = pd.add_run(str(val_d));   rv3.font.size = Pt(7.5); rv3.font.name = "Arial"
         _set_borders(det_tbl)
         _fix_table_layout(det_tbl, fit_det)
+        _cant_split(det_tbl)
 
     # ── G&S: blocuri cu chenar sortate crescator (fara repetare short) ───
     all_cls_w: dict = {}
@@ -1559,10 +1768,17 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
             all_cls_w[nc]["desc"] = nd.get("description") or ""
 
     if all_cls_w:
+        # Conector invizibil: leagă cardul/det_tbl de secțiunea CLASE NISA
+        _p_cn = doc.add_paragraph()
+        _p_cn.paragraph_format.space_before = Pt(0); _p_cn.paragraph_format.space_after = Pt(0)
+        _r_cn = _p_cn.add_run(""); _r_cn.font.size = Pt(1)
+        _keep_next(_p_cn)
+
         p_gs_h = doc.add_paragraph()
-        r_gs_h = p_gs_h.add_run("Clasificare integrală mărfuri / servicii (511):")
+        r_gs_h = p_gs_h.add_run("CLASE NISA PRODUSE/SERVICII (511):")
         r_gs_h.bold = True; r_gs_h.font.size = Pt(9); r_gs_h.font.name = "Arial"; r_gs_h.font.color.rgb = BLUE
         p_gs_h.paragraph_format.space_before = Pt(4); p_gs_h.paragraph_format.space_after = Pt(3)
+        _keep_next(p_gs_h)
 
         for nc in sorted(all_cls_w.keys(), key=lambda x: int(x)):
             info = all_cls_w[nc]
@@ -1572,19 +1788,22 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
 
             _p(gs_c2, f"Clasa {nc}", bold=True, size=8.5, color=BLUE, first=True)
             if info["short"]:
-                _p(gs_c2, info["short"], size=8, color=GRAY)
+                _p(gs_c2, info["short"], size=8, color=GRAY, align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             if info["text"]:
-                _p(gs_c2, info["text"], size=8, color=RGBColor(0x33,0x33,0x33))
+                _p(gs_c2, _translate_to_ro(info["text"]), size=8, color=RGBColor(0x33,0x33,0x33), align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             if info["desc"]:
                 pd2 = gs_c2.add_paragraph()
+                pd2.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 rd2 = pd2.add_run(info["desc"])
                 rd2.font.size = Pt(7); rd2.font.name = "Arial"; rd2.italic = True
                 rd2.font.color.rgb = RGBColor(0xAA,0xAA,0xAA)
             _set_borders(gs_t)
             _fix_table_layout(gs_t, [page_w_cm])
+            _cant_split(gs_t)
 
             sp2 = doc.add_paragraph()
             sp2.paragraph_format.space_before = Pt(0); sp2.paragraph_format.space_after = Pt(3)
+            _keep_next(sp2)
 
     sp = doc.add_paragraph()
     sp.paragraph_format.space_before = Pt(0); sp.paragraph_format.space_after = Pt(8)
@@ -1617,12 +1836,12 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         sec.orientation   = WD_ORIENT.LANDSCAPE
         sec.page_width    = Cm(29.7)
         sec.page_height   = Cm(21.0)
-        sec.top_margin    = MARGIN
+        sec.top_margin    = Cm(3.0)   # extra space for logo header (0.4 dist + 2.25 logo + 0.35 gap)
         sec.bottom_margin = MARGIN
         sec.left_margin   = MARGIN
         sec.right_margin  = MARGIN
 
-    _add_protectmark_header(doc)
+    _add_protectmark_header(doc, query)
 
     active_conflicts = sorted(
         results or [],
@@ -1646,10 +1865,10 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     )
     all_results = active_conflicts + active_similar + expired_conflicts + expired_similar
 
-    very_high = [r for r in active_conflicts if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "very_high"]
-    high      = [r for r in active_conflicts if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "high"]
-    medium    = [r for r in active_similar if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "medium"]
-    low       = [r for r in active_similar if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "low"]
+    very_high = [r for r in active_conflicts if r.get("risk_level") == "very_high"]
+    high      = [r for r in active_conflicts if r.get("risk_level") == "high"]
+    medium    = [r for r in active_similar  if r.get("risk_level") == "medium"]
+    low       = [r for r in active_similar  if r.get("risk_level") == "low"]
 
     active_risky_count   = len(very_high) + len(high)
     active_similar_count = len(medium) + len(low)
@@ -1665,31 +1884,74 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     for tm in all_results:
         o = tm.get("office") or tm.get("tmOffice") or "?"
         geo_counts[o] = geo_counts.get(o, 0) + 1
-    geo_sorted = sorted(geo_counts.items(), key=lambda x: x[1], reverse=True)
+    _uo_set = {o.upper() for o in offices}
+    def _geo_key(item):
+        code, cnt = item
+        c = code.upper()
+        if c in _uo_set:   tier = 0
+        elif c == "EM":    tier = 1
+        elif c == "WO":    tier = 2
+        else:              tier = 3
+        return (tier, -cnt)
+    geo_sorted = sorted(geo_counts.items(), key=_geo_key)
+
+    # Pre-traduce în paralel toate textele goodsAndServices unice → populează cache-ul
+    # _translate_to_ro înainte de a construi cardurile, ca fiecare card să citească din cache (0 latență).
+    _all_gs_texts = list({
+        gs.get("goodsAndServices", "")
+        for tm in all_results
+        for gs in tm.get("goodAndServices", [])
+        if gs.get("goodsAndServices", "").strip()
+    })
+    if _all_gs_texts:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as _pool:
+            list(_pool.map(_translate_to_ro, _all_gs_texts))
+
+    # Pre-fetch imagini în paralel → populează cache-ul _fetch_image_bytes
+    _all_img_urls = list({
+        tm.get("imageUrl")
+        for tm in all_results
+        if tm.get("imageUrl")
+    })
+    print(f"[BUILD_WORD] Found {len(_all_img_urls)} unique image URLs out of {len(all_results)} marks")
+    if _all_img_urls:
+        print(f"[BUILD_WORD] Sample URLs: {[u[:60] if u else 'None' for u in _all_img_urls[:3]]}")
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        from functools import partial as _partial
+        with _TPE(max_workers=10) as _ipool:
+            list(_ipool.map(_partial(_fetch_image_bytes, size=(65, 65)), _all_img_urls))
+        print(f"[BUILD_WORD] ✅ Image pre-fetch completed")
 
     # ─── COVER PAGE (dashboard ca in UI) ─────────────────────────────
     # Titlu aplicatie
     p_app = doc.add_paragraph()
-    p_app.style = "Subtitle"
+    p_app.style = "Normal"
+    p_app.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r_app = p_app.add_run("Verificare Disponibilitate Marca")
-    r_app.font.size = Pt(10); r_app.font.name = "Arial"; r_app.font.color.rgb = GRAY
+    r_app.font.size = Pt(11); r_app.font.name = "Arial"; r_app.font.italic = False
+    r_app.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
 
     # Numele marcii cautat
     p_q = doc.add_paragraph()
-    p_q.style = "Title"
+    p_q.style = "Normal"
+    p_q.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r_q = p_q.add_run(query)
-    r_q.bold = True; r_q.font.size = Pt(22); r_q.font.name = "Arial"
-    r_q.font.color.rgb = RGBColor(0x1a, 0x1a, 0x2e)
+    r_q.bold = True; r_q.font.size = Pt(11); r_q.font.name = "Arial"; r_q.font.italic = False
+    r_q.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
     p_q.paragraph_format.space_after = Pt(8)
 
     # Badges — tabel 3 coloane x 2 randuri
     def _wbadge(cell, label, value, bg_hex, fg_rgb, bold_val=True):
         _set_cell_bg(cell, bg_hex)
+        _set_cell_valign(cell, "center")
         p_lbl = cell.paragraphs[0]
+        p_lbl.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r_lbl = p_lbl.add_run(label)
         r_lbl.font.size = Pt(7.5); r_lbl.font.name = "Arial"
         r_lbl.font.color.rgb = fg_rgb
         p_val = cell.add_paragraph()
+        p_val.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r_val = p_val.add_run(str(value))
         r_val.bold = bold_val; r_val.font.size = Pt(14 if bold_val else 9)
         r_val.font.name = "Arial"; r_val.font.color.rgb = fg_rgb
@@ -1708,14 +1970,23 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     GREEN = RGBColor(0x1E, 0x84, 0x49)
     ORG   = RGBColor(0x85, 0x64, 0x04)
 
-    _wbadge(badge_tbl.cell(0,0), "Total găsite",                total_count,         "E8F0FB", BLUE)
+    _wbadge(badge_tbl.cell(0,0), "Total găsite",                   total_count,            "E8F0FB", BLUE)
     _wbadge(badge_tbl.cell(0,1), "Risc ridicat / f.ridicat >=75%", active_risky_count,
             "FDECEA" if not safe else "EAFAF1", RED if not safe else GREEN)
-    _wbadge(badge_tbl.cell(0,2), "Risc mediu / scăzut 35-75%",  active_similar_count,     "FFF3CD", ORG)
-    _wbadge(badge_tbl.cell(1,0), "Clase NICE",  ", ".join(nice_classes),            "E8F0FB", BLUE, bold_val=False)
-    _wbadge(badge_tbl.cell(1,1), "Teritorii selectate",         str(len(offices)), "E8F0FB", BLUE)
+    _wbadge(badge_tbl.cell(0,2), "Risc mediu / scăzut 35-75%",     active_similar_count,   "FFF3CD", ORG)
+    _wbadge(badge_tbl.cell(1,0), "Clase NICE",  ", ".join(nice_classes),                   "E8F0FB", BLUE, bold_val=False)
+    _wbadge(badge_tbl.cell(1,1), "Teritorii selectate",            str(len(offices)),      "E8F0FB", BLUE)
     _wbadge(badge_tbl.cell(1,2), "Data raport",
-            date.today().strftime("%d.%m.%Y"),                                      "F2F3F4", GRAY, bold_val=False)
+            date.today().strftime("%d.%m.%Y"),                                             "F2F3F4", GRAY, bold_val=False)
+
+    # Înălțime fixă rânduri badge — 1.5 cm pentru un aspect curat
+    for row in badge_tbl.rows:
+        row.height = Cm(1.5)
+
+    badge_cw = _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM)
+    _set_borders(badge_tbl, sz="2")
+    _fix_table_layout(badge_tbl, badge_cw)
+
     if expired_count:
         expired_badge = doc.add_table(rows=1, cols=1)
         expired_badge.style = "Table Grid"
@@ -1723,14 +1994,15 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         expired_cell = expired_badge.cell(0, 0)
         expired_cell.width = Cm(PAGE_W_CM)
         _set_cell_bg(expired_cell, "F4ECF7")
+        _set_cell_valign(expired_cell, "center")
+        expired_badge.rows[0].height = Cm(0.9)
         p_exp_badge = expired_cell.paragraphs[0]
+        p_exp_badge.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r_exp_badge = p_exp_badge.add_run(f"Mărci expirate / anulate / respinse: {expired_count}")
-        r_exp_badge.bold = True; r_exp_badge.font.size = Pt(9); r_exp_badge.font.name = "Arial"; r_exp_badge.font.color.rgb = RGBColor(0x6C,0x34,0x83)
-        _remove_borders(expired_badge)
+        r_exp_badge.bold = True; r_exp_badge.font.size = Pt(9); r_exp_badge.font.name = "Arial"
+        r_exp_badge.font.color.rgb = RGBColor(0x6C, 0x34, 0x83)
+        _set_borders(expired_badge, sz="2")
         _fix_table_layout(expired_badge, [PAGE_W_CM])
-    badge_cw = _scale_widths([PAGE_W_CM / 3] * 3, PAGE_W_CM)
-    _remove_borders(badge_tbl)
-    _fix_table_layout(badge_tbl, badge_cw)
     doc.add_paragraph()
 
     # Distributie pe oficii
@@ -1756,31 +2028,66 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         geo_tbl_w.cell(0,0).width = Cm(geo_fit[0])
         geo_tbl_w.cell(0,1).width = Cm(geo_fit[1])
         geo_tbl_w.cell(0,2).width = Cm(geo_fit[2])
-        for ci, hdr in enumerate(["Cod", "Oficiu", "Marci"]):
+        geo_tbl_w.rows[0].height = Cm(0.9)
+        for ci, hdr in enumerate(["Cod", "Oficiu", "Mărci"]):
             c = geo_tbl_w.cell(0, ci)
             _set_cell_bg(c, "0F3460")
-            r = c.paragraphs[0].add_run(hdr)
+            _set_cell_valign(c, "center")
+            p = c.paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = p.add_run(hdr)
             r.bold = True; r.font.size = Pt(8); r.font.name = "Arial"
             r.font.color.rgb = RGBColor(255, 255, 255)
 
         for ri, (code, cnt) in enumerate(geo_sorted, 1):
             row_w = geo_tbl_w.add_row()
-            row_w.height = Cm(0.55)
+            row_w.height = Cm(0.8)
             is_max = cnt == geo_max
             fg_w = RED if is_max else BLUE
-            _set_cell_bg(row_w.cells[0], "FDECEA" if is_max else "F7F9FC")
-            r0 = row_w.cells[0].paragraphs[0].add_run(code)
+            c0 = row_w.cells[0]
+            _set_cell_bg(c0, "FDECEA" if is_max else "F7F9FC")
+            _set_cell_valign(c0, "center")
+            p0 = c0.paragraphs[0]; p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r0 = p0.add_run(code)
             r0.bold = True; r0.font.size = Pt(9); r0.font.name = "Arial"; r0.font.color.rgb = fg_w
-            r1 = row_w.cells[1].paragraphs[0].add_run(OFFICE_NAMES_W.get(code, code))
+            c1 = row_w.cells[1]
+            _set_cell_valign(c1, "center")
+            p1 = c1.paragraphs[0]; p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r1 = p1.add_run(OFFICE_NAMES_W.get(code, code))
             r1.font.size = Pt(8); r1.font.name = "Arial"; r1.font.color.rgb = GRAY
-            r2 = row_w.cells[2].paragraphs[0].add_run(str(cnt))
+            c2 = row_w.cells[2]
+            _set_cell_valign(c2, "center")
+            p2 = c2.paragraphs[0]; p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r2 = p2.add_run(str(cnt))
             r2.bold = True; r2.font.size = Pt(10); r2.font.name = "Arial"; r2.font.color.rgb = fg_w
-            row_w.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _remove_borders(geo_tbl_w)
+        _set_borders(geo_tbl_w, sz="2")
         _fix_table_layout(geo_tbl_w, geo_fit)
         doc.add_paragraph()
 
-    doc.add_page_break()
+    # New section for results pages — smaller top margin (no header → saves space)
+    from docx.enum.section import WD_SECTION
+    results_sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    results_sec.orientation   = WD_ORIENT.LANDSCAPE
+    results_sec.page_width    = Cm(29.7)
+    results_sec.page_height   = Cm(21.0)
+    results_sec.top_margin    = Cm(1.5)
+    results_sec.bottom_margin = MARGIN
+    results_sec.left_margin   = MARGIN
+    results_sec.right_margin  = MARGIN
+    results_sec.different_first_page_header_footer = False
+    results_sec.header.is_linked_to_previous = False
+    for el in list(results_sec.header._element):
+        results_sec.header._element.remove(el)
+    p_no_hdr = results_sec.header.add_paragraph()
+    p_no_hdr.paragraph_format.space_before = Pt(0)
+    p_no_hdr.paragraph_format.space_after  = Pt(0)
+    _add_page_number_footer(results_sec)
+    # Force numbering to start at 2 (cover = page 1, results = page 2+)
+    sectPr = results_sec._sectPr
+    for el in sectPr.findall(qn("w:pgNumType")):
+        sectPr.remove(el)
+    pgNumType = OxmlElement("w:pgNumType")
+    pgNumType.set(qn("w:start"), "2")
+    sectPr.append(pgNumType)
 
     # ─── RESULTS PAGES ─────────────────────────────────────────────────
     _add_section_title(doc, "Rezultate analiza similaritate")

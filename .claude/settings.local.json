@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3)"
+      "Bash(python3)",
+      "Bash(xargs kill *)",
+      "Bash(python3 -m uvicorn main:app --reload --port 8000)",
+      "Read(//private/tmp/**)",
+      "Bash(curl -s http://localhost:8000/api/session-status)"
     ]
   }
 }

@@ -68,6 +68,7 @@ class ExportRequest(BaseModel):
     expired_conflicts: List[dict] = []
     expired_similar: List[dict] = []
     format: str  # "excel", "pdf" or "word"
+    include_expired: bool = True  # dacă False, exclude mărci expirate din exportul Word
 
 
 @app.post("/api/set-curl")
@@ -102,6 +103,39 @@ async def debug_tmview():
     except Exception as e:
         results["error"] = f"{type(e).__name__}: {e}"
     return results
+
+
+@app.get("/api/debug-tm-detail")
+async def debug_tm_detail(st13: str):
+    """Returnează raw JSON de la TMview pentru un ST13 dat — pentru diagnosticare designatedCountries."""
+    from agents.search_agent import AsyncSession, TMVIEW_DETAIL, TMVIEW_HOME, _PROXIES, _build_headers, HAS_CURL_CFFI
+    if not HAS_CURL_CFFI:
+        return {"error": "curl_cffi not available"}
+    try:
+        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
+            await session.get(TMVIEW_HOME, timeout=20)
+            r = await session.get(TMVIEW_DETAIL.format(st13=st13), headers=_build_headers(), timeout=20)
+            if r.status_code != 200:
+                return {"error": f"HTTP {r.status_code}", "body": r.text[:500]}
+            data = r.json()
+            tm = data.get("tradeMark", {})
+            return {
+                "tm_keys": list(tm.keys()),
+                "root_keys": list(data.keys()),
+                "designatedCountries": tm.get("designatedCountries"),
+                "designatedOffices": tm.get("designatedOffices"),
+                "territories": tm.get("territories"),
+                "designationUnderMadridProtocol": tm.get("designationUnderMadridProtocol"),
+                "office": tm.get("office"),
+                "tmOffice": tm.get("tmOffice"),
+                "publication": data.get("publication", [])[:3],
+                "oppositions": data.get("oppositions", [])[:3],
+                "oppositionStartDate": tm.get("oppositionStartDate"),
+                "oppositionEndDate": tm.get("oppositionEndDate"),
+                "markCurrentStatusDate": tm.get("markCurrentStatusDate"),
+            }
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
 
 
 @app.get("/api/session-status")
@@ -185,9 +219,10 @@ async def check_trademark(request: SearchRequest):
         request.nice_classes,
         request.offices,
         extra_terms=variants.get("search_terms", []),
+        wildcard_patterns=variants.get("wildcard_patterns", []),
         include_expired=request.include_expired,
     )
-    analysis = similarity_agent.analyze(name, trademarks, request.nice_classes)
+    analysis = similarity_agent.analyze(name, trademarks, request.nice_classes, user_offices=request.offices)
 
     return {
         "query":             name,
@@ -216,6 +251,11 @@ async def export_report(request: ExportRequest):
     similar = request.similar
     expired_conflicts = request.expired_conflicts
     expired_similar = request.expired_similar
+
+    # Excludem mărci expirate din Word dacă utilizatorul a deselectat opțiunea
+    if fmt == "word" and not request.include_expired:
+        expired_conflicts = []
+        expired_similar = []
 
     try:
         if fmt == "excel":

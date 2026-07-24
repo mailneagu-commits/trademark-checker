@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 .env
 .venv
+.session.json
 venv/
 *.egg-info/
 .DS_Store

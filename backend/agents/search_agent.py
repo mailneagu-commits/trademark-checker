@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import random
 import re
@@ -101,6 +102,32 @@ HEADERS = {
 # Sesiune browser importată (cookie + headers din cURL copiat de user)
 _browser_session: Dict = {}
 
+_SESSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".session.json")
+
+
+def _save_session(data: Dict) -> None:
+    try:
+        with open(_SESSION_FILE, "w") as _f:
+            json.dump(data, _f)
+    except Exception as _e:
+        print(f"[SESSION] Save failed: {_e}")
+
+
+def _load_session() -> None:
+    global _browser_session
+    try:
+        if os.path.exists(_SESSION_FILE):
+            with open(_SESSION_FILE) as _f:
+                data = json.load(_f)
+            if data.get("cookies") or data.get("headers"):
+                _browser_session = data
+                print("[SESSION] Restored from disk")
+    except Exception as _e:
+        print(f"[SESSION] Load failed: {_e}")
+
+
+_load_session()
+
 
 def parse_curl(curl_text: str) -> Dict:
     """Extrage cookie-uri și headers dintr-un cURL copiat din DevTools."""
@@ -135,6 +162,7 @@ def set_browser_session(curl_text: str) -> bool:
     parsed = parse_curl(curl_text)
     if parsed["cookies"] or parsed["headers"]:
         _browser_session = parsed
+        _save_session(parsed)
         return True
     return False
 
@@ -169,16 +197,40 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
     if not st13 or st13.startswith("DEMO"):
         return {}
     try:
-        r = await session.get(
-            TMVIEW_DETAIL.format(st13=st13),
-            headers=_build_headers(),
-            timeout=20,
+        r = await asyncio.wait_for(
+            session.get(
+                TMVIEW_DETAIL.format(st13=st13),
+                headers=_build_headers(),
+                timeout=3,
+            ),
+            timeout=4,
         )
         if r.status_code != 200:
             return {}
         data = r.json()
         tm   = data.get("tradeMark", {})
         pubs = data.get("publication", [])
+
+        # Detectăm câmpul corect pentru țările desemnate (Madrid)
+        if st13.startswith("WO"):
+            print(f"[DETAIL-WO] {st13} tm_keys={list(tm.keys())} root_keys={list(data.keys())}")
+        designated = (
+            tm.get("designatedCountries")
+            or tm.get("designatedOffices")
+            or tm.get("territories")
+            or data.get("designatedCountries")
+            or data.get("designatedOffices")
+            or []
+        )
+        # Normalizăm la listă de stringuri
+        if designated and isinstance(designated[0], dict):
+            designated = [d.get("code") or d.get("name") or str(d) for d in designated]
+        # Fallback: designationUnderMadridProtocol e un string "BR-CA-EM-GB-..."
+        if not designated:
+            madrid_str = tm.get("designationUnderMadridProtocol", "")
+            if madrid_str:
+                designated = [c.strip() for c in madrid_str.split("-") if c.strip()]
+
         return {
             "goodAndServices":       tm.get("goodAndServices", []),
             "registrationDate":      (tm.get("codeRegistrationDate") or "")[:10],
@@ -192,7 +244,7 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
             "oppositionStartDate":   (tm.get("oppositionStartDate") or "")[:10],
             "oppositionEndDate":     (tm.get("oppositionEndDate") or "")[:10],
             "viennaCodes":           [v.get("code", "") for v in data.get("viennaCodes", [])],
-            "designatedCountries":   tm.get("designatedCountries", []),
+            "designatedCountries":   designated,
             "applicants_detail":     data.get("applicants", []),
             "representatives":       data.get("representatives", []),
             "officeUrl":             data.get("officeUrl", ""),
@@ -225,17 +277,37 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     if offices:      payload["offices"]     = offices
     if territories:  payload["territories"] = territories
     if nice_classes: payload["niceClass"]   = [int(c) if c.isdigit() else c for c in nice_classes]
+    if _cb_is_open():
+        return [], 0
     try:
         r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=55 if _PROXIES else 25)
-        print(f"[TMVIEW] POST status={r.status_code} crit={criteria} term={term[:20]}")
+        print(f"[TMVIEW] POST status={r.status_code} crit={criteria} term={term[:20]} offices={sorted(offices)} territories={sorted(territories)}")
         if r.status_code == 200:
-            data  = r.json()
+            _cb_record_success()
+            # Check if response is actually JSON (not HTML/redirect)
+            try:
+                data  = r.json()
+            except ValueError:
+                # Response is not JSON (probably HTML error page or redirect)
+                resp_preview = str(r.text[:100]).lower()
+                if "html" in resp_preview or "<!doctype" in resp_preview or "302" in str(r.status_code):
+                    _cb_record_failure()
+                    print(f"[TMVIEW] HTML response (possible IP ban/redirect): {resp_preview}")
+                    return [], 0
+                raise
             marks = data.get("tradeMarks", [])
             print(f"[TMVIEW] found {len(marks)} marks")
             for m in marks:
                 m.setdefault("_found_by", term)
             return marks, int(data.get("total") or 0)
+        elif r.status_code in (429, 503):
+            _cb_record_failure()
+            print(f"[TMVIEW] Rate-limit {r.status_code} — aștept 10s")
+            await asyncio.sleep(10)
     except Exception as _e:
+        err_str = str(_e).lower()
+        if "connection reset" in err_str or "connection refused" in err_str or "ssl" in err_str or "json" in err_str:
+            _cb_record_failure()
         print(f"[TMVIEW] _search_page error: {type(_e).__name__}: {_e}")
     return [], 0
 
@@ -257,6 +329,36 @@ async def _search_term(session, term, nice_classes, offices, territories, criter
 
 TERRITORY_BATCH = 7   # teritorii per request — evită WAF blocking
 
+# ── Circuit breaker ──────────────────────────────────────────────────────────
+# Dacă TMview resetează conexiunea de N ori consecutiv, oprim requests automat
+_cb_failures   = 0        # erori consecutive curente
+_CB_THRESHOLD  = 1        # 1 eroare = TMview ban, revino mai târziu
+_cb_open       = False    # True = circuit deschis (requests oprite)
+
+def _cb_record_success():
+    global _cb_failures, _cb_open
+    _cb_failures = 0
+    _cb_open     = False
+    print("[CIRCUIT BREAKER] Reset — conexiune TMview OK")
+
+def _cb_record_failure():
+    global _cb_failures, _cb_open
+    _cb_failures += 1
+    if _cb_failures >= _CB_THRESHOLD:
+        _cb_open = True
+        print(f"[CIRCUIT BREAKER] DESCHIS — TMview indisponibil, revin la demo marks")
+
+def _cb_is_open() -> bool:
+    return _cb_open
+
+def _cb_reset():
+    """Reseteaza manual circuit breaker daca vrei sa reincerci TMview."""
+    global _cb_failures, _cb_open
+    _cb_failures = 0
+    _cb_open = False
+    print("[CIRCUIT BREAKER] Manual reset — gata pentru reincercare")
+# ─────────────────────────────────────────────────────────────────────────────
+
 async def _search_batched(session, term, nice_classes, offices, territories, crit, seen):
     """Caută cu împărțire automată în loturi dacă sunt multe teritorii."""
     collected = []
@@ -266,23 +368,23 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
     else:
         batches = [territories]
 
-    for batch in batches:
+    for idx, batch in enumerate(batches):
+        if _cb_is_open():
+            print("[CIRCUIT BREAKER] Request omis — circuit deschis.")
+            break
         marks = await _search_term(session, term, nice_classes, offices, batch, crit, seen)
         collected.extend(marks)
-        if batches.index(batch) < len(batches) - 1:
-            await asyncio.sleep(0.15)
+        if idx < len(batches) - 1:
+            await asyncio.sleep(random.uniform(1.2, 2.0))
     return collected
 
 
-async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str], proxy_url: str = _PROXY_URL, include_expired: bool = True, extra_terms: Optional[List[str]] = None) -> List[Dict]:
-    offices, territories = build_offices_and_territories(user_offices)
+async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str], proxy_url: str = _PROXY_URL, include_expired: bool = True, extra_terms: Optional[List[str]] = None, wildcard_patterns: Optional[List[str]] = None) -> List[Dict]:
+    if _cb_is_open():
+        print("[CIRCUIT BREAKER] Circuit deschis — TMview requests oprite")
+        return []
 
-    # Cu proxy activ nu expandăm EM în 28 teritorii (prea multe batches → timeout).
-    # Convertim EM din teritoriu în office — 1 request în loc de 5 batches.
-    if _PROXIES and "EM" in territories:
-        from agents.variant_agent import ALL_EU_TERRITORIES
-        territories = [t for t in territories if t not in ALL_EU_TERRITORIES and t != "EM"]
-        offices = list(set(offices) | {"EM"})
+    offices, territories = build_offices_and_territories(user_offices)
 
     upper = name.upper().strip()
 
@@ -325,50 +427,54 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         seen: set = set()
         all_marks: List[Dict] = []
 
+        base_delay = 1.5 if use_proxy else 1.0  # delay de bază între requests
+
         for crit, term in main_searches:
-            if len(all_marks) >= MAX_TOTAL:
+            if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                 break
             marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen)
             all_marks.extend(marks)
-            await asyncio.sleep(1.0 if use_proxy else 0.15)
+            await asyncio.sleep(random.uniform(base_delay, base_delay + 0.8))
 
         for crit, term in extra_searches:
-            if len(all_marks) >= MAX_TOTAL:
+            if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                 break
             marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen)
             all_marks.extend(marks)
-            await asyncio.sleep(1.0 if use_proxy else 0.15)
+            await asyncio.sleep(random.uniform(base_delay, base_delay + 0.8))
 
         all_marks = all_marks[:MAX_TOTAL]
 
         # Variante fonetice (max 3 cu proxy, toate fără proxy)
         phon_ter = territories[:TERRITORY_BATCH] if (many_territories or use_proxy) else territories
         for term in phonetic_terms:
-            if len(all_marks) >= MAX_TOTAL:
+            if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                 break
             marks = await _search_term(session, term, nice_classes, offices, phon_ter, "C", seen)
             for m in marks:
                 m["_phonetic"] = True
             all_marks.extend(marks)
-            if use_proxy:
-                await asyncio.sleep(1.0)
+            await asyncio.sleep(random.uniform(base_delay, base_delay + 0.8))
         all_marks = all_marks[:MAX_TOTAL]
+
+        # Wildcard patterns cu poziții specifice → marcate ca "Risc Ridicat"
+        if wildcard_patterns:
+            wildcard_ter = territories[:TERRITORY_BATCH] if (many_territories or use_proxy) else territories
+            for term in wildcard_patterns:
+                if len(all_marks) >= MAX_TOTAL or _cb_is_open():
+                    break
+                marks = await _search_term(session, term, nice_classes, offices, wildcard_ter, "C", seen)
+                for m in marks:
+                    m["_risk_high"] = True  # Marchez ca risc ridicat
+                all_marks.extend(marks)
+                await asyncio.sleep(random.uniform(base_delay, base_delay + 1.0))
+            all_marks = all_marks[:MAX_TOTAL]
 
         if not include_expired:
             all_marks = [m for m in all_marks if not _is_expired_mark(m)]
 
-        # Fetch detalii în paralel
-        detail_tasks = [_fetch_detail(session, m.get("ST13", "")) for m in all_marks]
-        details = await asyncio.gather(*detail_tasks, return_exceptions=True)
-
-        enriched = []
-        for tm, detail in zip(all_marks, details):
-            merged = dict(tm)
-            if isinstance(detail, dict) and detail:
-                merged.update(detail)
-            enriched.append(merged)
-
-        return enriched
+        # Returnează marci fără detail fetching (details pot fi fetched on-demand)
+        return all_marks
 
 
 def _demo_marks(name: str, nice_classes: List[str], offices: List[str]) -> List[Dict]:
@@ -376,7 +482,7 @@ def _demo_marks(name: str, nice_classes: List[str], offices: List[str]) -> List[
     results = [dict(m) for m in DEMO_MARKS if any(c in m["niceClass"] for c in nc_ints)]
     for i in range(3):
         variant = name[:max(3, len(name) - i)] + ("S" * i)
-        results.append({
+        mark = {
             "ST13": f"DEMO_GEN_{i}", "tmName": variant,
             "tmOffice": (offices[i % len(offices)] if offices else "EM"),
             "tradeMarkStatus": random.choice(["Registered", "Filed"]),
@@ -388,7 +494,11 @@ def _demo_marks(name: str, nice_classes: List[str], offices: List[str]) -> List[
             "applicationNumber": f"TST{i:04d}", "markImageURI": None,
             "goodAndServices": [{"niceClass": str(nc_ints[0] if nc_ints else 30),
                                   "goodsAndServices": "Test products for demonstration."}],
-        })
+        }
+        # Marchez al doilea mark (i=1) cu risc ridicat pentru test
+        if i == 1:
+            mark["_risk_high"] = True
+        results.append(mark)
     return results
 
 
@@ -499,6 +609,7 @@ async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices
 class SearchAgent:
     async def search(self, name: str, nice_classes: List[str], offices: List[str],
                      extra_terms: Optional[List[str]] = None,
+                     wildcard_patterns: Optional[List[str]] = None,
                      include_expired: bool = True) -> Tuple[List[Dict], str]:
         if not HAS_CURL_CFFI:
             marks = _demo_marks(name, nice_classes, offices)
@@ -534,7 +645,7 @@ class SearchAgent:
             label = proxy_url[:30] if proxy_url else "direct"
             try:
                 marks = await asyncio.wait_for(
-                    _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url, include_expired=include_expired, extra_terms=extra_terms),
+                    _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url, include_expired=include_expired, extra_terms=extra_terms, wildcard_patterns=wildcard_patterns),
                     timeout=75.0 if proxy_url else 45.0
                 )
                 if marks is not None:

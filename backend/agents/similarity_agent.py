@@ -220,7 +220,8 @@ class SimilarityAgent:
         }
 
     def analyze(self, query: str, trademarks: List[Dict],
-                nice_classes: List[str] = None) -> Dict:
+                nice_classes: List[str] = None,
+                user_offices: List[str] = None) -> Dict:
         today = _date.today()
         conflicts          = []
         similar            = []
@@ -251,11 +252,19 @@ class SimilarityAgent:
             if not is_expired:
                 exp_str = normalized.get("expiryDate", "")
                 if exp_str and normalized.get("expiryIsReal"):
-                    try:
-                        if _date.fromisoformat(exp_str[:10]) < today:
-                            is_expired = True
-                    except Exception:
-                        pass
+                    # Nu suprascriem un status activ cu data trecută —
+                    # mărci în curs de reînnoire au data expirată dar statut valid.
+                    has_active_status = bool(status_raw) and any(w in status_raw for w in [
+                        "registered", "active", "published", "pending", "examination",
+                        "application", "renew", "reinnoire", "opposition", "granted",
+                        "înregistrat", "inregistrat",
+                    ])
+                    if not has_active_status:
+                        try:
+                            if _date.fromisoformat(exp_str[:10]) < today:
+                                is_expired = True
+                        except Exception:
+                            pass
 
             scores = self._calculate(query, name)
             sc     = scores["combined_score"]
@@ -274,6 +283,17 @@ class SimilarityAgent:
 
             if (query.upper() in name.upper() or name.upper() in query.upper()) and sc < self.threshold_medium:
                 sc = max(sc, self.threshold_medium)
+
+            # Cuvânt identic (≥3 litere) → risc ridicat minim, la finalul secțiunii
+            _exact_boost = (
+                sc < self.threshold_high
+                and any(wq == wc for wq in words_q for wc in words_c if len(wq) >= 3)
+            )
+            if _exact_boost:
+                sc = self.threshold_high
+
+            # Sync boosted score into the dict so export/UI sees the correct value
+            scores["combined_score"] = sc
 
             if sc >= self.threshold_very_high:
                 risk_level = "very_high"
@@ -296,7 +316,8 @@ class SimilarityAgent:
                 else:
                     continue
 
-            entry = {**normalized, "similarity": scores, "risk_level": risk_level}
+            entry = {**normalized, "similarity": scores, "risk_level": risk_level,
+                     "_exact_boost": _exact_boost}
 
             if is_expired:
                 if sc >= self.threshold_high:
@@ -309,8 +330,24 @@ class SimilarityAgent:
                 else:
                     similar.append(entry)
 
+        _risk_ord = {"very_high": 0, "high": 1, "medium": 2, "low": 3}
+        _uo = {o.upper() for o in (user_offices or [])}
+
+        def _sort_key(e):
+            off = (e.get("office") or e.get("tmOffice") or "").upper()
+            if off in _uo:
+                ter = 0
+            elif off == "EM":
+                ter = 1
+            elif off == "WO":
+                ter = 2
+            else:
+                ter = 3
+            exact_end = 1 if e.get("_exact_boost") else 0
+            return (_risk_ord.get(e["risk_level"], 4), ter, exact_end, -e["similarity"]["combined_score"])
+
         for lst in (conflicts, similar, expired_conflicts, expired_similar):
-            lst.sort(key=lambda x: x["similarity"]["combined_score"], reverse=True)
+            lst.sort(key=_sort_key)
 
         return {
             "conflicts":         conflicts,
