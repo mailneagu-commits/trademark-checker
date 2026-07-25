@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import os
 import random
@@ -7,6 +8,10 @@ import shlex
 from datetime import date
 import requests as _std_requests
 from typing import List, Dict, Tuple, Optional
+
+# TMDN API credentials (HTTP Basic Auth)
+_TMDN_API_KEY = os.environ.get("TMDN_API_KEY", "c8d2035c603447d17850398f000457b1")
+_TMDN_API_SECRET = os.environ.get("TMDN_API_SECRET", "a2698c5c862e15dad38ae8c49764db19")
 
 # Proxy rotation: citește PROXY_URL (singur) sau PROXY_URLS (listă separată cu virgulă)
 _proxy_list_raw = os.environ.get("PROXY_URLS", "") or os.environ.get("PROXY_URL", "")
@@ -17,6 +22,7 @@ if _PROXY_LIST:
     print(f"[PROXY] {len(_PROXY_LIST)} proxy(s) configured. First: {_PROXY_URL[:40]}...")
 else:
     print("[PROXY] No proxy configured — direct connection")
+print(f"[TMDN] API credentials configured: {_TMDN_API_KEY[:8]}...:{_TMDN_API_SECRET[:8]}...")
 
 
 def _make_proxies(url: str) -> dict:
@@ -248,8 +254,15 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
 
 
 def _build_headers() -> Dict:
-    """Construiește headers îmbogățiți cu sesiunea din browser dacă există."""
+    """Construiește headers îmbogățiți cu sesiunea din browser și autentificarea TMDN."""
     hdrs = dict(HEADERS)
+    
+    # Adaugă autentificarea HTTP Basic Auth pentru TMDN API
+    if _TMDN_API_KEY and _TMDN_API_SECRET:
+        credentials = f"{_TMDN_API_KEY}:{_TMDN_API_SECRET}"
+        encoded = base64.b64encode(credentials.encode()).decode()
+        hdrs["Authorization"] = f"Basic {encoded}"
+    
     if has_browser_session():
         cookies = _browser_session.get("cookies", {})
         if cookies:
