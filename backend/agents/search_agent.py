@@ -8,28 +8,14 @@ from datetime import date
 import requests as _std_requests
 from typing import List, Dict, Tuple, Optional
 
-# ScraperAPI proxy mode — suportă POST requests prin proxy HTTP
-_SCRAPERAPI_KEY = os.environ.get("SCRAPERAPI_KEY", "")
-_SCRAPERAPI_URL = "https://api.scraperapi.com"  # kept for reference
-# Dacă SCRAPERAPI_KEY e setat, construiește proxy URL automat
-_SCRAPERAPI_PROXY = (
-    f"http://scraperapi:{_SCRAPERAPI_KEY}@proxy-server.scraperapi.com:8001"
-    if _SCRAPERAPI_KEY else ""
-)
-
 # Proxy rotation: citește PROXY_URL (singur) sau PROXY_URLS (listă separată cu virgulă)
-# ScraperAPI proxy are prioritate dacă nu există un alt proxy explicit configurat
 _proxy_list_raw = os.environ.get("PROXY_URLS", "") or os.environ.get("PROXY_URL", "")
 _PROXY_LIST: List[str] = [p.strip() for p in _proxy_list_raw.split(",") if p.strip()]
-if not _PROXY_LIST and _SCRAPERAPI_PROXY:
-    _PROXY_LIST = [_SCRAPERAPI_PROXY]
 _PROXY_URL  = _PROXY_LIST[0] if _PROXY_LIST else ""
 _PROXIES    = {"https": _PROXY_URL, "http": _PROXY_URL} if _PROXY_URL else None
-if _SCRAPERAPI_KEY:
-    print(f"[SCRAPERAPI] Proxy mode configured: scraperapi:{_SCRAPERAPI_KEY[:8]}...@proxy-server.scraperapi.com:8001")
-if _PROXY_LIST and not _SCRAPERAPI_KEY:
+if _PROXY_LIST:
     print(f"[PROXY] {len(_PROXY_LIST)} proxy(s) configured. First: {_PROXY_URL[:40]}...")
-elif not _PROXY_LIST:
+else:
     print("[PROXY] No proxy configured — direct connection")
 
 
