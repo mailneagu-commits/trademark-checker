@@ -9,9 +9,9 @@ from datetime import date
 import requests as _std_requests
 from typing import List, Dict, Tuple, Optional
 
-# TMDN API credentials (HTTP Basic Auth)
-_TMDN_API_KEY = os.environ.get("TMDN_API_KEY", "c8d2035c603447d17850398f000457b1")
-_TMDN_API_SECRET = os.environ.get("TMDN_API_SECRET", "a2698c5c862e15dad38ae8c49764db19")
+# TMDN API credentials (HTTP Basic Auth) - optional, from environment
+_TMDN_API_KEY = os.environ.get("TMDN_API_KEY", "")
+_TMDN_API_SECRET = os.environ.get("TMDN_API_SECRET", "")
 
 # Proxy rotation: citește PROXY_URL (singur) sau PROXY_URLS (listă separată cu virgulă)
 _proxy_list_raw = os.environ.get("PROXY_URLS", "") or os.environ.get("PROXY_URL", "")
