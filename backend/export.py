@@ -85,6 +85,58 @@ def _translate_to_ro(text: str, _cache: dict = {}) -> str:
 # MEDIUM    51–75% →  galben
 # LOW       20–50% →  verde
 
+def _is_mark_expired(tm: dict) -> bool:
+    """Detecteaza daca o marca este expirata/anulata/retrasa, indiferent de sursa datelor."""
+    status = str(tm.get("tradeMarkStatus") or tm.get("status") or "").lower()
+    if any(w in status for w in ("expir", "lapsed", "cancelled", "refused",
+                                  "withdrawn", "surrendered", "invalidated", "abandoned")):
+        return True
+    exp_str = str(tm.get("expiryDate") or "")
+    if exp_str:
+        try:
+            from datetime import date as _d
+            return _d.fromisoformat(exp_str[:10]) < _d.today()
+        except Exception:
+            pass
+    return False
+
+
+def _segregate_expired(
+    results: List[Dict], similar: List[Dict],
+    expired_conflicts: List[Dict], expired_similar: List[Dict],
+) -> tuple:
+    """Muta marcile expirate din listele active in listele expirate.
+
+    Garanteaza ca nicio marca expirata nu apare in prima sectiune,
+    indiferent de clasificarea primita de la API.
+    """
+    clean_results, clean_similar = [], []
+    exp_c, exp_s = list(expired_conflicts), list(expired_similar)
+    seen_exp = {tm.get("ST13") or tm.get("applicationNumber") for tm in exp_c + exp_s if tm.get("ST13") or tm.get("applicationNumber")}
+
+    for tm in (results or []):
+        if _is_mark_expired(tm):
+            key = tm.get("ST13") or tm.get("applicationNumber")
+            if not key or key not in seen_exp:
+                exp_c.append(tm)
+                if key:
+                    seen_exp.add(key)
+        else:
+            clean_results.append(tm)
+
+    for tm in (similar or []):
+        if _is_mark_expired(tm):
+            key = tm.get("ST13") or tm.get("applicationNumber")
+            if not key or key not in seen_exp:
+                exp_s.append(tm)
+                if key:
+                    seen_exp.add(key)
+        else:
+            clean_similar.append(tm)
+
+    return clean_results, clean_similar, exp_c, exp_s
+
+
 def _risk_level(score: float) -> str:
     if score >= 90: return "very_high"
     if score >= 75: return "high"
@@ -333,6 +385,10 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
                 expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None) -> bytes:
     from datetime import datetime as _dt
 
+    results, similar, expired_conflicts, expired_similar = _segregate_expired(
+        results, similar, expired_conflicts or [], expired_similar or []
+    )
+
     def _xdate(d):
         if not d: return ""
         try: return _dt.strptime(str(d)[:10], "%Y-%m-%d").strftime("%d.%m.%Y")
@@ -358,10 +414,15 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
     c.alignment = center
     ws.row_dimensions[1].height = 26
 
+    _RISK_ORDER_XL = {"very_high": 0, "high": 1, "medium": 2, "low": 3, "small": 4}
+    def _xl_sort(x):
+        sim = x.get("similarity", {})
+        lvl = x.get("risk_level") or sim.get("risk_level") or "low"
+        return (_RISK_ORDER_XL.get(lvl, 9), -sim.get("combined_score", 0))
+
     all_results = sorted(
         (results or []) + (similar or []) + (expired_conflicts or []) + (expired_similar or []),
-        key=lambda x: x.get("similarity", {}).get("combined_score", 0),
-        reverse=True
+        key=_xl_sort,
     )
 
     ws.merge_cells(f"A2:{get_column_letter(NCOLS)}2")
@@ -540,6 +601,10 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
     from reportlab.lib.pagesizes import landscape, A4
     from reportlab.platypus import KeepTogether, PageBreak
     from datetime import datetime as dt
+
+    results, similar, expired_conflicts, expired_similar = _segregate_expired(
+        results, similar, expired_conflicts or [], expired_similar or []
+    )
 
     PAGE = landscape(A4)
     LM = RM = 1.4 * cm
@@ -1864,6 +1929,11 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
 
     _add_protectmark_header(doc, query, offices)
 
+    # Separam defensiv marcile expirate din listele active (garantie indiferent de API)
+    results, similar, expired_conflicts, expired_similar = _segregate_expired(
+        results, similar, expired_conflicts, expired_similar
+    )
+
     _RISK_ORDER = {"very_high": 0, "high": 1, "medium": 2, "low": 3, "small": 4}
 
     def _risk_sort_key(x):
@@ -1871,10 +1941,10 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         lvl = x.get("risk_level") or sim.get("risk_level") or "low"
         return (_RISK_ORDER.get(lvl, 9), -sim.get("combined_score", 0))
 
-    active_conflicts = sorted(results or [], key=_risk_sort_key)
-    active_similar   = sorted(similar or [],  key=_risk_sort_key)
-    expired_conflicts = sorted(expired_conflicts or [], key=_risk_sort_key)
-    expired_similar   = sorted(expired_similar or [],   key=_risk_sort_key)
+    active_conflicts  = sorted(results or [],           key=_risk_sort_key)
+    active_similar    = sorted(similar or [],            key=_risk_sort_key)
+    expired_conflicts = sorted(expired_conflicts or [],  key=_risk_sort_key)
+    expired_similar   = sorted(expired_similar or [],    key=_risk_sort_key)
     all_results = active_conflicts + active_similar + expired_conflicts + expired_similar
 
     very_high = [r for r in active_conflicts if r.get("risk_level") == "very_high"]
