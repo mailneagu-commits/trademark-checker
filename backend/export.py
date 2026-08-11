@@ -211,6 +211,19 @@ def _clear_table_borders(table):
         b.set(qn("w:space"), "0"); b.set(qn("w:color"), "auto")
         tblBorders.append(b)
     tblPr.append(tblBorders)
+    # Curăță și bordurile per-celulă (altfel Word le poate afișa din stilul implicit)
+    for row in table.rows:
+        for cell in row.cells:
+            tcPr = cell._tc.get_or_add_tcPr()
+            for el in tcPr.findall(qn("w:tcBorders")):
+                tcPr.remove(el)
+            tcBorders = OxmlElement("w:tcBorders")
+            for name in ("top", "left", "bottom", "right", "insideH", "insideV"):
+                b = OxmlElement(f"w:{name}")
+                b.set(qn("w:val"), "none"); b.set(qn("w:sz"), "0")
+                b.set(qn("w:space"), "0"); b.set(qn("w:color"), "auto")
+                tcBorders.append(b)
+            tcPr.append(tcBorders)
 
 
 def _set_cell_valign(cell, val="center"):
@@ -1291,7 +1304,7 @@ def _add_protectmark_header(doc: Document, query: str = ""):
     row = table.rows[0]
 
     c0 = row.cells[0]; _set_cell_valign(c0, "center"); _zero_cell_margins(c0)
-    p0 = c0.paragraphs[0]; p0.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p0 = c0.paragraphs[0]; p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p0.paragraph_format.space_before = Pt(0); p0.paragraph_format.space_after = Pt(0)
     if _pm_bytes:
         p0.add_run().add_picture(io.BytesIO(_pm_bytes), height=_LOGO_H)
@@ -1301,22 +1314,20 @@ def _add_protectmark_header(doc: Document, query: str = ""):
         r.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
 
     c1 = row.cells[1]; _set_cell_valign(c1, "center"); _zero_cell_margins(c1)
-    # Rand 1: titlu raport
     p1 = c1.paragraphs[0]; p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p1.paragraph_format.space_before = Pt(0); p1.paragraph_format.space_after = Pt(2)
     r1 = p1.add_run("RAPORT VERIFICARE DISPONIBILITATE MARCA")
     r1.bold = True; r1.font.name = "Arial"; r1.font.size = Pt(11)
     r1.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
-    # Rand 2: denumirea marcii
     if query:
         p1b = c1.add_paragraph(); p1b.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p1b.paragraph_format.space_before = Pt(0); p1b.paragraph_format.space_after = Pt(0)
-        r1b = p1b.add_run(f"„{query.upper()}”")
+        r1b = p1b.add_run(f'„{query.upper()}”')
         r1b.bold = True; r1b.font.name = "Arial"; r1b.font.size = Pt(11)
         r1b.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
 
     c2 = row.cells[2]; _set_cell_valign(c2, "center"); _zero_cell_margins(c2)
-    p2 = c2.paragraphs[0]; p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p2 = c2.paragraphs[0]; p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p2.paragraph_format.space_before = Pt(0); p2.paragraph_format.space_after = Pt(0)
     if _ps_bytes:
         p2.add_run().add_picture(io.BytesIO(_ps_bytes), height=_LOGO_H)
