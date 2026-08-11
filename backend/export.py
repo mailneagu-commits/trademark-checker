@@ -1328,12 +1328,13 @@ def _add_protectmark_header(doc: Document, query: str = "", offices: List[str] =
 
     if offices:
         codes = [o.upper().strip() for o in offices if o.strip()]
-        territories_text = "Teritorii: " + ",  ".join(codes)
+        territories_text = " - ".join(codes)
         p1c = c1.add_paragraph(); p1c.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p1c.paragraph_format.space_before = Pt(0); p1c.paragraph_format.space_after = Pt(0)
         r1c = p1c.add_run(territories_text)
         r1c.bold = False; r1c.font.name = "Arial"; r1c.font.size = Pt(8)
         r1c.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+        r1c.font.underline = False
 
     c2 = row.cells[2]; _set_cell_valign(c2, "center"); _zero_cell_margins(c2)
     p2 = c2.paragraphs[0]; p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
