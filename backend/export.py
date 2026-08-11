@@ -1278,7 +1278,7 @@ def _add_section_title(doc, text: str):
     return p
 
 
-def _add_protectmark_header(doc: Document, query: str = ""):
+def _add_protectmark_header(doc: Document, query: str = "", offices: List[str] = None):
     _LOGO_H    = Cm(2.25)
     _LOGO_COL  = 3.5
     _TITLE_COL = 27.1 - 2 * _LOGO_COL  # 20.1 cm
@@ -1321,10 +1321,19 @@ def _add_protectmark_header(doc: Document, query: str = ""):
     r1.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
     if query:
         p1b = c1.add_paragraph(); p1b.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p1b.paragraph_format.space_before = Pt(0); p1b.paragraph_format.space_after = Pt(0)
-        r1b = p1b.add_run(f'„{query.upper()}”')
+        p1b.paragraph_format.space_before = Pt(0); p1b.paragraph_format.space_after = Pt(2)
+        r1b = p1b.add_run(f'„{query.upper()}"')
         r1b.bold = True; r1b.font.name = "Arial"; r1b.font.size = Pt(11)
         r1b.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
+
+    if offices:
+        codes = [o.upper().strip() for o in offices if o.strip()]
+        territories_text = "Teritorii: " + ",  ".join(codes)
+        p1c = c1.add_paragraph(); p1c.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p1c.paragraph_format.space_before = Pt(0); p1c.paragraph_format.space_after = Pt(0)
+        r1c = p1c.add_run(territories_text)
+        r1c.bold = False; r1c.font.name = "Arial"; r1c.font.size = Pt(8)
+        r1c.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
 
     c2 = row.cells[2]; _set_cell_valign(c2, "center"); _zero_cell_margins(c2)
     p2 = c2.paragraphs[0]; p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1852,7 +1861,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         sec.left_margin   = MARGIN
         sec.right_margin  = MARGIN
 
-    _add_protectmark_header(doc, query)
+    _add_protectmark_header(doc, query, offices)
 
     active_conflicts = sorted(
         results or [],
