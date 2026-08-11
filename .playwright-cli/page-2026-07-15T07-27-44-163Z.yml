@@ -1,0 +1,246 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: ⚖️
+    - generic [ref=e4]:
+      - heading "Verificare Disponibilitate Marcă" [level=1] [ref=e5]
+      - paragraph [ref=e6]: Algoritm ProtectMARK · Fuzzy · Fonetic · TMview / EUIPO / WIPO
+    - navigation [ref=e7]:
+      - button "🔍 Verificare" [ref=e8] [cursor=pointer]
+      - button "👁 Monitorizare" [ref=e9] [cursor=pointer]
+  - generic [ref=e11]:
+    - heading "🔍 Date căutare" [level=2] [ref=e12]
+    - generic [ref=e14]:
+      - generic [ref=e15]: Denumire marcă
+      - 'textbox "ex: MUSCLE SAUCE" [ref=e16]': TEST UI
+    - separator [ref=e17]
+    - generic [ref=e18]: Clase NICE (selectați una sau mai multe)
+    - textbox "Caută clasă NICE..." [ref=e19]
+    - generic [ref=e20]:
+      - button "Selectează toate" [ref=e21] [cursor=pointer]
+      - button "Golește" [ref=e22] [cursor=pointer]
+    - generic [ref=e23]:
+      - generic [ref=e234] [cursor=pointer]: Cls 1 – Produse chimice pentru industrie, știință
+      - generic [ref=e235] [cursor=pointer]: Cls 2 – Vopsele, lacuri, coloranți
+      - generic [ref=e236] [cursor=pointer]: Cls 3 – Produse cosmetice, detergenți, parfumuri
+      - generic [ref=e237] [cursor=pointer]: Cls 4 – Uleiuri, lubrifianți, combustibili
+      - generic [ref=e238] [cursor=pointer]: Cls 5 – Produse farmaceutice, medicale
+      - generic [ref=e239] [cursor=pointer]: Cls 6 – Metale comune și aliaje
+      - generic [ref=e240] [cursor=pointer]: Cls 7 – Mașini și aparate industriale
+      - generic [ref=e241] [cursor=pointer]: Cls 8 – Unelte și instrumente de mână
+      - generic [ref=e242] [cursor=pointer]: Cls 9 – Aparate electronice, software, optice
+      - generic [ref=e243] [cursor=pointer]: Cls 10 – Aparate medicale și chirurgicale
+      - generic [ref=e244] [cursor=pointer]: Cls 11 – Aparate de iluminat, încălzire, răcire
+      - generic [ref=e245] [cursor=pointer]: Cls 12 – Vehicule, aparate de transport
+      - generic [ref=e246] [cursor=pointer]: Cls 13 – Arme de foc, muniție, artificii
+      - generic [ref=e247] [cursor=pointer]: Cls 14 – Metale prețioase, bijuterii, ceasuri
+      - generic [ref=e248] [cursor=pointer]: Cls 15 – Instrumente muzicale
+      - generic [ref=e249] [cursor=pointer]: Cls 16 – Hârtie, produse de papetărie, tipărituri
+      - generic [ref=e250] [cursor=pointer]: Cls 17 – Cauciuc, materiale plastice, izolante
+      - generic [ref=e251] [cursor=pointer]: Cls 18 – Piele, articole de voiaj, genți
+      - generic [ref=e252] [cursor=pointer]: Cls 19 – Materiale de construcție nemetalice
+      - generic [ref=e253] [cursor=pointer]: Cls 20 – Mobilă, oglinzi, rame
+      - generic [ref=e254] [cursor=pointer]: Cls 21 – Ustensile de bucătărie, sticlărie
+      - generic [ref=e255] [cursor=pointer]: Cls 22 – Funii, plase, corturi, prelate
+      - generic [ref=e256] [cursor=pointer]: Cls 23 – Fire și ațe pentru țesut
+      - generic [ref=e257] [cursor=pointer]: Cls 24 – Textile, lenjerie de pat
+      - generic [ref=e258] [cursor=pointer]: Cls 25 – Îmbrăcăminte, încălțăminte, pălării
+      - generic [ref=e259] [cursor=pointer]: Cls 26 – Dantelă, broderie, nasturi
+      - generic [ref=e260] [cursor=pointer]: Cls 27 – Covoare, mochete, tapete
+      - generic [ref=e261] [cursor=pointer]: Cls 28 – Jocuri, jucării, articole sportive
+      - generic [ref=e262] [cursor=pointer]: Cls 29 – Carne, pește, produse lactate, conserve
+      - generic [ref=e263] [cursor=pointer]: Cls 30 – Cafea, ceai, pâine, condimente, sosuri
+      - generic [ref=e264] [cursor=pointer]: Cls 31 – Produse agricole, plante, animale vii
+      - generic [ref=e265] [cursor=pointer]: Cls 32 – Bere, ape minerale, sucuri
+      - generic [ref=e266] [cursor=pointer]: Cls 33 – Băuturi alcoolice (exc. bere)
+      - generic [ref=e267] [cursor=pointer]: Cls 34 – Tutun, articole pentru fumători
+      - generic [ref=e268] [cursor=pointer]: Cls 35 – Publicitate, management afaceri, comerț
+      - generic [ref=e269] [cursor=pointer]: Cls 36 – Asigurări, servicii financiare
+      - generic [ref=e270] [cursor=pointer]: Cls 37 – Construcții, reparații, instalații
+      - generic [ref=e271] [cursor=pointer]: Cls 38 – Telecomunicații
+      - generic [ref=e272] [cursor=pointer]: Cls 39 – Transport, distribuție, călătorii
+      - generic [ref=e273] [cursor=pointer]: Cls 40 – Tratarea materialelor, prelucrare
+      - generic [ref=e274] [cursor=pointer]: Cls 41 – Educație, divertisment, sport, cultură
+      - generic [ref=e275] [cursor=pointer]: Cls 42 – Servicii IT, cercetare științifică
+      - generic [ref=e276] [cursor=pointer]: Cls 43 – Restaurante, hoteluri, catering
+      - generic [ref=e277] [cursor=pointer]: Cls 44 – Servicii medicale, veterinare
+      - generic [ref=e278] [cursor=pointer]: Cls 45 – Servicii juridice, securitate, sociale
+    - separator [ref=e69]
+    - generic [ref=e70]: Teritorii / Birouri (selectați unul sau mai multe)
+    - generic [ref=e71]:
+      - button "Selectează toate" [ref=e72] [cursor=pointer]
+      - button "Golește" [ref=e73] [cursor=pointer]
+      - button "Doar UE" [ref=e74] [cursor=pointer]
+    - generic [ref=e75]:
+      - generic [ref=e279] [cursor=pointer]:
+        - generic [ref=e280]: 🇪🇺
+        - generic [ref=e281]: Uniunea Europeană (EUIPO)
+      - generic [ref=e282] [cursor=pointer]:
+        - generic [ref=e283]: 🌐
+        - generic [ref=e284]: Internațional (WIPO)
+      - generic [ref=e285] [cursor=pointer]:
+        - generic [ref=e286]: 🇷🇴
+        - generic [ref=e287]: România
+      - generic [ref=e288] [cursor=pointer]:
+        - generic [ref=e289]: 🇩🇪
+        - generic [ref=e290]: Germania
+      - generic [ref=e291] [cursor=pointer]:
+        - generic [ref=e292]: 🇫🇷
+        - generic [ref=e293]: Franța
+      - generic [ref=e294] [cursor=pointer]:
+        - generic [ref=e295]: 🇮🇹
+        - generic [ref=e296]: Italia
+      - generic [ref=e297] [cursor=pointer]:
+        - generic [ref=e298]: 🇪🇸
+        - generic [ref=e299]: Spania
+      - generic [ref=e300] [cursor=pointer]:
+        - generic [ref=e301]: 🇵🇹
+        - generic [ref=e302]: Portugalia
+      - generic [ref=e303] [cursor=pointer]:
+        - generic [ref=e304]: 🇳🇱
+        - generic [ref=e305]: Olanda
+      - generic [ref=e306] [cursor=pointer]:
+        - generic [ref=e307]: 🇧🇪
+        - generic [ref=e308]: Belgia
+      - generic [ref=e309] [cursor=pointer]:
+        - generic [ref=e310]: 🇦🇹
+        - generic [ref=e311]: Austria
+      - generic [ref=e312] [cursor=pointer]:
+        - generic [ref=e313]: 🇵🇱
+        - generic [ref=e314]: Polonia
+      - generic [ref=e315] [cursor=pointer]:
+        - generic [ref=e316]: 🇨🇿
+        - generic [ref=e317]: Cehia
+      - generic [ref=e318] [cursor=pointer]:
+        - generic [ref=e319]: 🇭🇺
+        - generic [ref=e320]: Ungaria
+      - generic [ref=e321] [cursor=pointer]:
+        - generic [ref=e322]: 🇧🇬
+        - generic [ref=e323]: Bulgaria
+      - generic [ref=e324] [cursor=pointer]:
+        - generic [ref=e325]: 🇭🇷
+        - generic [ref=e326]: Croația
+      - generic [ref=e327] [cursor=pointer]:
+        - generic [ref=e328]: 🇸🇰
+        - generic [ref=e329]: Slovacia
+      - generic [ref=e330] [cursor=pointer]:
+        - generic [ref=e331]: 🇸🇮
+        - generic [ref=e332]: Slovenia
+      - generic [ref=e333] [cursor=pointer]:
+        - generic [ref=e334]: 🇬🇷
+        - generic [ref=e335]: Grecia
+      - generic [ref=e336] [cursor=pointer]:
+        - generic [ref=e337]: 🇸🇪
+        - generic [ref=e338]: Suedia
+      - generic [ref=e339] [cursor=pointer]:
+        - generic [ref=e340]: 🇩🇰
+        - generic [ref=e341]: Danemarca
+      - generic [ref=e342] [cursor=pointer]:
+        - generic [ref=e343]: 🇫🇮
+        - generic [ref=e344]: Finlanda
+      - generic [ref=e345] [cursor=pointer]:
+        - generic [ref=e346]: 🇮🇪
+        - generic [ref=e347]: Irlanda
+      - generic [ref=e348] [cursor=pointer]:
+        - generic [ref=e349]: 🇱🇺
+        - generic [ref=e350]: Luxemburg
+      - generic [ref=e351] [cursor=pointer]:
+        - generic [ref=e352]: 🇲🇹
+        - generic [ref=e353]: Malta
+      - generic [ref=e354] [cursor=pointer]:
+        - generic [ref=e355]: 🇨🇾
+        - generic [ref=e356]: Cipru
+      - generic [ref=e357] [cursor=pointer]:
+        - generic [ref=e358]: 🇱🇻
+        - generic [ref=e359]: Letonia
+      - generic [ref=e360] [cursor=pointer]:
+        - generic [ref=e361]: 🇱🇹
+        - generic [ref=e362]: Lituania
+      - generic [ref=e363] [cursor=pointer]:
+        - generic [ref=e364]: 🇪🇪
+        - generic [ref=e365]: Estonia
+      - generic [ref=e366] [cursor=pointer]:
+        - generic [ref=e367]: 🇬🇧
+        - generic [ref=e368]: Marea Britanie
+      - generic [ref=e369] [cursor=pointer]:
+        - generic [ref=e370]: 🇨🇭
+        - generic [ref=e371]: Elveția
+      - generic [ref=e372] [cursor=pointer]:
+        - generic [ref=e373]: 🇹🇷
+        - generic [ref=e374]: Turcia
+      - generic [ref=e375] [cursor=pointer]:
+        - generic [ref=e376]: 🇺🇦
+        - generic [ref=e377]: Ucraina
+      - generic [ref=e378] [cursor=pointer]:
+        - generic [ref=e379]: 🇲🇩
+        - generic [ref=e380]: Moldova
+      - generic [ref=e381] [cursor=pointer]:
+        - generic [ref=e382]: 🇺🇸
+        - generic [ref=e383]: SUA (USPTO)
+      - generic [ref=e384] [cursor=pointer]:
+        - generic [ref=e385]: 🇸🇦
+        - generic [ref=e386]: Arabia Saudită
+      - generic [ref=e387] [cursor=pointer]:
+        - generic [ref=e388]: 🇷🇺
+        - generic [ref=e389]: Rusia
+      - generic [ref=e390] [cursor=pointer]:
+        - generic [ref=e391]: 🇦🇲
+        - generic [ref=e392]: Armenia
+    - separator [ref=e190]
+    - generic [ref=e191]:
+      - generic [ref=e192]:
+        - button "Verifică disponibilitatea" [ref=e193] [cursor=pointer]
+        - generic [ref=e194]:
+          - generic [ref=e195]: 🔤 Lungime substring
+          - combobox "🔤 Lungime substring" [ref=e196]:
+            - option "2 litere"
+            - option "3 litere" [selected]
+            - option "4 litere"
+            - option "5 litere"
+            - option "6 litere"
+            - option "7 litere"
+            - option "8 litere"
+      - generic "Afișează/ascunde secțiunea cu mărci expirate / respinse similare" [ref=e197] [cursor=pointer]: 🪦 Afișează mărci expirate / respinse
+      - generic [ref=e200]: 1 clasă NICE · 1 teritoriu
+    - generic [ref=e201]:
+      - generic [ref=e202]:
+        - strong [ref=e203]: 🔑 Activează date live TMview
+        - generic [ref=e204]: ● Inactivă — folosind date demo
+      - generic [ref=e205]:
+        - generic [ref=e206]:
+          - generic [ref=e207]: 1️⃣
+          - generic [ref=e208]: Deschide TMview
+          - generic [ref=e209]:
+            - text: "Apasă linkul de mai jos și fă o căutare oarecare (ex:"
+            - emphasis [ref=e210]: coca
+            - text: )
+          - link "→ tmdn.org/tmview" [ref=e211] [cursor=pointer]:
+            - /url: https://www.tmdn.org/tmview/
+        - generic [ref=e212]:
+          - generic [ref=e213]: 2️⃣
+          - generic [ref=e214]: Deschide DevTools
+          - generic [ref=e215]:
+            - text: Apasă F12 sau Ctrl+Shift+I și mergi la tab-ul
+            - strong [ref=e216]: Network
+        - generic [ref=e217]:
+          - generic [ref=e218]: 3️⃣
+          - generic [ref=e219]: Găsește request-ul
+          - generic [ref=e220]:
+            - text: În caseta de filter scrie
+            - code [ref=e221]: results
+            - text: și fă o căutare în TMview. Apare un request numit
+            - code [ref=e222]: results?translate=true
+        - generic [ref=e223]:
+          - generic [ref=e224]: 4️⃣
+          - generic [ref=e225]: Copiază ca cURL
+          - generic [ref=e226]:
+            - strong [ref=e227]: Click dreapta
+            - text: pe request →
+            - strong [ref=e228]: Copy
+            - text: →
+            - strong [ref=e229]: Copy as cURL
+            - text: (sau
+            - emphasis [ref=e230]: Copy as cURL (bash)
+            - text: )
+      - generic [ref=e231]:
+        - 'textbox "Lipește aici textul cURL copiat (începe cu: curl ''https://www.tmdn.org/tmview/api/search/results...'')" [ref=e232]'
+        - button "✅ Activează" [ref=e233] [cursor=pointer]

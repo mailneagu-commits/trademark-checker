@@ -53,6 +53,8 @@ class SearchRequest(BaseModel):
     nice_classes: List[str]
     offices: List[str]
     include_expired: bool = False
+    min_sub_len: int = None
+    max_sub_len: int = None
 
 
 class CurlRequest(BaseModel):
@@ -65,6 +67,8 @@ class ExportRequest(BaseModel):
     offices: List[str]
     results: List[dict]
     similar: List[dict] = []
+    expired_conflicts: List[dict] = []
+    expired_similar: List[dict] = []
     format: str  # "excel", "pdf" or "word"
 
 
@@ -176,14 +180,29 @@ async def check_trademark(request: SearchRequest):
     name = request.trademark_name.strip()
 
     # Generează variante wildcard (afișate în UI); search_agent le reconstruiește intern
-    variants = generate_all_variants(name)
+    substr_lengths = None
+    if request.min_sub_len and request.max_sub_len and request.min_sub_len <= request.max_sub_len:
+        substr_lengths = list(range(request.min_sub_len, request.max_sub_len + 1))
+    variants = generate_all_variants(name, substring_lengths=substr_lengths)
+
+    # Pass a few wildcard substring terms to the search engine to narrow/expand contains searches
+    extra_terms = []
+    if variants.get("wildcard"):
+        # extract bare terms from wildcard patterns and limit count
+        for t in variants["wildcard"]:
+            if "*" in t or "?" in t:
+                cleaned = t.replace("*", "").replace("?", "")
+                if cleaned:
+                    extra_terms.append(cleaned)
+        extra_terms = extra_terms[:8]
 
     trademarks, source = await search_agent.search(
         name,
         request.nice_classes,
         request.offices,
+        extra_terms=extra_terms,
     )
-    analysis = similarity_agent.analyze(name, trademarks, request.nice_classes)
+    analysis = similarity_agent.analyze(name, trademarks, request.nice_classes, request.offices)
 
     return {
         "query":             name,
@@ -207,21 +226,23 @@ async def export_report(request: ExportRequest):
     classes = request.nice_classes
     offices = request.offices
     results = request.results
+    expired_conflicts = request.expired_conflicts
+    expired_similar = request.expired_similar
     fmt     = request.format.lower()
 
     similar = request.similar
 
     try:
         if fmt == "excel":
-            data = build_excel(name, classes, offices, results, similar)
+            data = build_excel(name, classes, offices, results, similar, expired_conflicts, expired_similar)
             filename = f"raport_marca_{name.replace(' ', '_')}.xlsx"
             media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         elif fmt == "pdf":
-            data = build_pdf(name, classes, offices, results, similar)
+            data = build_pdf(name, classes, offices, results, similar, expired_conflicts, expired_similar)
             filename = f"raport_marca_{name.replace(' ', '_')}.pdf"
             media_type = "application/pdf"
         elif fmt == "word":
-            data = build_word(name, classes, offices, results, similar)
+            data = build_word(name, classes, offices, results, similar, expired_conflicts, expired_similar)
             filename = f"raport_marca_{name.replace(' ', '_')}.docx"
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:

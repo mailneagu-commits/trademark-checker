@@ -45,6 +45,9 @@ try:
 except ImportError:
     HAS_CURL_CFFI = False
 
+# Tracks Imperva/WAF blocks in the current search request (reset before each search)
+_tmview_block_count = 0
+
 from agents.variant_agent import (build_input_list, build_phonetic_variants,
                                    build_plural_stem_variants, build_vowel_variants,
                                    build_abbreviation_variants,
@@ -194,10 +197,17 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     if offices:      payload["offices"]     = offices
     if territories:  payload["territories"] = territories
     if nice_classes: payload["niceClass"]   = [int(c) if c.isdigit() else c for c in nice_classes]
+    global _tmview_block_count
     try:
         r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=55 if _PROXIES else 25)
         print(f"[TMVIEW] POST status={r.status_code} crit={criteria} term={term[:20]}")
         if r.status_code == 200:
+            ct = r.headers.get("content-type", "")
+            body = r.text
+            if not body.strip() or "json" not in ct.lower():
+                _tmview_block_count += 1
+                print(f"[TMVIEW] IMPERVA BLOCK — ct={ct!r} body_len={len(body)}")
+                return [], 0
             data  = r.json()
             marks = data.get("tradeMarks", [])
             print(f"[TMVIEW] found {len(marks)} marks")
@@ -243,7 +253,7 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
     return collected
 
 
-async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str], proxy_url: str = _PROXY_URL) -> List[Dict]:
+async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str], proxy_url: str = _PROXY_URL, extra_terms: Optional[List[str]] = None) -> List[Dict]:
     offices, territories = build_offices_and_territories(user_offices)
 
     # Cu proxy activ nu expandăm EM în 28 teritorii (prea multe batches → timeout).
@@ -270,6 +280,18 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
             ("Z", upper), ("C", upper), ("S", upper), ("E", upper),
             ("F", upper), ("C", f"*{upper}*"), ("C", f"{upper}*"), ("C", f"*{upper}"),
         ]
+
+    # Append extra substring terms (if provided) as wildcard contains searches.
+    if extra_terms:
+        # limit to avoid explosion
+        for term in extra_terms[:8]:
+            t = str(term).strip()
+            if not t:
+                continue
+            # strip any wildcard/placeholder chars if present
+            t_clean = t.replace("*", "").replace("?", "")
+            if t_clean:
+                main_searches.append(("C", f"*{t_clean}*"))
 
     all_phonetic = list(set(
         build_phonetic_variants(name) + build_vowel_variants(name) +
@@ -454,6 +476,7 @@ async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices
 class SearchAgent:
     async def search(self, name: str, nice_classes: List[str], offices: List[str],
                      extra_terms: Optional[List[str]] = None) -> Tuple[List[Dict], str]:
+        global _tmview_block_count
         if not HAS_CURL_CFFI:
             return _demo_marks(name, nice_classes, offices), "demo (curl-cffi lipsă)"
 
@@ -461,26 +484,34 @@ class SearchAgent:
         if _SCRAPERAPI_KEY:
             loop = asyncio.get_event_loop()
             marks = await loop.run_in_executor(None, _search_via_scraperapi, name, nice_classes, offices)
-            if marks is not None:
+            if marks:
                 return marks, "live:tmview"
 
         candidates = _PROXY_LIST + [""]
         for proxy_url in candidates:
             label = proxy_url[:30] if proxy_url else "direct"
+            _tmview_block_count = 0
             try:
                 marks = await asyncio.wait_for(
-                    _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url),
+                    _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url, extra_terms=extra_terms),
                     timeout=75.0 if proxy_url else 45.0
                 )
-                if marks is not None:
+                if marks:
                     print(f"[TMVIEW] success via {label}, {len(marks)} marks")
                     return marks, "live:tmview"
-                print(f"[TMVIEW] internal error via {label}, trying next")
+                if _tmview_block_count > 0:
+                    print(f"[TMVIEW] blocked by Imperva via {label} ({_tmview_block_count} blocks), trying next")
+                    continue
+                # Genuine 0 results (not blocked)
+                print(f"[TMVIEW] 0 results (not blocked) via {label}")
+                return [], "live:tmview"
             except asyncio.TimeoutError:
                 print(f"[TMVIEW] timeout via {label}")
             except Exception as e:
                 print(f"[TMVIEW] error via {label}: {type(e).__name__}: {e}")
 
+        if _tmview_block_count > 0:
+            return _demo_marks(name, nice_classes, offices), "demo (TMview blocat — lipiți sesiunea browser din DevTools)"
         return _demo_marks(name, nice_classes, offices), "demo (TMview indisponibil — date demonstrative)"
 
     async def search_expired(self, name: str, nice_classes: List[str],

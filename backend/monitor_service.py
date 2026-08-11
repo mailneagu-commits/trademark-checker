@@ -203,7 +203,7 @@ async def run_watch_item(watch_item, db: Session) -> Dict:
           f"osim_buletin={len(osim_bulletin_marks)}, euipo_buletin={len(euipo_bulletin_marks)})")
 
     # --- similarity ---
-    analysis     = _similarity.analyze(name, all_marks, classes)
+    analysis     = _similarity.analyze(name, all_marks, classes, offices)
     conflicts    = analysis.get("conflicts", [])
     similar      = analysis.get("similar", [])
 

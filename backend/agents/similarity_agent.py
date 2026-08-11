@@ -1,7 +1,8 @@
 from rapidfuzz import fuzz
 from rapidfuzz.distance import Levenshtein
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime, date as _date
+import re
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from nice_classes_ro import get_nice_description, get_nice_short
@@ -119,6 +120,18 @@ class SimilarityAgent:
             "is_multiword":           is_multiword,
         }
 
+    def _tokenize_words(self, value: str) -> List[str]:
+        return [tok for tok in re.split(r"[^A-Z0-9]+", value.upper().strip()) if tok]
+
+    def _exact_multiword_high_score(self, scores: Dict) -> float:
+        """Promote exact single-word inclusion in multiword marks to high risk, but not very high."""
+        target = max(
+            self.threshold_high + 5,
+            scores.get("textual_score", 0) + 10,
+            scores.get("partial_ratio", 0) - 8,
+        )
+        return round(min(self.threshold_very_high - 1, target), 1)
+
     def _normalize(self, tm: Dict) -> Dict:
         # Prioritate: applicants_detail (din endpoint detail, câmpuri separate)
         # Fallback: applicantName din search results (string concatenat nume+adresă)
@@ -219,8 +232,64 @@ class SimilarityAgent:
             "officeUrl":        tm.get("officeUrl", ""),
         }
 
+    def _office_priority_map(self, requested_offices: Optional[List[str]]) -> Dict[str, int]:
+        """Build office priority map: primary searched territory first, then EM, then WO."""
+        if not requested_offices:
+            return {}
+
+        cleaned: List[str] = []
+        seen = set()
+        for code in requested_offices:
+            c = (code or "").upper().strip()
+            if not c or c in seen:
+                continue
+            seen.add(c)
+            cleaned.append(c)
+
+        preferred = [c for c in cleaned if c not in {"EM", "WO"}]
+        primary = preferred[:1]
+        secondary = preferred[1:]
+        ordered = primary + ["EM", "WO"] + secondary
+        return {code: idx for idx, code in enumerate(ordered)}
+
+    def _sort_with_office_priority(self, items: List[Dict], requested_offices: Optional[List[str]]) -> None:
+        """Sort items by office priority, then registration date (oldest first), then score."""
+        priority_map = self._office_priority_map(requested_offices)
+
+        def _date_key(entry: Dict):
+            raw = (entry.get("applicationDate") or entry.get("registrationDate") or "").strip()
+            if not raw:
+                return _date.max
+            token = raw[:10]
+            for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+                try:
+                    return datetime.strptime(token, fmt).date()
+                except Exception:
+                    continue
+            return _date.max
+
+        if not priority_map:
+            items.sort(
+                key=lambda x: (
+                    _date_key(x),
+                    -x["similarity"].get("combined_score", 0),
+                )
+            )
+            return
+
+        default_rank = len(priority_map) + 1
+
+        def _key(entry: Dict):
+            office = (entry.get("office") or entry.get("tmOffice") or "").upper().strip()
+            rank = priority_map.get(office, default_rank)
+            score = entry.get("similarity", {}).get("combined_score", 0)
+            return (rank, _date_key(entry), -score)
+
+        items.sort(key=_key)
+
     def analyze(self, query: str, trademarks: List[Dict],
-                nice_classes: List[str] = None) -> Dict:
+                nice_classes: List[str] = None,
+                requested_offices: Optional[List[str]] = None) -> Dict:
         today = _date.today()
         conflicts          = []
         similar            = []
@@ -260,8 +329,23 @@ class SimilarityAgent:
             scores = self._calculate(query, name)
             sc     = scores["combined_score"]
 
-            words_q = query.upper().split()
-            words_c = name.upper().split()
+            words_q = self._tokenize_words(query)
+            words_c = self._tokenize_words(name)
+
+            exact_query_word_in_multiword = (
+                scores.get("is_multiword", False)
+                and len(words_q) == 1
+                and words_q[0] in words_c
+            )
+
+            if exact_query_word_in_multiword:
+                promoted_score = self._exact_multiword_high_score(scores)
+                sc = max(sc, promoted_score)
+                scores["textual_score"] = round(max(scores.get("textual_score", 0), promoted_score), 1)
+                scores["combined_score"] = round(max(scores.get("combined_score", 0), promoted_score), 1)
+                scores["exact_word_match"] = True
+            else:
+                scores["exact_word_match"] = False
 
             similar_word_match = any(
                 fuzz.ratio(wq, wc) >= 80 or bool(_roots(wq) & _roots(wc))
@@ -274,6 +358,8 @@ class SimilarityAgent:
 
             if (query.upper() in name.upper() or name.upper() in query.upper()) and sc < self.threshold_medium:
                 sc = max(sc, self.threshold_medium)
+
+            scores["combined_score"] = round(sc, 1)
 
             if sc >= self.threshold_very_high:
                 risk_level = "very_high"
@@ -310,7 +396,7 @@ class SimilarityAgent:
                     similar.append(entry)
 
         for lst in (conflicts, similar, expired_conflicts, expired_similar):
-            lst.sort(key=lambda x: x["similarity"]["combined_score"], reverse=True)
+            self._sort_with_office_priority(lst, requested_offices)
 
         return {
             "conflicts":         conflicts,

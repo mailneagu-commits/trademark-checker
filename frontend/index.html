@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Verificare Disponibilitate Marcă</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='48'%3E%E2%9A%96%EF%B8%8F%3C/text%3E%3C/svg%3E" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; color: #1a1a2e; min-height: 100vh; }
@@ -14,7 +15,16 @@
       display: flex; align-items: center; gap: 16px;
       box-shadow: 0 2px 12px rgba(0,0,0,0.25);
     }
-    header .logo { font-size: 2rem; }
+    header .logo { display:flex; align-items:center; justify-content:center; }
+    header .logo-img {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: rgba(255,255,255,.12);
+      padding: 4px;
+    }
+    header .logo-fallback { font-size: 2rem; display: none; }
     header h1  { font-size: 1.35rem; font-weight: 700; }
     header p   { font-size: 0.8rem; opacity: 0.65; margin-top: 3px; }
 
@@ -337,6 +347,8 @@
     .watch-table td { padding:10px 12px; border-bottom:1px solid #eef1f6; vertical-align:middle; }
     .watch-table tr:last-child td { border-bottom:none; }
     .watch-table tr:hover td { background:#f7faff; }
+    /* Highlight for holders from Iași */
+    .holder-iasi { color:#1e73be; font-weight:700; }
 
     .freq-badge { display:inline-block; padding:2px 9px; border-radius:10px; font-size:.72rem; font-weight:700; }
     .freq-daily   { background:#fef9e7; color:#b7950b; }
@@ -358,6 +370,16 @@
     .import-err { background:#fdecea; border-left:4px solid #c0392b; padding:12px 16px; border-radius:0 8px 8px 0; }
     .import-warn{ background:#fff3cd; border-left:4px solid #f39c12; padding:12px 16px; border-radius:0 8px 8px 0; }
 
+    .bulletin-grid {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 14px !important;
+      align-items: stretch !important;
+    }
+    .bulletin-grid > div {
+      width: 100% !important;
+    }
+
     @media (max-width: 700px) {
       header { padding: 18px; }
       .card  { padding: 16px; }
@@ -373,9 +395,12 @@
 <body>
 
 <header>
-  <div class="logo">⚖️</div>
+  <div class="logo">
+    <img class="logo-img" src="/protectmark-logo.png" alt="ProtectMARK" onerror="this.style.display='none';this.nextElementSibling.style.display='inline';" />
+    <span class="logo-fallback">⚖️</span>
+  </div>
   <div style="flex:1">
-    <h1>Verificare Disponibilitate Marcă</h1>
+    <h1>ProSearch Verificare Disponibilitate Marcă</h1>
     <p>Algoritm ProtectMARK · Fuzzy · Fonetic · TMview / EUIPO / WIPO</p>
   </div>
   <nav style="display:flex;gap:6px;">
@@ -416,10 +441,27 @@
     <hr class="divider" />
 
     <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
-      <button class="btn-primary" id="searchBtn" onclick="doSearch()">
-        Verifică disponibilitatea
-        <span class="spinner" id="spinner"></span>
-      </button>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <button class="btn-primary" id="searchBtn" onclick="doSearch()">
+          Verifică disponibilitatea
+          <span class="spinner" id="spinner"></span>
+        </button>
+        <div style="display:flex;gap:8px;align-items:center;background:#f7f9fc;border:1.5px solid #dfe7f2;border-radius:10px;padding:8px 10px;">
+          <label for="subLenPreset" style="font-weight:700;font-size:.82rem;color:#334155;">🔤 Lungime substring</label>
+          <select id="subLenPreset" title="Alege lungimea substring-urilor folosite pentru căutare" style="padding:8px 10px;border-radius:8px;border:1.5px solid #cbd5e1;font-size:.85rem;min-width:120px;">
+            <option value="2">2 litere</option>
+            <option value="3" selected>3 litere</option>
+            <option value="4">4 litere</option>
+            <option value="5">5 litere</option>
+            <option value="6">6 litere</option>
+            <option value="7">7 litere</option>
+            <option value="8">8 litere</option>
+          </select>
+          <input type="hidden" id="minSubLen" value="3" />
+          <input type="hidden" id="maxSubLen" value="3" />
+          <span id="subLenMsg" style="font-size:.78rem;color:#b03;margin-left:8px;display:none;">ℹ</span>
+        </div>
+      </div>
       <label class="toggle-wrap" title="Afișează/ascunde secțiunea cu mărci expirate / respinse similare" onclick="toggleExpiredSection()">
         <input type="checkbox" id="includeExpired" checked />
         <span class="toggle-track"></span>
@@ -608,7 +650,7 @@
       </div>
 
       <!-- Date pickers row -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px;" class="bulletin-grid">
+      <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:12px;" class="bulletin-grid">
 
         <!-- OSIM -->
         <div style="background:#fff;border:1.5px solid #d0d9ee;border-radius:8px;padding:14px;">
@@ -703,7 +745,7 @@
         </div>
         <div class="form-col">
           <label>Teritorii (separate prin virgulă) *</label>
-          <input type="text" id="wOffices" placeholder="ex: RO, EM" value="RO, EM" />
+          <input type="text" id="wOffices" placeholder="ex: RO, EM, CH" value="RO, EM" />
         </div>
       </div>
       <div class="form-row" style="margin-bottom:16px;">
@@ -829,6 +871,13 @@ let activeTab        = "all";
 let activeStatus     = "all";
 const exportSel      = new Set();   // ST13 (sau fallback idx) selectate pentru export
 let _allCardKeys     = [];          // toate cheile din cardurile vizibile
+
+function attachExportKeys(arr, prefix) {
+  (arr || []).forEach((tm, i) => {
+    if (!tm) return;
+    if (!tm.__exportKey) tm.__exportKey = tm.ST13 || `${prefix}${i}`;
+  });
+}
 
 // ---- Build form UI ----
 function buildNiceChips(filter = "") {
@@ -989,7 +1038,51 @@ function segBar(sim) {
 }
 
 // ---- Search ----
+// Validate substring length inputs; returns true if valid.
+function validateSubLen() {
+  const minEl = document.getElementById('minSubLen');
+  const maxEl = document.getElementById('maxSubLen');
+  const msg   = document.getElementById('subLenMsg');
+  const btn   = document.getElementById('searchBtn');
+  if (!minEl || !maxEl || !msg || !btn) return true;
+  const min = parseInt(minEl.value, 10) || 0;
+  const max = parseInt(maxEl.value, 10) || 0;
+  if (min < 1) {
+    msg.style.display = 'inline'; msg.textContent = 'Lungimea trebuie să fie ≥ 1'; btn.disabled = true; return false;
+  }
+  if (max < 1) {
+    msg.style.display = 'inline'; msg.textContent = 'Lungimea trebuie să fie ≥ 1'; btn.disabled = true; return false;
+  }
+  if (min > max) {
+    msg.style.display = 'inline'; msg.textContent = 'Lungimea minimă trebuie să fie ≤ maximă'; btn.disabled = true; return false;
+  }
+  msg.style.display = 'none'; msg.textContent = '';
+  btn.disabled = false;
+  return true;
+}
+
+function syncSubstringPreset() {
+  const preset = document.getElementById('subLenPreset');
+  const minEl = document.getElementById('minSubLen');
+  const maxEl = document.getElementById('maxSubLen');
+  if (!preset || !minEl || !maxEl) return;
+  const value = parseInt(preset.value, 10) || 3;
+  minEl.value = value;
+  maxEl.value = value;
+  validateSubLen();
+}
+
+// attach listeners once DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  const preset = document.getElementById('subLenPreset');
+  if (preset) {
+    preset.addEventListener('change', syncSubstringPreset);
+    syncSubstringPreset();
+  }
+});
+
 async function doSearch() {
+  if (!validateSubLen()) { showError('Setările substring-urilor sunt invalide.'); return; }
   const name = document.getElementById("trademarkName").value.trim();
   document.getElementById("errorBox").style.display = "none";
   if (!name) { showError("Introduceți denumirea mărcii."); return; }
@@ -1009,10 +1102,18 @@ async function doSearch() {
         trademark_name: name,
         nice_classes:   [...selectedNice],
         offices:        [...selectedCountries],
+          min_sub_len:    parseInt(document.getElementById('minSubLen').value || 0) || null,
+          max_sub_len:    parseInt(document.getElementById('maxSubLen').value || 0) || null,
       }),
     });
     const data = await res.json();
     if (!res.ok) { showError(data.detail || "Eroare necunoscută."); return; }
+
+    attachExportKeys(data.results || [], "r");
+    attachExportKeys(data.similar || [], "s");
+    attachExportKeys(data.expired_conflicts || [], "expc");
+    attachExportKeys(data.expired_similar || [], "exps");
+
     lastResults = data;
     allResults  = data.results || [];
     activeTab    = "all";
@@ -1070,8 +1171,9 @@ function setLoading(on) {
 
 // ---- Render results ----
 function renderResults(data) {
-  const isDemo = data.source && data.source.startsWith("demo");
-  const safe   = data.risky_marks === 0;
+  const isDemo    = data.source && data.source.startsWith("demo");
+  const isBlocked = isDemo && data.source.includes("blocat");
+  const safe      = data.risky_marks === 0;
 
   document.getElementById("summaryBadges").innerHTML = `
     <div class="badge badge-blue">🔎 Total găsite: <strong>${data.total_found}</strong></div>
@@ -1083,6 +1185,15 @@ function renderResults(data) {
     </div>
     ${data.variants ? `<div class="badge badge-blue">🔤 Variante căutate: <strong>${(data.variants.search_terms.length||0)+(data.variants.phonetic.length||0)}</strong></div>` : ""}
   `;
+
+  if (isBlocked) {
+    const box = document.getElementById("errorBox");
+    box.innerHTML = `<strong>TMview blocat de protecția anti-bot (Imperva).</strong>
+      Mergi pe <a href="https://www.tmdn.org/tmview/" target="_blank">tmdn.org/tmview</a>,
+      fă o căutare în browser, deschide DevTools (F12) → Network → filtrează <em>results</em>
+      → click dreapta pe request → <em>Copy as cURL</em>, apoi lipește în câmpul "Sesiune browser" din panoul de setări.`;
+    box.style.display = "block";
+  }
 
   renderGeo(allResults);
   renderTabs(allResults);
@@ -1247,7 +1358,7 @@ function renderExpired(results) {
 
 function _buildCard(tm, sim, idx, container) {
   const lvl       = riskLevel(sim.combined_score);
-  const key       = tm.ST13 || String(idx);
+  const key       = tm.__exportKey || tm.ST13 || String(idx);
   const applicant = (tm.applicants || []).map(a => a.name || "").filter(Boolean).join(", ") || "—";
   const applicantCountry = (tm.applicants || []).map(a => a.country || "").filter(Boolean).join(", ");
   const niceShort = (tm.niceDetailed || []).map(nd => `Cls ${nd.class}: ${nd.short}`).join(" · ")
@@ -1460,14 +1571,24 @@ function renderVariants(v) {
   if (!v) return;
   const card    = document.getElementById("variantsCard");
   const content = document.getElementById("variantsContent");
+  const searchTerms = Array.isArray(v.search_terms) ? v.search_terms : [];
+  const truncatedRoot = Array.isArray(v.truncated_root) ? v.truncated_root : [];
 
-  const termHtml = v.search_terms.map((t, i) =>
+  const termHtml = searchTerms.map((t, i) =>
+    `<span class="chip ${i===0?'selected':''}" style="cursor:default;font-size:.74rem;">${t}</span>`
+  ).join(" ");
+
+  const truncatedHtml = truncatedRoot.map((t, i) =>
     `<span class="chip ${i===0?'selected':''}" style="cursor:default;font-size:.74rem;">${t}</span>`
   ).join(" ");
 
   content.innerHTML = `
+    <div style="margin-bottom:12px;">
+      <label>Rădăcină trunchiată stânga/dreapta (${truncatedRoot.length})</label>
+      <div class="chips-grid" style="max-height:80px;">${truncatedHtml || '<span style="color:#888;font-size:.78rem;">Niciun termen de tip rădăcină trunchiată.</span>'}</div>
+    </div>
     <div style="margin-bottom:8px;">
-      <label>Termeni trimiși la TMview (${v.search_terms.length})</label>
+      <label>Termeni trimiși la TMview (${searchTerms.length})</label>
       <div class="chips-grid" style="max-height:80px;">${termHtml}</div>
     </div>`;
 
@@ -1567,20 +1688,33 @@ async function saveToMonitor() {
 async function doExport(format) {
   if (!lastResults) return;
 
-  // Filtrăm după selecție dacă există
-  const allRes = lastResults.results || [];
-  const allSim = lastResults.similar || [];
-  let exportResults, exportSimilar;
+  const allRes        = lastResults.results || [];
+  const allSim        = lastResults.similar || [];
+  const allExpiredRes = lastResults.expired_conflicts || [];
+  const allExpiredSim = lastResults.expired_similar || [];
+  let exportResults, exportSimilar, exportExpiredResults, exportExpiredSimilar;
 
   if (exportSel.size > 0) {
-    exportResults = allRes.filter(tm => exportSel.has(tm.ST13 || ""));
-    exportSimilar = allSim.filter(tm => exportSel.has(tm.ST13 || ""));
-    // Dacă nimic nu se potrivește (ST13 gol), fallback la toate selectate
-    if (exportResults.length === 0 && exportSimilar.length === 0) {
-      exportResults = allRes; exportSimilar = allSim;
+    exportResults = allRes.filter(tm => exportSel.has(tm.__exportKey || tm.ST13 || ""));
+    exportSimilar = allSim.filter(tm => exportSel.has(tm.__exportKey || tm.ST13 || ""));
+    // Mărcile expirate se exportă întotdeauna integral, indiferent de selecția cardurilor,
+    // pentru a evita pierderea lor din raport.
+    exportExpiredResults = allExpiredRes;
+    exportExpiredSimilar = allExpiredSim;
+    if (
+      exportResults.length === 0 && exportSimilar.length === 0 &&
+      exportExpiredResults.length === 0 && exportExpiredSimilar.length === 0
+    ) {
+      exportResults = allRes;
+      exportSimilar = allSim;
+      exportExpiredResults = allExpiredRes;
+      exportExpiredSimilar = allExpiredSim;
     }
   } else {
-    exportResults = allRes; exportSimilar = allSim;
+    exportResults = allRes;
+    exportSimilar = allSim;
+    exportExpiredResults = allExpiredRes;
+    exportExpiredSimilar = allExpiredSim;
   }
 
   try {
@@ -1593,6 +1727,8 @@ async function doExport(format) {
         offices:        lastResults.offices,
         results:        exportResults,
         similar:        exportSimilar,
+        expired_conflicts: exportExpiredResults,
+        expired_similar:   exportExpiredSimilar,
         format,
       }),
     });
@@ -1777,9 +1913,13 @@ function renderBulletinMarks(source, data) {
     const holder   = (m.applicantName || []).join(", ") || "—";
     const date     = (m.applicationDate || "").slice(0, 10);
     const classes  = (m.niceClass || []).join(", ") || "—";
+    // Detect holder from Iași (accept variations with/without diacritics)
+    const holderNorm = (holder || "").toLowerCase();
+    const isIasi = /ia[sș]i|ia\u015Fi|ia\u0219i/.test(holderNorm) || /iasi|iași|iaş i/.test(holderNorm);
+    const holderHtml = isIasi ? `<span class="holder-iasi">${holder}</span>` : holder;
     return `<tr>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-weight:600;">${m.tmName || "—"}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${holder}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${holderHtml}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${m.applicationNumber || "—"}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${date}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${classes}</td>

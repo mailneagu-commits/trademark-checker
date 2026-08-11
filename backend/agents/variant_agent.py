@@ -19,8 +19,30 @@ import re
 MAX_PAGES_PER_TERM = 5   # limita internă pentru query-uri cu multe rezultate
 
 
-def build_input_list(name: str) -> List[str]:
-    """Reproduce exact logica build_input_list din ProtectMARK."""
+def build_truncated_root_variants(name: str) -> List[str]:
+    """Generate left/right truncated root searches such as *TERM and TERM*."""
+    upper = name.upper().strip()
+    variants: List[str] = []
+    seen: Set[str] = set()
+
+    def add(term: str):
+        if term not in seen:
+            seen.add(term)
+            variants.append(term)
+
+    if len(upper) >= 2:
+        add(f"*{upper}")
+        add(f"{upper}*")
+
+    return variants
+
+
+def build_input_list(name: str, substring_lengths: List[int] = None) -> List[str]:
+    """Reproduce exact logica build_input_list din ProtectMARK.
+
+    substring_lengths: optional list of integer lengths for internal substrings
+    to generate (e.g. [3,4,5]). If None, defaults to [3,4,5].
+    """
     upper = name.upper().strip()
     n = len(upper)
     result: List[str] = []
@@ -55,10 +77,34 @@ def build_input_list(name: str) -> List[str]:
             # Ultima literă — și variantă cu suffix wildcard
             add(f"*{prefix}?*")
 
-    # 4. Subșiruri finale (ultimele 2 litere eliminate, prima literă eliminată)
-    if n >= 4:
-        add(f"*{upper[:-1]}*")    # fără ultima literă
-        add(f"*{upper[1:]}*")     # fără prima literă
+    # 4. Tăieri progresive din margini:
+    #    elimină k litere din stânga și din dreapta (k >= 1)
+    #    până când segmentul rămas are minimum 4 litere.
+    if n >= 5:
+        max_trim = n - 4
+        for k in range(1, max_trim + 1):
+            add(f"*{upper[k:]}*")     # fără primele k litere
+            add(f"*{upper[:-k]}*")    # fără ultimele k litere
+
+        # Tăieri simultane din stânga și dreapta, păstrând minimum 4 litere.
+        for left_trim in range(1, n - 3):
+            for right_trim in range(1, n - left_trim - 2):
+                middle = upper[left_trim:n - right_trim]
+                if len(middle) >= 4:
+                    add(f"*{middle}*")
+
+    # 5. Substrings utile (prefex/suffix și segmente interne)
+    # By default generate a wider set of window sizes so the UI exposes
+    # longer prefix/suffix patterns such as *KARTEZ* and *RTEZIAN*.
+    if substring_lengths is None:
+        substring_lengths = list(range(3, min(n, 8) + 1))
+    # sanitize and unique lengths
+    lengths = sorted({int(x) for x in substring_lengths if isinstance(x, int) or (isinstance(x, str) and str(x).isdigit())})
+    for L in lengths:
+        if n >= L:
+            for i in range(0, n - L + 1):
+                sub = upper[i:i+L]
+                add(f"*{sub}*")
 
     return result
 
@@ -139,6 +185,7 @@ _NON_EU_OFFICES = {"GB", "CH", "TR", "UA", "MD", "US", "SA", "RU", "AM"}
 
 
 _BENELUX = {"BE", "NL", "LU"}
+_BENELUX_OFFICES = {"BX", "BENELUX"}
 
 def build_offices_and_territories(user_offices: List[str]):
     """
@@ -152,18 +199,25 @@ def build_offices_and_territories(user_offices: List[str]):
                  · mărci naționale din fiecare stat UE
     - WO       → offices = ["WO"]
                  (mărci internaționale WIPO indiferent de teritorii desemnate)
-    - BE/NL/LU → territories = ["BX"]   (teritoriu Benelux)
+    - BX/BENELUX → territories = ["BX"] + offices = ["EM"]
+                 (caută atât Benelux național, cât și marcile europene care acoperă Benelux)
+    - BE/NL/LU → territories = [cod_țară]
     - Orice altă țară → territories = [cod_țară]
+
+    Important: pentru o selecție de țară națională (de exemplu RO), nu adăugăm
+    automat EUIPO, deoarece aceasta lărgește excesiv căutarea și produce rezultate
+    necorespunzătoare pentru cerințele de clasă/office specifice.
     """
-    offices_set:     Set[str] = set()
+    offices_set: Set[str] = set()
     territories_set: Set[str] = set()
 
-    has_eu_country = False
     for code in user_offices:
         c = code.upper()
-        if c in _BENELUX:
+        if c in _BENELUX_OFFICES:
             territories_set.add("BX")
-            has_eu_country = True
+            offices_set.add("EM")
+        elif c in _BENELUX:
+            territories_set.add(c)
         elif c == "WO":
             offices_set.add("WO")
         elif c == "EM":
@@ -171,13 +225,8 @@ def build_offices_and_territories(user_offices: List[str]):
             territories_set.update(ALL_EU_TERRITORIES)
         elif c in _EU_COUNTRY_SET:
             territories_set.add(c)
-            has_eu_country = True
         else:
             territories_set.add(c)
-
-    # Orice stat UE selectat → adăugăm și EUIPO (mărci europene acoperă toate țările UE)
-    if has_eu_country and "EM" not in territories_set:
-        offices_set.add("EM")
 
     return sorted(offices_set), sorted(territories_set)
 
@@ -296,15 +345,39 @@ def build_abbreviation_variants(name: str) -> List[str]:
 
     return variants
 
+def build_primary_phonetic_variants(name: str) -> List[str]:
+    """Return the most relevant phonetic family variant(s) for the combined search list."""
+    upper = name.upper().strip()
+    if not upper:
+        return []
+    phonetics = []
+    for term in build_phonetic_variants(name):
+        plain = term.replace("*", "")
+        if plain and plain.upper() != upper and "Y" in plain.upper():
+            phonetics.append(plain.upper())
+            break
+    return phonetics
 
-def generate_all_variants(name: str) -> dict:
-    inputs        = build_input_list(name)
-    phonetic      = build_phonetic_variants(name)
-    plurals       = build_plural_stem_variants(name)
-    vowels        = build_vowel_variants(name)
+
+def generate_all_variants(name: str, substring_lengths: List[int] = None) -> dict:
+    inputs = build_input_list(name, substring_lengths)
+    truncated_root = build_truncated_root_variants(name)
+    primary_phonetic_variants = build_primary_phonetic_variants(name)
+    phonetic = build_phonetic_variants(name)
+    plurals = build_plural_stem_variants(name)
+    vowels = build_vowel_variants(name)
     abbreviations = build_abbreviation_variants(name)
 
     all_extra = phonetic + plurals + vowels + abbreviations
+
+    for term in truncated_root:
+        if term not in inputs:
+            inputs.append(term)
+
+    for phonetic_name in primary_phonetic_variants:
+        for term in build_input_list(phonetic_name, substring_lengths):
+            if term not in inputs:
+                inputs.append(term)
 
     return {
         "original":      name.upper().strip(),
@@ -314,5 +387,6 @@ def generate_all_variants(name: str) -> dict:
         "plurals":       plurals,
         "vowels":        vowels,
         "abbreviations": abbreviations,
+        "truncated_root": truncated_root,
         "all_extra":     all_extra,
     }

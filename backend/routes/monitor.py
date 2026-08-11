@@ -174,7 +174,7 @@ def download_template():
     # Note row
     ws.cell(row=3, column=1, value="* câmpuri obligatorii")
     ws.cell(row=3, column=1).font = Font(italic=True, color="888888")
-    ws.cell(row=4, column=1, value="Teritorii acceptate: RO, EM, EU, DE, FR, IT, ES, UK, US, WO (sau orice cod de țară din TMview)")
+    ws.cell(row=4, column=1, value="Teritorii acceptate: RO, EM, EU, DE, FR, IT, ES, CH, UK, US, WO (sau orice cod de țară din TMview)")
     ws.cell(row=4, column=1).font = Font(italic=True, color="888888")
     ws.merge_cells("A4:F4")
 

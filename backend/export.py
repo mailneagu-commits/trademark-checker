@@ -1,7 +1,8 @@
 import io
+import os
 import requests
 from typing import List, Dict, Optional
-from datetime import date
+from datetime import date, datetime
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -58,7 +59,7 @@ from PIL import Image as PILImage
 from docx import Document
 from docx.shared import Pt, RGBColor, Cm, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_ALIGN_VERTICAL
+from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -108,6 +109,62 @@ def _risk_color_pdf(score: float):
     return colors.Color(r/255, g/255, b/255)
 
 
+def _office_priority_map(offices: Optional[List[str]]) -> Dict[str, int]:
+    cleaned: List[str] = []
+    seen = set()
+    for code in offices or []:
+        c = (code or "").upper().strip()
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        cleaned.append(c)
+    preferred = [c for c in cleaned if c not in {"EM", "WO"}]
+    primary = preferred[:1]
+    secondary = preferred[1:]
+    ordered = primary + ["EM", "WO"] + secondary
+    return {code: idx for idx, code in enumerate(ordered)}
+
+
+def _sortable_filing_date(entry: Dict):
+    raw = (entry.get("applicationDate") or entry.get("registrationDate") or "").strip()
+    if not raw:
+        return date.max
+    token = raw[:10]
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(token, fmt).date()
+        except Exception:
+            continue
+    return date.max
+
+
+def _sort_export_results(items: List[Dict], offices: Optional[List[str]]) -> List[Dict]:
+    priority_map = _office_priority_map(offices)
+    default_rank = len(priority_map) + 1
+
+    return sorted(
+        items or [],
+        key=lambda entry: (
+            priority_map.get((entry.get("office") or entry.get("tmOffice") or "").upper().strip(), default_rank),
+            _sortable_filing_date(entry),
+            -(entry.get("similarity", {}).get("combined_score", 0)),
+        )
+    )
+
+
+def _risk_buckets(items: List[Dict]) -> Dict[str, List[Dict]]:
+    buckets = {
+        "very_high": [],
+        "high": [],
+        "medium": [],
+        "low": [],
+    }
+    for item in items or []:
+        level = _risk_level(item.get("similarity", {}).get("combined_score", 0))
+        buckets[level].append(item)
+    return buckets
+
+
 _TMDN_BASE = "https://www.tmdn.org"
 _IMG_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
@@ -137,9 +194,139 @@ def _fetch_image_bytes(url: str, size=(60, 60)) -> Optional[bytes]:
     return None
 
 
+def _fetch_local_logo_bytes() -> Optional[bytes]:
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "..", "frontend", "protectmark-logo.png"),
+        os.path.join(os.path.dirname(__file__), "..", "frontend", "protectmark-logo.svg"),
+        os.path.join(os.path.dirname(__file__), "..", "protectmark-logo.png"),
+        os.path.join(os.path.dirname(__file__), "..", "protectmark-logo.svg"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+                if data:
+                    return data
+            except Exception:
+                pass
+    return None
+
+
+def _add_export_brand_header_pdf(story, query: str):
+    logo_bytes = _fetch_local_logo_bytes()
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "BrandHeaderTitle",
+        parent=styles["Normal"],
+        fontName=_PDF_FONT_BOLD,
+        fontSize=16,
+        leading=18,
+        textColor=colors.HexColor("#0F3460"),
+        alignment=TA_CENTER,
+    )
+    subtitle_style = ParagraphStyle(
+        "BrandHeaderSubtitle",
+        parent=styles["Normal"],
+        fontName=_PDF_FONT_BOLD,
+        fontSize=16,
+        leading=18,
+        textColor=colors.HexColor("#555555"),
+        alignment=TA_CENTER,
+    )
+    logo_style = ParagraphStyle(
+        "BrandHeaderLogo",
+        parent=styles["Normal"],
+        fontName=_PDF_FONT_BOLD,
+        fontSize=14,
+        leading=16,
+        textColor=colors.HexColor("#0F3460"),
+        alignment=TA_CENTER,
+    )
+
+    title = Paragraph("ProSearch", title_style)
+    subtitle = Paragraph("RAPORT VERIFICARE DISPONIBILITATE MARCA", title_style)
+    trademark = Paragraph(query, subtitle_style)
+
+    if logo_bytes:
+        try:
+            logo = RLImage(io.BytesIO(logo_bytes), width=1.7*cm, height=1.7*cm)
+        except Exception:
+            logo = Paragraph("PM", logo_style)
+    else:
+        logo = Paragraph("PM", logo_style)
+
+    header = Table([[logo, title], ["", subtitle], ["", trademark]], colWidths=[2.8*cm, 17.3*cm])
+    header.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("SPAN", (0,0), (0,2)),
+        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+        ("LEFTPADDING", (0,0), (-1,-1), 0),
+        ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING", (0,0), (-1,-1), 1),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 1),
+        ("LEADING", (1,0), (1,2), 18),
+    ]))
+    story.append(header)
+    story.append(Spacer(1, 0.35*cm))
+
+
+def _add_export_brand_header_word(doc, query: str):
+    logo_bytes = _fetch_local_logo_bytes()
+    blue = RGBColor(0x0F, 0x34, 0x60)
+    gray = RGBColor(0x55, 0x55, 0x55)
+    tbl = doc.add_table(rows=3, cols=2)
+    tbl.style = "Table Grid"
+    _set_table_col_widths_cm(tbl, [2.8, 17.3])
+    for cell in tbl.rows[0].cells:
+        _set_cell_bg(cell, "FFFFFF")
+    for row in tbl.rows:
+        for cell in row.cells:
+            _set_cell_bg(cell, "FFFFFF")
+
+    c0 = tbl.cell(0,0).merge(tbl.cell(2,0))
+    c1, c2, c3 = tbl.cell(0,1), tbl.cell(1,1), tbl.cell(2,1)
+    p0 = c0.paragraphs[0]
+    p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    c0.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+    if logo_bytes:
+        try:
+            p0.add_run().add_picture(io.BytesIO(logo_bytes), width=Cm(2.3))
+        except Exception:
+            r = p0.add_run("PM")
+            r.bold = True; r.font.size = Pt(14); r.font.name = "Arial"; r.font.color.rgb = blue
+    else:
+        r = p0.add_run("PM")
+        r.bold = True; r.font.size = Pt(14); r.font.name = "Arial"; r.font.color.rgb = blue
+
+    for cell in (c1, c2, c3):
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+
+    p1 = c1.paragraphs[0]
+    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r1 = p1.add_run("ProSearch")
+    r1.bold = True; r1.font.size = Pt(15); r1.font.name = "Arial"; r1.font.color.rgb = blue
+
+    p2 = c2.paragraphs[0]
+    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r2 = p2.add_run("RAPORT VERIFICARE DISPONIBILITATE MARCA")
+    r2.bold = True; r2.font.size = Pt(15); r2.font.name = "Arial"; r2.font.color.rgb = blue
+
+    p3 = c3.paragraphs[0]
+    p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r3 = p3.add_run(query)
+    r3.bold = True; r3.font.size = Pt(15); r3.font.name = "Arial"; r3.font.color.rgb = blue
+
+    _set_borders(tbl)
+    for row in tbl.rows:
+        row.height = Cm(0.95)
+    doc.add_paragraph()
+
+
 # ── Excel ──────────────────────────────────────────────────────────────
 def build_excel(query: str, nice_classes: List[str], offices: List[str],
-                results: List[Dict], similar: List[Dict] = None) -> bytes:
+                results: List[Dict], similar: List[Dict] = None,
+                expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None) -> bytes:
     from datetime import datetime as _dt
 
     def _xdate(d):
@@ -166,16 +353,15 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
     c.alignment = center
     ws.row_dimensions[1].height = 26
 
-    all_results = sorted(
-        (results or []) + (similar or []),
-        key=lambda x: x.get("similarity", {}).get("combined_score", 0),
-        reverse=True
-    )
+    active_results = _sort_export_results((results or []) + (similar or []), offices)
+    expired_results = _sort_export_results((expired_conflicts or []) + (expired_similar or []), offices)
+    total_results = len(active_results) + len(expired_results)
 
     ws.merge_cells(f"A2:{get_column_letter(NCOLS)}2")
     c = ws["A2"]
     c.value = (f"Clase NICE: {', '.join(nice_classes)}  |  Teritorii: {', '.join(offices)}  |  "
-               f"Total rezultate: {len(all_results)}  |  Data: {date.today().strftime('%d.%m.%Y')}")
+               f"Rezultate active: {len(active_results)}  |  Mărci expirate: {len(expired_results)}  |  "
+               f"Total rezultate: {total_results}  |  Data: {date.today().strftime('%d.%m.%Y')}")
     c.font      = Font(italic=True, size=9, color="FF555555")
     c.alignment = center
     ws.row_dimensions[2].height = 16
@@ -192,7 +378,7 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         "Data depunere", "Data inregistrare", "Data expirare",
         "Clase NICE", "Produse si servicii",
     ]
-    col_widths = [4, 18, 8, 11, 26, 22, 14, 32, 14, 16, 14, 12, 46]
+    col_widths = [4, 16, 7, 9, 20, 18, 12, 24, 12, 13, 12, 10, 28]
 
     hdr_font = Font(bold=True, color="FFFFFFFF", size=9)
     hdr_fill = PatternFill("solid", fgColor="FF0F3460")
@@ -205,6 +391,24 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.row_dimensions[4].height = 28
 
+    # Configure worksheet so the full table fits on an A4 landscape page
+    # and remains readable without manual resizing in Excel.
+    ws.freeze_panes = "A5"
+    ws.sheet_view.zoomScale = 85
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.top = 0.5
+    ws.page_margins.bottom = 0.5
+    ws.page_margins.header = 0.2
+    ws.page_margins.footer = 0.2
+    ws.print_options.horizontalCentered = True
+    ws.print_title_rows = "1:4"
+
     # ── Rânduri date ──────────────────────────────────────────────────
     RISK_LABELS_XL = {
         "very_high": "RISC FOARTE RIDICAT",
@@ -213,123 +417,282 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         "low":       "RISC SCAZUT",
     }
 
-    for i, tm in enumerate(all_results, 1):
-        sim    = tm.get("similarity", {})
-        score  = sim.get("combined_score", 0)
-        lvl    = _risk_level(score)
-        row_idx = i + 4
+    def add_result_rows(items: List[Dict], row_start: int, display_start: int, expired_section: bool = False):
+        for offset, tm in enumerate(items):
+            sim    = tm.get("similarity", {})
+            score  = sim.get("combined_score", 0)
+            lvl    = _risk_level(score)
+            row_idx = row_start + offset
+            row_no = display_start + offset
 
-        # Date text
-        applicant = ", ".join(a.get("name", "") for a in tm.get("applicants", []) if a.get("name")) or "—"
-        nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
-        if tm.get("goodAndServices"):
-            nice_desc = "\n".join(
-                f"Cls {g['niceClass']}: {g['goodsAndServices']}"
-                for g in tm["goodAndServices"] if g.get("goodsAndServices")
-            )
-        else:
-            nice_desc = "; ".join(nd.get("short", "") for nd in tm.get("niceDetailed") or [])
+            applicant = ", ".join(a.get("name", "") for a in tm.get("applicants", []) if a.get("name")) or "—"
+            nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
+            if tm.get("goodAndServices"):
+                nice_desc = "\n".join(
+                    f"Cls {g['niceClass']}: {g['goodsAndServices']}"
+                    for g in tm["goodAndServices"] if g.get("goodsAndServices")
+                )
+            else:
+                nice_desc = "; ".join(nd.get("short", "") for nd in tm.get("niceDetailed") or [])
 
-        status = tm.get("status", "") or "—"
-        exp_date = _xdate(tm.get("expiryDate", ""))
-        exp_note = f"{exp_date} *" if exp_date and not tm.get("expiryIsReal") else (exp_date or "—")
+            status = tm.get("status", "") or "—"
+            exp_date = _xdate(tm.get("expiryDate", ""))
+            exp_note = f"{exp_date} *" if exp_date and not tm.get("expiryIsReal") else (exp_date or "—")
 
-        row_vals = [
-            i,
-            RISK_LABELS_XL[lvl],
-            f"{score}%",
-            "",                                          # logo — se adaugă separat
-            tm.get("tmName", "—"),
-            tm.get("officeName", tm.get("office", "—")),
-            status,
-            applicant,
-            _xdate(tm.get("applicationDate", "")),
-            _xdate(tm.get("registrationDate", "")),
-            exp_note,
-            nice_nums,
-            nice_desc,
-        ]
+            row_vals = [
+                row_no,
+                "MARCĂ EXPIRATĂ" if expired_section else RISK_LABELS_XL[lvl],
+                f"{score}%",
+                "",
+                tm.get("tmName", "—"),
+                tm.get("officeName", tm.get("office", "—")),
+                status,
+                applicant,
+                _xdate(tm.get("applicationDate", "")),
+                _xdate(tm.get("registrationDate", "")),
+                exp_note,
+                nice_nums,
+                nice_desc,
+            ]
 
-        # Culori risc
-        r, g, b   = _RISK_RGB[lvl]
-        rb, gb, bb = _RISK_BG_RGB[lvl]
-        fg_hex = f"FF{r:02X}{g:02X}{b:02X}"
-        bg_hex = f"FF{rb:02X}{gb:02X}{bb:02X}"
-        risk_fill  = PatternFill("solid", fgColor=bg_hex)
-        white_fill = PatternFill("solid", fgColor="FFFFFFFF")
-        alt_fill   = PatternFill("solid", fgColor="FFF7F9FC") if i % 2 == 0 else white_fill
+            r, g, b = _RISK_RGB[lvl]
+            rb, gb, bb = _RISK_BG_RGB[lvl]
+            fg_hex = f"FF{r:02X}{g:02X}{b:02X}"
+            bg_hex = "FFFDECEA" if expired_section else f"FF{rb:02X}{gb:02X}{bb:02X}"
+            risk_fill  = PatternFill("solid", fgColor=bg_hex)
+            white_fill = PatternFill("solid", fgColor="FFFFFFFF")
+            alt_fill   = PatternFill("solid", fgColor="FFFDF7F7") if expired_section else (PatternFill("solid", fgColor="FFF7F9FC") if row_no % 2 == 0 else white_fill)
 
-        for col, val in enumerate(row_vals, 1):
-            cell = ws.cell(row=row_idx, column=col, value=val)
-            cell.border = border
+            for col, val in enumerate(row_vals, 1):
+                cell = ws.cell(row=row_idx, column=col, value=val)
+                cell.border = border
 
-            if col == 1:   # #
-                cell.alignment = center
-                cell.fill      = white_fill
-                cell.font      = Font(size=9, color="FF888888")
-            elif col == 2:  # Nivel risc
-                cell.alignment = center
-                cell.fill      = risk_fill
-                cell.font      = Font(bold=True, size=9, color=fg_hex)
-            elif col == 3:  # Scor
-                cell.alignment = center
-                cell.fill      = risk_fill
-                cell.font      = Font(bold=True, size=12, color=fg_hex)
-            elif col == 4:  # Sigla — placeholder, imagine adaugata mai jos
-                cell.alignment = center
-                cell.fill      = alt_fill
-                cell.font      = Font(size=14, color="FFBBBBBB")
-                cell.value     = "TM"   # fallback text
-            elif col == 5:  # Denumire marca
-                cell.alignment = left
-                cell.fill      = alt_fill
-                cell.font      = Font(bold=True, size=10, color="FF1a1a2e")
-            elif col in (6, 7):  # Birou, Status
-                cell.alignment = center
-                cell.fill      = alt_fill
-                cell.font      = Font(size=9)
-            elif col == 8:  # Titular
-                cell.alignment = left
-                cell.fill      = alt_fill
-                cell.font      = Font(size=9, bold=True)
-            elif col in (9, 10):  # Date depunere / inregistrare
-                cell.alignment = center
-                cell.fill      = alt_fill
-                cell.font      = Font(size=9)
-            elif col == 11:  # Data expirare
-                cell.alignment = center
-                cell.fill      = alt_fill
-                cell.font      = Font(size=9, bold=True,
-                                      color="FFC0392B" if exp_date else "FF888888")
-            elif col == 12:  # Clase NICE
-                cell.alignment = center
-                cell.fill      = alt_fill
-                cell.font      = Font(size=8, color="FF0F3460")
-            else:            # Produse/servicii
-                cell.alignment = left
-                cell.fill      = alt_fill
-                cell.font      = Font(size=8, color="FF444444")
+                if col == 1:
+                    cell.alignment = center
+                    cell.fill      = white_fill
+                    cell.font      = Font(size=9, color="FF888888")
+                elif col == 2:
+                    cell.alignment = center
+                    cell.fill      = risk_fill
+                    cell.font      = Font(bold=True, size=9, color="FFC0392B" if expired_section else fg_hex)
+                elif col == 3:
+                    cell.alignment = center
+                    cell.fill      = risk_fill
+                    cell.font      = Font(bold=True, size=12, color="FFC0392B" if expired_section else fg_hex)
+                elif col == 4:
+                    cell.alignment = center
+                    cell.fill      = alt_fill
+                    cell.font      = Font(size=14, color="FFBBBBBB")
+                    cell.value     = "TM"
+                elif col == 5:
+                    cell.alignment = left
+                    cell.fill      = alt_fill
+                    cell.font      = Font(bold=True, size=10, color="FF1a1a2e")
+                elif col in (6, 7):
+                    cell.alignment = center
+                    cell.fill      = alt_fill
+                    cell.font      = Font(size=9)
+                elif col == 8:
+                    cell.alignment = left
+                    cell.fill      = alt_fill
+                    cell.font      = Font(size=9, bold=True)
+                elif col in (9, 10):
+                    cell.alignment = center
+                    cell.fill      = alt_fill
+                    cell.font      = Font(size=9)
+                elif col == 11:
+                    cell.alignment = center
+                    cell.fill      = alt_fill
+                    cell.font      = Font(size=9, bold=True, color="FFC0392B" if exp_date else "FF888888")
+                elif col == 12:
+                    cell.alignment = center
+                    cell.fill      = alt_fill
+                    cell.font      = Font(size=8, color="FF0F3460")
+                else:
+                    cell.alignment = left
+                    cell.fill      = alt_fill
+                    cell.font      = Font(size=8, color="FF444444")
 
-        ws.row_dimensions[row_idx].height = 52
+            max_text_len = max(len(str(row_vals[4] or "")), len(str(row_vals[7] or "")), len(str(row_vals[12] or "")))
+            estimated_lines = max(2, min(8, (max_text_len // 38) + 1))
+            ws.row_dimensions[row_idx].height = max(52, estimated_lines * 16)
 
-        # Imagine logo (înlocuiește textul "TM" dacă există)
-        img_bytes = _fetch_image_bytes(tm.get("imageUrl"), size=(48, 48))
-        if img_bytes:
-            try:
-                xl_img = XLImage(io.BytesIO(img_bytes))
-                xl_img.width = 42; xl_img.height = 42
-                ws.add_image(xl_img, f"D{row_idx}")
-                ws.cell(row=row_idx, column=4).value = ""  # sterge textul TM
-            except Exception:
-                pass
+            img_bytes = _fetch_image_bytes(tm.get("imageUrl"), size=(48, 48))
+            if img_bytes:
+                try:
+                    xl_img = XLImage(io.BytesIO(img_bytes))
+                    xl_img.width = 42; xl_img.height = 42
+                    ws.add_image(xl_img, f"D{row_idx}")
+                    ws.cell(row=row_idx, column=4).value = ""
+                except Exception:
+                    pass
+
+    active_header_row = 5
+    ws.merge_cells(f"A{active_header_row}:M{active_header_row}")
+    active_cell = ws.cell(row=active_header_row, column=1, value=f"Mărci active ({len(active_results)})")
+    active_cell.font = Font(bold=True, size=14, color="FF0F3460")
+    active_cell.fill = PatternFill("solid", fgColor="FFE8F0FB")
+    active_cell.alignment = center
+    for col in range(1, NCOLS + 1):
+        ws.cell(row=active_header_row, column=col).border = border
+
+    add_result_rows(active_results, active_header_row + 1, 1)
+
+    next_row = active_header_row + 1 + len(active_results)
+    if expired_results:
+        ws.merge_cells(f"A{next_row}:M{next_row}")
+        section_cell = ws.cell(row=next_row, column=1, value=f"Mărci expirate ({len(expired_results)})")
+        section_cell.font = Font(bold=True, size=14, color="FFC0392B")
+        section_cell.fill = PatternFill("solid", fgColor="FFFDECEA")
+        section_cell.alignment = center
+        for col in range(1, NCOLS + 1):
+            ws.cell(row=next_row, column=col).border = border
+        add_result_rows(expired_results, next_row + 1, 1, expired_section=True)
+        next_row = next_row + 1 + len(expired_results)
 
     # ── Nota subsol ────────────────────────────────────────────────────
-    fn_row = len(all_results) + 6
+    fn_row = next_row + 1
     ws.merge_cells(f"A{fn_row}:{get_column_letter(NCOLS)}{fn_row}")
     fn = ws.cell(row=fn_row, column=1,
                  value="* Data expirare marcata cu * este estimata (inregistrare + 10 ani). Datele confirmate de TMview nu au asterisc.")
     fn.font      = Font(italic=True, size=8, color="FF888888")
     fn.alignment = left
+
+    # ── Foaie concluzii ───────────────────────────────────────────────
+    risk_buckets = _risk_buckets(active_results + expired_results)
+    very_high = risk_buckets["very_high"]
+    high = risk_buckets["high"]
+    medium = risk_buckets["medium"]
+    low = risk_buckets["low"]
+
+    high_risk_count = len(very_high) + len(high)
+    medium_risk_count = len(medium)
+    minimal_risk_count = len(low)
+
+    if high_risk_count:
+        risk_heading = "Concluzie privind riscul relativ: risc semnificativ"
+        risk_fill_hex = "FDECEA"
+        risk_font_hex = "C0392B"
+        risk_body = (
+            f"Au fost identificate {high_risk_count} mărci cu risc ridicat sau foarte ridicat, "
+            f"{medium_risk_count} mărci cu risc mediu și {minimal_risk_count} mărci cu risc minim/scăzut. "
+            "În raport cu motivele relative de refuz, acest rezultat indică o probabilitate relevantă de opoziție "
+            "sau de refuz întemeiat pe existența unor drepturi anterioare, în special atunci când se cumulează "
+            "similitudinea semnului cu proximitatea produselor sau serviciilor revendicate."
+        )
+    elif medium_risk_count:
+        risk_heading = "Concluzie privind riscul relativ: risc moderat"
+        risk_fill_hex = "FEEBCF"
+        risk_font_hex = "AF4D00"
+        risk_body = (
+            f"Au fost identificate {high_risk_count} mărci cu risc ridicat sau foarte ridicat, "
+            f"{medium_risk_count} mărci cu risc mediu și {minimal_risk_count} mărci cu risc minim/scăzut. "
+            "În raport cu motivele relative de refuz, rezultatele indică necesitatea unei evaluări juridice "
+            "suplimentare a mărcilor aflate în zona medie, deoarece riscul de confuzie depinde de impresia de "
+            "ansamblu a semnelor și de gradul de apropiere dintre produsele sau serviciile vizate."
+        )
+    else:
+        risk_heading = "Concluzie privind riscul relativ: risc redus"
+        risk_fill_hex = "EAFAF1"
+        risk_font_hex = "1E8449"
+        risk_body = (
+            f"Au fost identificate {high_risk_count} mărci cu risc ridicat sau foarte ridicat, "
+            f"{medium_risk_count} mărci cu risc mediu și {minimal_risk_count} mărci cu risc minim/scăzut. "
+            "Pe baza conflictelor identificate, motivele relative de refuz par limitate; totuși, disponibilitatea "
+            "juridică finală trebuie confirmată prin analiza individuală a drepturilor anterioare relevante."
+        )
+
+    conclusion_blocks = [
+        (risk_heading, risk_body, risk_fill_hex, risk_font_hex),
+        (
+            "Opinia privind motivele absolute de refuz",
+            "Prezentul raport are în principal o funcție de cercetare a conflictelor relative și nu poate stabili în mod definitiv incidența motivelor absolute de refuz. În practica oficiilor și a jurisprudenței europene, examinarea motivelor absolute vizează în special caracterul distinctiv, eventuala descriptivitate, caracterul uzual, posibilul caracter înșelător și conformitatea semnului cu ordinea publică. În consecință, marca trebuie analizată separat și prin raportare exactă la lista produselor și serviciilor revendicate.",
+            "E8F0FB",
+            "0F3460",
+        ),
+        (
+            "Opinia privind validitatea mărcii",
+            "Condiția validității unei viitoare înregistrări depinde cumulativ de absența impedimentelor absolute, de inexistența unor drepturi anterioare opozabile și de formularea adecvată a specificației de produse și servicii. Chiar și în ipoteza unui risc relativ redus, validitatea nu poate fi considerată automat îndeplinită fără verificarea completă a cadrului juridic aplicabil pe teritoriile selectate.",
+            "E8F0FB",
+            "0F3460",
+        ),
+        (
+            "Opinia privind distinctivitatea",
+            "Distinctivitatea trebuie apreciată din perspectiva publicului relevant și în raport direct cu produsele sau serviciile pentru care se solicită protecția. În mod obișnuit, semnele fanteziste sau arbitrare au o forță distinctivă mai ridicată, în timp ce semnele descriptive, laudative ori slab individualizante sunt mai expuse obiecțiilor la examinare și beneficiază de o protecție mai restrânsă. Dacă denumirea propusă evocă în mod imediat natura, calitatea, destinația sau alte caracteristici ale produselor sau serviciilor, se recomandă o reevaluare a semnului înainte de depunere.",
+            "E8F0FB",
+            "0F3460",
+        ),
+        (
+            "Recomandare finală",
+            "Rezultatele acestui raport trebuie utilizate ca instrument de triere a riscului, nu ca opinie juridică definitivă. Pentru depunere, este recomandată o analiză specializată privind opozabilitatea drepturilor anterioare, formularea claselor NICE și sustenabilitatea mărcii sub aspectul distinctivității și al motivelor absolute de refuz.",
+            "E8F0FB",
+            "0F3460",
+        ),
+    ]
+
+    ws2 = wb.create_sheet("Concluzii")
+    ws2.column_dimensions["A"].width = 28
+    ws2.column_dimensions["B"].width = 110
+    ws2.merge_cells("A1:B1")
+    ws2["A1"] = f"Concluzii raport disponibilitate marcă: {query}"
+    ws2["A1"].font = Font(bold=True, size=14, color="FF0F3460")
+    ws2["A1"].alignment = left
+    ws2.merge_cells("A2:B2")
+    ws2["A2"] = (
+        f"Clase NICE: {', '.join(nice_classes)}  |  Teritorii: {', '.join(offices)}  |  "
+        f"Rezultate active: {len(active_results)}  |  Mărci expirate: {len(expired_results)}  |  "
+        f"Total rezultate: {total_results}  |  Data: {date.today().strftime('%d.%m.%Y')}"
+    )
+    ws2["A2"].font = Font(italic=True, size=9, color="FF555555")
+    ws2["A2"].alignment = left
+
+    ws2["A4"] = "Sinteză risc"
+    ws2["A4"].font = Font(bold=True, size=11, color="FF0F3460")
+    ws2["A5"] = "Mărci cu risc ridicat / foarte ridicat"
+    ws2["B5"] = high_risk_count
+    ws2["A6"] = "Mărci cu risc mediu"
+    ws2["B6"] = medium_risk_count
+    ws2["A7"] = "Mărci cu risc minim / scăzut"
+    ws2["B7"] = minimal_risk_count
+    ws2["A8"] = "Mărci expirate"
+    ws2["B8"] = len(expired_results)
+    for row_idx in (5, 6, 7, 8):
+        ws2[f"A{row_idx}"].font = Font(bold=True, size=10, color="FF333333")
+        ws2[f"B{row_idx}"].font = Font(bold=True, size=10, color="FF0F3460")
+        ws2[f"A{row_idx}"].fill = PatternFill("solid", fgColor="FFF7F9FC")
+        ws2[f"B{row_idx}"].fill = PatternFill("solid", fgColor="FFF7F9FC")
+        ws2[f"A{row_idx}"].border = border
+        ws2[f"B{row_idx}"].border = border
+
+    row_ptr = 10
+    for title, body, fill_hex, font_hex in conclusion_blocks:
+        ws2.merge_cells(f"A{row_ptr}:B{row_ptr}")
+        ws2[f"A{row_ptr}"] = title
+        ws2[f"A{row_ptr}"].font = Font(bold=True, size=11, color=f"FF{font_hex}")
+        ws2[f"A{row_ptr}"].fill = PatternFill("solid", fgColor=f"FF{fill_hex}")
+        ws2[f"A{row_ptr}"].border = border
+        ws2[f"A{row_ptr}"].alignment = left
+        row_ptr += 1
+        ws2.merge_cells(f"A{row_ptr}:B{row_ptr + 2}")
+        ws2[f"A{row_ptr}"] = body
+        ws2[f"A{row_ptr}"].font = Font(size=10, color="FF444444")
+        ws2[f"A{row_ptr}"].alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        for inner in range(row_ptr, row_ptr + 3):
+            ws2[f"A{inner}"].border = border
+        row_ptr += 4
+
+    ws2.freeze_panes = "A5"
+    ws2.page_setup.orientation = ws2.ORIENTATION_LANDSCAPE
+    ws2.page_setup.paperSize = ws2.PAPERSIZE_A4
+    ws2.page_setup.fitToWidth = 1
+    ws2.page_setup.fitToHeight = 0
+    ws2.page_margins.left = 0.25
+    ws2.page_margins.right = 0.25
+    ws2.page_margins.top = 0.5
+    ws2.page_margins.bottom = 0.5
+    ws2.page_margins.header = 0.2
+    ws2.page_margins.footer = 0.2
+    ws2.print_options.horizontalCentered = True
 
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return buf.read()
@@ -338,7 +701,8 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
 
 # ── PDF ────────────────────────────────────────────────────────────────
 def build_pdf(query: str, nice_classes: List[str], offices: List[str],
-              results: List[Dict], similar: List[Dict] = None) -> bytes:
+              results: List[Dict], similar: List[Dict] = None,
+              expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None) -> bytes:
     from reportlab.lib.pagesizes import landscape, A4
     from reportlab.platypus import KeepTogether, PageBreak
     from datetime import datetime as dt
@@ -355,6 +719,8 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
     styles = getSampleStyleSheet()
     story  = []
 
+    _add_export_brand_header_pdf(story, query)
+
     BLUE   = colors.HexColor("#0F3460")
     DKGRAY = colors.HexColor("#444444")
     LGRAY  = colors.HexColor("#F7F9FC")
@@ -363,6 +729,10 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         return ParagraphStyle(name, parent=styles["Normal"], fontName=_PDF_FONT, **kw)
     def styb(name, **kw):
         return ParagraphStyle(name, parent=styles["Normal"], fontName=_PDF_FONT_BOLD, **kw)
+    def ctbl(*args, **kwargs):
+        tbl = Table(*args, **kwargs)
+        tbl.hAlign = "CENTER"
+        return tbl
 
     RISK_PDF_COLORS = {
         "very_high": (colors.HexColor("#FDECEA"), colors.HexColor("#C0392B")),
@@ -374,18 +744,17 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         "very_high": "RISC FOARTE RIDICAT",
         "high":      "RISC RIDICAT",
         "medium":    "RISC MEDIU",
-        "low":       "RISC SCAZUT",
+        "low":       "RISC SCĂZUT",
     }
 
-    all_results = sorted(
-        (results or []) + (similar or []),
-        key=lambda x: x.get("similarity", {}).get("combined_score", 0),
-        reverse=True
-    )
-    very_high = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "very_high"]
-    high      = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "high"]
-    medium    = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "medium"]
-    low       = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "low"]
+    active_results = _sort_export_results((results or []) + (similar or []), offices)
+    expired_results = _sort_export_results((expired_conflicts or []) + (expired_similar or []), offices)
+    all_results = active_results + expired_results
+    risk_buckets = _risk_buckets(all_results)
+    very_high = risk_buckets["very_high"]
+    high      = risk_buckets["high"]
+    medium    = risk_buckets["medium"]
+    low       = risk_buckets["low"]
 
     def fmt_date(d):
         if not d: return "—"
@@ -406,7 +775,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
 
     # ─── COVER PAGE (dashboard ca in UI) ─────────────────────────────
     story.append(Paragraph(
-        "Verificare Disponibilitate Marca",
+        "Verificare Disponibilitate Marcă",
         sty("app_lbl", fontSize=10, textColor=DKGRAY, spaceAfter=4)
     ))
     story.append(Paragraph(
@@ -432,7 +801,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         lbl  = Paragraph(text, sty(f"bl{text[:6]}", fontSize=7.5, textColor=fg_c))
         num  = Paragraph(str(val), styb(f"bv{text[:6]}", fontSize=14, textColor=fg_c, leading=16) if bold_val
                          else sty(f"bv{text[:6]}", fontSize=8.5, textColor=fg_c, leading=12))
-        cell_tbl = Table([[lbl], [num]], colWidths=[W/3 - 0.6*cm])
+        cell_tbl = ctbl([[lbl], [num]], colWidths=[W/3 - 0.6*cm])
         cell_tbl.setStyle(TableStyle([
             ("BACKGROUND",    (0,0), (-1,-1), bg_c),
             ("TOPPADDING",    (0,0), (-1,-1), 8),
@@ -444,31 +813,31 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         return cell_tbl
 
     row1 = [
-        badge_cell("Total gasit",                   len(all_results),  "#E8F0FB", "#0F3460"),
+        badge_cell("Total găsite",                  len(all_results),  "#E8F0FB", "#0F3460"),
         badge_cell("Risc ridicat / f.ridicat >=70%", risky_count,
                    "#FDECEA" if not safe else "#EAFAF1",
                    "#C0392B" if not safe else "#1E8449"),
-        badge_cell("Risc mediu / scazut 40-70%",    similar_count,     "#FFF3CD", "#856404"),
+        badge_cell("Risc mediu / scăzut 40-70%",   similar_count,     "#FFF3CD", "#856404"),
     ]
     row2 = [
         badge_cell("Clase NICE",    ", ".join(nice_classes),            "#E8F0FB", "#0F3460", bold_val=False),
-        badge_cell("Teritorii",     str(len(offices)) + " selectate",   "#E8F0FB", "#0F3460"),
+        badge_cell("Mărci expirate", str(len(expired_results)),            "#FDECEA", "#C0392B"),
         badge_cell("Data raport",   date.today().strftime("%d.%m.%Y"),  "#F2F3F4", "#566573", bold_val=False),
     ]
 
     for row in [row1, row2]:
-        bt = Table([row], colWidths=[W/3, W/3, W/3])
+        bt = ctbl([row], colWidths=[W/3, W/3, W/3])
         bt.setStyle(GAP)
         story.append(bt)
         story.append(Spacer(1, 0.25*cm))
 
-    # Distributie pe oficii (ca sectiunea Geo din UI)
+    # Distribuție pe oficii (ca secțiunea Geo din UI)
     if geo_sorted:
         story.append(Spacer(1, 0.3*cm))
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#D0D7E3")))
         story.append(Spacer(1, 0.3*cm))
         story.append(Paragraph(
-            "Distributie pe oficii",
+            "Distribuție pe oficii",
             styb("geo_title", fontSize=9, textColor=BLUE, spaceAfter=6)
         ))
 
@@ -476,8 +845,8 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         geo_hdr = [
             Paragraph("Cod", styb("gh0", fontSize=7, textColor=colors.white)),
             Paragraph("Oficiu", styb("gh1", fontSize=7, textColor=colors.white)),
-            Paragraph("Marci", styb("gh2", fontSize=7, textColor=colors.white)),
-            Paragraph("Distributie", styb("gh3", fontSize=7, textColor=colors.white)),
+            Paragraph("Mărci", styb("gh2", fontSize=7, textColor=colors.white)),
+            Paragraph("Distribuție", styb("gh3", fontSize=7, textColor=colors.white)),
         ]
         geo_rows = [geo_hdr]
         geo_style = [
@@ -503,7 +872,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
             pct  = cnt / geo_max
             bar_fill = BAR_W * pct
             is_max = cnt == geo_max
-            bar_tbl = Table(
+            bar_tbl = ctbl(
                 [[""]], colWidths=[bar_fill]
             )
             bar_tbl.setStyle(TableStyle([
@@ -512,7 +881,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
                 ("TOPPADDING",    (0,0), (-1,-1), 4),
                 ("BOTTOMPADDING", (0,0), (-1,-1), 4),
             ]))
-            bar_wrap = Table([[bar_tbl, ""]], colWidths=[bar_fill, BAR_W - bar_fill])
+            bar_wrap = ctbl([[bar_tbl, ""]], colWidths=[bar_fill, BAR_W - bar_fill])
             bar_wrap.setStyle(TableStyle([
                 ("BACKGROUND", (1,0), (1,0), colors.HexColor("#E9ECEF")),
                 ("TOPPADDING",    (0,0), (-1,-1), 0),
@@ -533,7 +902,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
                 geo_style.append(("BACKGROUND", (0,ri), (-1,ri), LGRAY))
 
         CGEO = [1.2*cm, W - 1.2*cm - 2*cm - BAR_W, 2*cm, BAR_W]
-        geo_tbl = Table(geo_rows, colWidths=CGEO, repeatRows=1)
+        geo_tbl = ctbl(geo_rows, colWidths=CGEO, repeatRows=1)
         geo_tbl.setStyle(TableStyle(geo_style))
         story.append(geo_tbl)
 
@@ -547,15 +916,20 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         styb("rh", fontSize=13, textColor=BLUE, spaceAfter=4)
     ))
     story.append(Paragraph(
-        f"Total: {len(all_results)} marci  |  Clase NICE: {', '.join(nice_classes)}  |  Data: {date.today().strftime('%d.%m.%Y')}",
+        f"Active: {len(active_results)} mărci  |  Expirate: {len(expired_results)}  |  Clase NICE: {', '.join(nice_classes)}  |  Data: {date.today().strftime('%d.%m.%Y')}",
         sty("rsub", fontSize=8, textColor=DKGRAY, spaceAfter=12)
     ))
 
-    if not all_results:
+    if not active_results and not expired_results:
         story.append(Paragraph("Niciun conflict detectat.", styb("nc0", fontSize=11, textColor=colors.HexColor("#1E8449"))))
         doc.build(story)
         buf.seek(0)
         return buf.read()
+
+    story.append(Paragraph(
+        f"Mărci active ({len(active_results)})",
+        styb("acth", fontSize=15, textColor=BLUE, spaceAfter=8)
+    ))
 
     # Column widths  (landscape A4 cu margini 1.4cm → W ≈ 812pt)
     STRIP = 0.35 * cm   # strip colorat stânga
@@ -565,7 +939,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
 
     MAX_GS = 600  # caractere max / clasă G&S
 
-    for i, tm in enumerate(all_results):
+    for i, tm in enumerate(active_results):
         sim   = tm.get("similarity") or {}
         score = sim.get("combined_score") or 0
         lvl   = _risk_level(score)
@@ -678,7 +1052,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         p_bw    = max(bar_w * p_frac, 0.5)
         e_bw    = max(bar_w * e_frac, 0.5)
 
-        seg_bar = Table([["", "", ""]], colWidths=[t_bw, p_bw, e_bw])
+        seg_bar = ctbl([["", "", ""]], colWidths=[t_bw, p_bw, e_bw])
         seg_bar.setStyle(TableStyle([
             ("BACKGROUND",    (0,0),(0,0), colors.HexColor("#2980B9")),
             ("BACKGROUND",    (1,0),(1,0), colors.HexColor("#8E44AD")),
@@ -690,7 +1064,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         ]))
 
         inner_w = SCORE - 0.5*cm
-        risk_badge_tbl = Table(
+        risk_badge_tbl = ctbl(
             [[Paragraph(risk_label, styb(f"rb{i}", fontSize=7.5, textColor=fg_c,
                                          alignment=TA_CENTER, leading=10))]],
             colWidths=[inner_w]
@@ -705,7 +1079,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         ]))
 
         half_w = inner_w / 2
-        seg_labels = Table([[
+        seg_labels = ctbl([[
             Paragraph(f"📝 {t_score}%", sty(f"tsl{i}", fontSize=7, textColor=colors.HexColor("#2980B9"), alignment=TA_CENTER)),
             Paragraph(f"🔊 {p_score}%", sty(f"psl{i}", fontSize=7, textColor=colors.HexColor("#8E44AD"), alignment=TA_CENTER)),
         ]], colWidths=[half_w, half_w])
@@ -732,7 +1106,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
 
         # ── Asamblare card ───────────────────────────────────────────────
         card_data = [["", logo_el, info_cell, score_cell]]
-        card_tbl  = Table(card_data, colWidths=[STRIP, LOGO, INFO, SCORE])
+        card_tbl  = ctbl(card_data, colWidths=[STRIP, LOGO, INFO, SCORE])
         card_tbl.setStyle(TableStyle([
             ("BACKGROUND",    (0,0), (0,0), fg_c),                    # strip colorat
             ("BACKGROUND",    (1,0), (2,0), colors.HexColor("#FAFCFF")), # corp foarte deschis
@@ -806,7 +1180,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
                 while len(chunk) < ncols:
                     chunk.append("")
                 rows.append(chunk)
-            det_tbl = Table(rows, colWidths=[W/ncols]*ncols)
+            det_tbl = ctbl(rows, colWidths=[W/ncols]*ncols)
             det_tbl.setStyle(TableStyle([
                 ("BACKGROUND",    (0,0), (-1,-1), colors.HexColor("#FAFBFD")),
                 ("TOPPADDING",    (0,0), (-1,-1), 5),
@@ -866,7 +1240,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
                               textColor=colors.HexColor("#AAAAAA"))
                 )])
 
-            box = Table(box_rows, colWidths=[W])
+            box = ctbl(box_rows, colWidths=[W])
             box.setStyle(TableStyle([
                 ("BACKGROUND",    (0,0), (-1,-1), colors.white),
                 ("TOPPADDING",    (0,0), (0,0),   7),
@@ -884,12 +1258,58 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         story.append(KeepTogether([card_tbl] + detail_elements))
         if gs_blocks:
             story.append(Paragraph(
-                '<font color="#0F3460"><b>Clasificare integrală mărfuri / servicii (511):</b></font>',
+                '<font color="#0F3460"><b>CLASIFICARE INTERNATIONALA NISA / PRODUSE SI SERVICII</b></font>',
                 sty(f"gsh{i}", fontSize=9, spaceAfter=5, spaceBefore=7)
             ))
             for el in gs_blocks:
                 story.append(el)
         story.append(Spacer(1, 0.70*cm))
+
+    if expired_results:
+        exp_bold7_s = styb("expB7s", fontSize=7, leading=9)
+        exp_cell7_s = sty("expC7s", fontSize=7, leading=9)
+        story.append(PageBreak())
+        story.append(Paragraph(
+            f"Mărci expirate ({len(expired_results)})",
+            styb("exph", fontSize=15, textColor=colors.HexColor("#C0392B"), spaceAfter=6)
+        ))
+        story.append(Paragraph(
+            "Aceste rezultate sunt afișate separat deoarece au statut expirat/inactiv.",
+            sty("expsub", fontSize=8, textColor=DKGRAY, spaceAfter=10)
+        ))
+
+        exp_cols = ["#", "Denumire marcă", "Oficiu", "Titular", "Status", "Scor"]
+        exp_w = [0.6*cm, 5*cm, 3*cm, 8*cm, 5*cm, 2*cm]
+        exp_data = [[Paragraph(h, exp_bold7_s) for h in exp_cols]]
+        for ri, tm in enumerate(expired_results, 1):
+            score2 = tm.get("similarity",{}).get("combined_score",0)
+            applicant = ", ".join(a.get("name","") for a in tm.get("applicants",[]) if a.get("name")) or "—"
+            exp_data.append([
+                Paragraph(str(ri), exp_cell7_s),
+                Paragraph(tm.get("tmName") or "—", exp_bold7_s),
+                Paragraph(tm.get("office") or "—", exp_cell7_s),
+                Paragraph(applicant, exp_cell7_s),
+                Paragraph(tm.get("status") or "—", exp_cell7_s),
+                Paragraph(f"{score2}%", styb(f"expsc{ri}", fontSize=7, textColor=colors.HexColor("#C0392B"))),
+            ])
+        exp_tbl = ctbl(exp_data, colWidths=exp_w, repeatRows=1)
+        exp_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#C0392B")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("FONTNAME", (0,0), (-1,0), _PDF_FONT_BOLD),
+            ("FONTSIZE", (0,0), (-1,-1), 7),
+            ("ALIGN", (0,0), (-1,-1), "CENTER"),
+            ("ALIGN", (1,1), (1,-1), "LEFT"),
+            ("ALIGN", (3,1), (3,-1), "LEFT"),
+            ("ALIGN", (4,1), (4,-1), "LEFT"),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.HexColor("#FFF5F5"), colors.white]),
+            ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#E6B8B8")),
+            ("TOPPADDING", (0,0), (-1,-1), 2),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+            ("LEFTPADDING", (0,0), (-1,-1), 3),
+        ]))
+        story.append(exp_tbl)
+        story.append(Spacer(1, 0.6*cm))
 
     # ─── SUMMARY PAGE ──────────────────────────────────────────────────
     story.append(PageBreak())
@@ -902,14 +1322,14 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         (very_high, "Risc foarte ridicat  (>= 90%)", "#C0392B", "#FDECEA"),
         (high,      "Risc ridicat  (75-89%)",         "#AF4D00", "#FEEBCF"),
         (medium,    "Risc mediu  (60-74%)",            "#9A7600", "#FFF9DB"),
-        (low,       "Risc scazut  (45-59%)",           "#1E8449", "#EAFAF1"),
+        (low,       "Risc scăzut  (45-59%)",           "#1E8449", "#EAFAF1"),
     ]
 
     for grp, lbl, fg_hex, bg_hex in sum_groups:
         fgc = colors.HexColor(fg_hex)
         bgc = colors.HexColor(bg_hex)
-        story.append(Table(
-            [[Paragraph(f"  {lbl}  -  {len(grp)} marci", styb(f"sh{lbl[:4]}", fontSize=10, textColor=fgc))]],
+        story.append(ctbl(
+            [[Paragraph(f"  {lbl}  -  {len(grp)} mărci", styb(f"sh{lbl[:4]}", fontSize=10, textColor=fgc))]],
             colWidths=[W],
             style=[("BACKGROUND",(0,0),(0,0),bgc),("TOPPADDING",(0,0),(0,0),6),
                    ("BOTTOMPADDING",(0,0),(0,0),6),("LEFTPADDING",(0,0),(0,0),8),
@@ -917,11 +1337,11 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         story.append(Spacer(1, 0.2*cm))
 
         if not grp:
-            story.append(Paragraph("  Nicio marca.", sty("nt", fontSize=8, textColor=DKGRAY)))
+            story.append(Paragraph("  Nicio marcă.", sty("nt", fontSize=8, textColor=DKGRAY)))
             story.append(Spacer(1, 0.3*cm))
             continue
 
-        sum_cols = ["#", "Denumire marca", "Oficiu", "Titular", "Status", "Scor"]
+        sum_cols = ["#", "Denumire marcă", "Oficiu", "Titular", "Status", "Scor"]
         sum_w    = [0.6*cm, 5*cm, 3*cm, 7*cm, 3*cm, 2*cm]
         sum_data = [[Paragraph(h, bold7_s) for h in sum_cols]]
         for ri, tm in enumerate(grp, 1):
@@ -936,7 +1356,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
                 Paragraph(tm.get("status") or "n/a", cell7_s),
                 Paragraph(f"{score2}%", styb(f"sc2{ri}", fontSize=7, textColor=fg2)),
             ])
-        sum_tbl = Table(sum_data, colWidths=sum_w, repeatRows=1)
+        sum_tbl = ctbl(sum_data, colWidths=sum_w, repeatRows=1)
         sum_tbl.setStyle(TableStyle([
             ("BACKGROUND",    (0,0), (-1,0), BLUE),
             ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
@@ -954,6 +1374,121 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         ]))
         story.append(sum_tbl)
         story.append(Spacer(1, 0.4*cm))
+
+    story.append(ctbl(
+        [[Paragraph(f"  Mărci expirate  -  {len(expired_results)} mărci", styb("shexp", fontSize=10, textColor=colors.HexColor("#C0392B")))]],
+        colWidths=[W],
+        style=[("BACKGROUND",(0,0),(0,0),colors.HexColor("#FDECEA")),("TOPPADDING",(0,0),(0,0),6),
+               ("BOTTOMPADDING",(0,0),(0,0),6),("LEFTPADDING",(0,0),(0,0),8),
+               ("GRID",(0,0),(-1,-1),0.3,colors.HexColor("#D0D7E3"))]))
+    story.append(Spacer(1, 0.2*cm))
+    if expired_results:
+        exp_sum_data = [[Paragraph(h, bold7_s) for h in ["#", "Denumire marcă", "Oficiu", "Status", "Scor"]]]
+        for ri, tm in enumerate(expired_results, 1):
+            score2 = tm.get("similarity",{}).get("combined_score",0)
+            exp_sum_data.append([
+                Paragraph(str(ri), cell7_s),
+                Paragraph(tm.get("tmName") or "—", bold7_s),
+                Paragraph(tm.get("office") or "—", cell7_s),
+                Paragraph(tm.get("status") or "—", cell7_s),
+                Paragraph(f"{score2}%", styb(f"exsum{ri}", fontSize=7, textColor=colors.HexColor("#C0392B"))),
+            ])
+        exp_sum_tbl = ctbl(exp_sum_data, colWidths=[0.6*cm, 9.5*cm, 3*cm, 8.2*cm, 2*cm], repeatRows=1)
+        exp_sum_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#C0392B")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.HexColor("#FFF5F5"), colors.white]),
+            ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#E6B8B8")),
+            ("ALIGN", (0,0), (-1,-1), "CENTER"),
+            ("ALIGN", (1,1), (1,-1), "LEFT"),
+            ("ALIGN", (3,1), (3,-1), "LEFT"),
+        ]))
+        story.append(exp_sum_tbl)
+    else:
+        story.append(Paragraph("  Nicio marcă expirată.", sty("ntexp", fontSize=8, textColor=DKGRAY)))
+    story.append(Spacer(1, 0.4*cm))
+
+    # ─── CONCLUSIONS PAGE ──────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Concluzii și recomandări", styb("CH", fontSize=16, textColor=BLUE, spaceAfter=10)))
+
+    high_risk_count = len(very_high) + len(high)
+    medium_risk_count = len(medium)
+    minimal_risk_count = len(low)
+
+    if high_risk_count:
+        risk_heading = "Concluzie privind riscul relativ: risc semnificativ"
+        risk_color = colors.HexColor("#C0392B")
+        risk_body = (
+            f"Au fost identificate {high_risk_count} mărci cu risc ridicat sau foarte ridicat, "
+            f"{medium_risk_count} mărci cu risc mediu și {minimal_risk_count} mărci cu risc minim/scăzut. "
+            "În raport cu motivele relative de refuz, acest rezultat indică o probabilitate relevantă de "
+            "opoziție sau de refuz întemeiat pe existența unor drepturi anterioare, în special atunci când "
+            "se cumulează similitudinea semnului cu proximitatea produselor sau serviciilor revendicate."
+        )
+    elif medium_risk_count:
+        risk_heading = "Concluzie privind riscul relativ: risc moderat"
+        risk_color = colors.HexColor("#AF4D00")
+        risk_body = (
+            f"Au fost identificate {high_risk_count} mărci cu risc ridicat sau foarte ridicat, "
+            f"{medium_risk_count} mărci cu risc mediu și {minimal_risk_count} mărci cu risc minim/scăzut. "
+            "În raport cu motivele relative de refuz, rezultatele indică necesitatea unei evaluări juridice "
+            "suplimentare a mărcilor aflate în zona medie, deoarece riscul de confuzie depinde de impresia de "
+            "ansamblu a semnelor și de gradul de apropiere dintre produsele sau serviciile vizate."
+        )
+    else:
+        risk_heading = "Concluzie privind riscul relativ: risc redus"
+        risk_color = colors.HexColor("#1E8449")
+        risk_body = (
+            f"Au fost identificate {high_risk_count} mărci cu risc ridicat sau foarte ridicat, "
+            f"{medium_risk_count} mărci cu risc mediu și {minimal_risk_count} mărci cu risc minim/scăzut. "
+            "Pe baza conflictelor identificate, motivele relative de refuz par limitate; totuși, disponibilitatea "
+            "juridică finală trebuie confirmată prin analiza individuală a drepturilor anterioare relevante."
+        )
+
+    conclusion_blocks = [
+        (risk_heading, risk_body, risk_color),
+        (
+            "Opinia privind motivele absolute de refuz",
+            "Prezentul raport are în principal o funcție de cercetare a conflictelor relative și nu poate stabili "
+            "în mod definitiv incidența motivelor absolute de refuz. În practica oficiilor și a jurisprudenței "
+            "europene, examinarea motivelor absolute vizează în special caracterul distinctiv, eventuala "
+            "descriptivitate, caracterul uzual, posibilul caracter înșelător și conformitatea semnului cu ordinea "
+            "publică. În consecință, marca trebuie analizată separat și prin raportare exactă la lista produselor "
+            "și serviciilor revendicate.",
+            BLUE,
+        ),
+        (
+            "Opinia privind validitatea mărcii",
+            "Condiția validității unei viitoare înregistrări depinde cumulativ de absența impedimentelor absolute, "
+            "de inexistența unor drepturi anterioare opozabile și de formularea adecvată a specificației de produse "
+            "și servicii. Chiar și în ipoteza unui risc relativ redus, validitatea nu poate fi considerată automat "
+            "îndeplinită fără verificarea completă a cadrului juridic aplicabil pe teritoriile selectate.",
+            BLUE,
+        ),
+        (
+            "Opinia privind distinctivitatea",
+            "Distinctivitatea trebuie apreciată din perspectiva publicului relevant și în raport direct cu produsele "
+            "sau serviciile pentru care se solicită protecția. În mod obișnuit, semnele fanteziste sau arbitrare au "
+            "o forță distinctivă mai ridicată, în timp ce semnele descriptive, laudative ori slab individualizante "
+            "sunt mai expuse obiecțiilor la examinare și beneficiază de o protecție mai restrânsă. Dacă denumirea "
+            "propusă evocă în mod imediat natura, calitatea, destinația sau alte caracteristici ale produselor sau "
+            "serviciilor, se recomandă o reevaluare a semnului înainte de depunere.",
+            BLUE,
+        ),
+        (
+            "Recomandare finală",
+            "Rezultatele acestui raport trebuie utilizate ca instrument de triere a riscului, nu ca opinie juridică "
+            "definitivă. Pentru depunere, este recomandată o analiză specializată privind opozabilitatea drepturilor "
+            "anterioare, formularea claselor NICE și sustenabilitatea mărcii sub aspectul distinctivității și al "
+            "motivelor absolute de refuz.",
+            BLUE,
+        ),
+    ]
+
+    for idx, (title, body, title_color) in enumerate(conclusion_blocks, 1):
+        story.append(Paragraph(title, styb(f"ct{idx}", fontSize=10.5, textColor=title_color, spaceAfter=4)))
+        story.append(Paragraph(body, sty(f"cb{idx}", fontSize=8.8, leading=12.5, textColor=DKGRAY, spaceAfter=8)))
 
     doc.build(story)
     buf.seek(0)
@@ -1022,20 +1557,42 @@ def _set_borders(table, color_hex="D0D7E3"):
             tcPr.append(tcBorders)
 
 
+def _lock_table_layout(table):
+    """Force fixed table layout so Word does not auto-expand past page margins."""
+    table.autofit = False
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tbl_pr = table._tbl.tblPr
+    tbl_layout = tbl_pr.find(qn("w:tblLayout"))
+    if tbl_layout is None:
+        tbl_layout = OxmlElement("w:tblLayout")
+        tbl_pr.append(tbl_layout)
+    tbl_layout.set(qn("w:type"), "fixed")
+
+
+def _set_table_col_widths_cm(table, widths_cm: List[float]):
+    """Set fixed widths for all columns/cells in centimeters."""
+    _lock_table_layout(table)
+    for i, w in enumerate(widths_cm):
+        w_cm = Cm(float(w))
+        table.columns[i].width = w_cm
+        for row in table.rows:
+            row.cells[i].width = w_cm
+
+
 def _set_row_bg(row, color_hex: str):
     """Set background color for all cells in a row."""
     for cell in row.cells:
         _set_cell_bg(cell, color_hex)
 
 
-def _add_section_title(doc, text: str):
+def _add_section_title(doc, text: str, size: int = 13, color: RGBColor = None):
     """Add professional section title with spacing."""
     doc.add_paragraph()
     p = doc.add_paragraph()
     r = p.add_run(text)
     r.bold = True
-    r.font.size = Pt(13)
-    r.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
+    r.font.size = Pt(size)
+    r.font.color.rgb = color or RGBColor(0x0F, 0x34, 0x60)
     r.font.name = "Arial"
     p.paragraph_format.space_after = Pt(8)
     return p
@@ -1205,7 +1762,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1):
         "very_high": "RISC FOARTE RIDICAT",
         "high":      "RISC RIDICAT",
         "medium":    "RISC MEDIU",
-        "low":       "RISC SCAZUT",
+        "low":       "RISC SCĂZUT",
     }
     risk_label = RISK_LABELS_W[lvl]
 
@@ -1214,13 +1771,13 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1):
     status    = tm.get("status") or "—"
     sl        = status.lower()
     if "registered" in sl:
-        stat_col = RGBColor(0x1E, 0x84, 0x49)
+        stat_txt, stat_col = "✔ Înregistrată", RGBColor(0x1E, 0x84, 0x49)
     elif "filed" in sl or "pending" in sl:
-        stat_col = RGBColor(0xB7, 0x95, 0x0B)
+        stat_txt, stat_col = "⏳ Depusă", RGBColor(0xB7, 0x95, 0x0B)
     elif any(w in sl for w in ("expir","lapsed","cancelled","refused","withdrawn")):
-        stat_col = RED
+        stat_txt, stat_col = "✖ Expirată/Anulată", RED
     else:
-        stat_col = GRAY
+        stat_txt, stat_col = status, GRAY
 
     owner     = ", ".join(a.get("name","") for a in (tm.get("applicants") or []) if a.get("name")) or "—"
     app_addr  = "; ".join(a.get("address","") for a in (tm.get("applicants") or []) if a.get("address"))
@@ -1254,21 +1811,18 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1):
             f"Cls {c}" for c in sorted(tm.get("niceClass") or [],
                                        key=lambda x: int(x) if str(x).isdigit() else 0))
 
-    # ── Dimensiuni coloane dinamice ──────────────────────────────────────
-    STRIP_W = 0.40
-    LOGO_W  = 2.50
-    SCORE_W = 4.60
-    INFO_W  = page_w_cm - STRIP_W - LOGO_W - SCORE_W
+    # ── Dimensiuni coloane dinamice (cu marja interna de siguranta) ─────
+    CARD_W  = max(page_w_cm - 0.8, 21.8)
+    STRIP_W = 0.35
+    LOGO_W  = 2.20
+    SCORE_W = 4.10
+    INFO_W  = CARD_W - STRIP_W - LOGO_W - SCORE_W
 
     # ── Card: [strip | logo | info | score] ─────────────────────────────
     card = doc.add_table(rows=1, cols=4)
     card.style = "Table Grid"
-    card.autofit = False
+    _set_table_col_widths_cm(card, [STRIP_W, LOGO_W, INFO_W, SCORE_W])
     sc, lc, ic, rc = card.cell(0,0), card.cell(0,1), card.cell(0,2), card.cell(0,3)
-    sc.width = Cm(STRIP_W)
-    lc.width = Cm(LOGO_W)
-    ic.width = Cm(INFO_W)
-    rc.width = Cm(SCORE_W)
 
     # Strip (culoare risc)
     _set_cell_bg(sc, bg)
@@ -1295,7 +1849,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1):
     if office_nm:
         r_onm = p_meta.add_run(f"  {office_nm}  ")
         r_onm.font.size = Pt(7.5); r_onm.font.name = "Arial"; r_onm.font.color.rgb = LGRAY
-    r_st = p_meta.add_run(status)
+    r_st = p_meta.add_run(stat_txt)
     r_st.font.size = Pt(8.5); r_st.font.name = "Arial"; r_st.font.color.rgb = stat_col
 
     p_own = ic.add_paragraph()
@@ -1320,7 +1874,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1):
     _set_cell_bg(rc, bg)
     p_sc = rc.paragraphs[0]; p_sc.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r_sc = p_sc.add_run(f"{score}%\n")
-    r_sc.bold = True; r_sc.font.size = Pt(22); r_sc.font.name = "Arial"; r_sc.font.color.rgb = fg
+    r_sc.bold = True; r_sc.font.size = Pt(28); r_sc.font.name = "Arial"; r_sc.font.color.rgb = fg
     r_rl = p_sc.add_run(risk_label)
     r_rl.bold = True; r_rl.font.size = Pt(7.5); r_rl.font.name = "Arial"; r_rl.font.color.rgb = fg
 
@@ -1351,15 +1905,17 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1):
     ]
     active_extra = [(l, v) for l, v in extra_w if v]
     if active_extra:
-        det_col = (page_w_cm - 0.1) / 2
-        det_tbl = doc.add_table(rows=1, cols=2); det_tbl.style = "Table Grid"; det_tbl.autofit = False
-        det_tbl.cell(0,0).width = Cm(det_col); det_tbl.cell(0,1).width = Cm(det_col)
-        _set_cell_bg(det_tbl.cell(0,0), "FAFBFD"); _set_cell_bg(det_tbl.cell(0,1), "FAFBFD")
-        lc2 = det_tbl.cell(0,0); rc2 = det_tbl.cell(0,1)
-        _p(lc2, "Detalii suplimentare", bold=True, size=8, color=BLUE, first=True)
-        _p(rc2, "", first=True)
+        det_col = CARD_W / 3
+        det_tbl = doc.add_table(rows=1, cols=3); det_tbl.style = "Table Grid"
+        _set_table_col_widths_cm(det_tbl, [det_col, det_col, det_col])
+        for ci in range(3):
+            _set_cell_bg(det_tbl.cell(0, ci), "FAFBFD")
+        targets = [det_tbl.cell(0, 0), det_tbl.cell(0, 1), det_tbl.cell(0, 2)]
+        _p(targets[0], "Detalii suplimentare", bold=True, size=8, color=BLUE, first=True)
+        _p(targets[1], "", first=True)
+        _p(targets[2], "", first=True)
         for idx, (lbl_d, val_d) in enumerate(active_extra):
-            target = lc2 if idx % 2 == 0 else rc2
+            target = targets[idx % 3]
             pd = target.add_paragraph()
             rl3 = pd.add_run(f"{lbl_d}: "); rl3.bold = True; rl3.font.size = Pt(7); rl3.font.name = "Arial"; rl3.font.color.rgb = LGRAY
             rv3 = pd.add_run(str(val_d));   rv3.font.size = Pt(7.5); rv3.font.name = "Arial"
@@ -1382,14 +1938,15 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1):
 
     if all_cls_w:
         p_gs_h = doc.add_paragraph()
-        r_gs_h = p_gs_h.add_run("Clasificare integrală mărfuri / servicii (511):")
+        r_gs_h = p_gs_h.add_run("CLASIFICARE INTERNATIONALA NISA / PRODUSE SI SERVICII")
         r_gs_h.bold = True; r_gs_h.font.size = Pt(9); r_gs_h.font.name = "Arial"; r_gs_h.font.color.rgb = BLUE
         p_gs_h.paragraph_format.space_before = Pt(4); p_gs_h.paragraph_format.space_after = Pt(3)
 
         for nc in sorted(all_cls_w.keys(), key=lambda x: int(x)):
             info = all_cls_w[nc]
-            gs_t = doc.add_table(rows=1, cols=1); gs_t.style = "Table Grid"; gs_t.autofit = False
-            gs_c2 = gs_t.cell(0,0); gs_c2.width = Cm(page_w_cm)
+            gs_t = doc.add_table(rows=1, cols=1); gs_t.style = "Table Grid"
+            _set_table_col_widths_cm(gs_t, [CARD_W])
+            gs_c2 = gs_t.cell(0,0)
             _set_cell_bg(gs_c2, "FFFFFF"); _set_left_accent(gs_c2, "0F3460")
 
             _p(gs_c2, f"Clasa {nc}", bold=True, size=8.5, color=BLUE, first=True)
@@ -1412,12 +1969,16 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1):
 
 
 def build_word(query: str, nice_classes: List[str], offices: List[str],
-               results: List[Dict], similar: List[Dict] = None) -> bytes:
+               results: List[Dict], similar: List[Dict] = None,
+               expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None) -> bytes:
     from datetime import datetime as dt
     from docx.enum.section import WD_ORIENT
 
-    # A4 landscape: 29.7 × 21 cm, margini 1.3 cm → latime utila = 27.1 cm
-    PAGE_W_CM = 27.1
+    # A4 landscape: 29.7 × 21 cm, margini 1.3 cm.
+    # We keep a small safety margin inside the usable width so Word tables
+    # do not spill outside the printable area.
+    PAGE_W_CM = 26.2
+    CONTENT_W_CM = PAGE_W_CM - 0.6
     MARGIN    = Cm(1.3)
 
     doc = Document()
@@ -1430,16 +1991,17 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         sec.left_margin   = MARGIN
         sec.right_margin  = MARGIN
 
-    all_results = sorted(
-        (results or []) + (similar or []),
-        key=lambda x: x.get("similarity", {}).get("combined_score", 0),
-        reverse=True
-    )
+    _add_export_brand_header_word(doc, query)
 
-    very_high = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "very_high"]
-    high      = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "high"]
-    medium    = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "medium"]
-    low       = [r for r in all_results if _risk_level(r.get("similarity",{}).get("combined_score",0)) == "low"]
+    active_results = _sort_export_results((results or []) + (similar or []), offices)
+    expired_results = _sort_export_results((expired_conflicts or []) + (expired_similar or []), offices)
+    all_results = active_results + expired_results
+
+    risk_buckets = _risk_buckets(all_results)
+    very_high = risk_buckets["very_high"]
+    high      = risk_buckets["high"]
+    medium    = risk_buckets["medium"]
+    low       = risk_buckets["low"]
 
     risky_count  = len(very_high) + len(high)
     similar_count = len(medium) + len(low)
@@ -1458,7 +2020,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     # ─── COVER PAGE (dashboard ca in UI) ─────────────────────────────
     # Titlu aplicatie
     p_app = doc.add_paragraph()
-    r_app = p_app.add_run("Verificare Disponibilitate Marca")
+    r_app = p_app.add_run("Verificare Disponibilitate Marcă")
     r_app.font.size = Pt(10); r_app.font.name = "Arial"; r_app.font.color.rgb = GRAY
 
     # Numele marcii cautat
@@ -1467,6 +2029,14 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     r_q.bold = True; r_q.font.size = Pt(22); r_q.font.name = "Arial"
     r_q.font.color.rgb = RGBColor(0x1a, 0x1a, 0x2e)
     p_q.paragraph_format.space_after = Pt(8)
+
+    cover_divider = doc.add_table(rows=1, cols=1)
+    cover_divider.style = "Table Grid"
+    _set_table_col_widths_cm(cover_divider, [CONTENT_W_CM])
+    _set_cell_bg(cover_divider.cell(0, 0), "0F3460")
+    cover_divider.cell(0, 0).paragraphs[0].add_run("")
+    _set_borders(cover_divider, "0F3460")
+    doc.add_paragraph()
 
     # Badges — tabel 3 coloane x 2 randuri
     def _wbadge(cell, label, value, bg_hex, fg_rgb, bold_val=True):
@@ -1484,30 +2054,28 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
             p.paragraph_format.space_after  = Pt(2)
 
     badge_tbl = doc.add_table(rows=2, cols=3)
-    badge_tbl.style = "Table Grid"; badge_tbl.autofit = False
-    CW = [Cm(PAGE_W_CM / 3)] * 3
-    for ci in range(3):
-        badge_tbl.cell(0, ci).width = CW[ci]
-        badge_tbl.cell(1, ci).width = CW[ci]
+    badge_tbl.style = "Table Grid"
+    badge_col = CONTENT_W_CM / 3
+    _set_table_col_widths_cm(badge_tbl, [badge_col, badge_col, badge_col])
 
     RED   = RGBColor(0xC0, 0x39, 0x2B)
     GREEN = RGBColor(0x1E, 0x84, 0x49)
     ORG   = RGBColor(0x85, 0x64, 0x04)
 
-    _wbadge(badge_tbl.cell(0,0), "Total gasit",                  len(all_results),  "E8F0FB", BLUE)
+    _wbadge(badge_tbl.cell(0,0), "Total găsite",                 len(all_results),  "E8F0FB", BLUE)
     _wbadge(badge_tbl.cell(0,1), "Risc ridicat / f.ridicat >=70%", risky_count,
             "FDECEA" if not safe else "EAFAF1", RED if not safe else GREEN)
-    _wbadge(badge_tbl.cell(0,2), "Risc mediu / scazut 40-70%",  similar_count,     "FFF3CD", ORG)
+    _wbadge(badge_tbl.cell(0,2), "Risc mediu / scăzut 40-70%", similar_count,     "FFF3CD", ORG)
     _wbadge(badge_tbl.cell(1,0), "Clase NICE",  ", ".join(nice_classes),            "E8F0FB", BLUE, bold_val=False)
-    _wbadge(badge_tbl.cell(1,1), "Teritorii selectate",         str(len(offices)), "E8F0FB", BLUE)
+    _wbadge(badge_tbl.cell(1,1), "Mărci expirate",              str(len(expired_results)), "FDECEA", RED)
     _wbadge(badge_tbl.cell(1,2), "Data raport",
             date.today().strftime("%d.%m.%Y"),                                      "F2F3F4", GRAY, bold_val=False)
     doc.add_paragraph()
 
-    # Distributie pe oficii
+    # Distribuție pe oficii
     if geo_sorted:
         p_geo_title = doc.add_paragraph()
-        r_geo = p_geo_title.add_run("Distributie pe oficii")
+        r_geo = p_geo_title.add_run("Distribuție pe oficii")
         r_geo.bold = True; r_geo.font.size = Pt(9); r_geo.font.name = "Arial"
         r_geo.font.color.rgb = BLUE
         p_geo_title.paragraph_format.space_after = Pt(4)
@@ -1522,11 +2090,10 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         }
         geo_max = geo_sorted[0][1] if geo_sorted else 1
         geo_tbl_w = doc.add_table(rows=1, cols=3)
-        geo_tbl_w.style = "Table Grid"; geo_tbl_w.autofit = False
-        geo_tbl_w.cell(0,0).width = Cm(2.0)
-        geo_tbl_w.cell(0,1).width = Cm(PAGE_W_CM - 5.5)
-        geo_tbl_w.cell(0,2).width = Cm(3.5)
-        for ci, hdr in enumerate(["Cod", "Oficiu", "Marci"]):
+        geo_tbl_w.style = "Table Grid"
+        geo_w = [2.0, CONTENT_W_CM - 5.0, 3.0]
+        _set_table_col_widths_cm(geo_tbl_w, geo_w)
+        for ci, hdr in enumerate(["Cod", "Oficiu", "Mărci"]):
             c = geo_tbl_w.cell(0, ci)
             _set_cell_bg(c, "0F3460")
             r = c.paragraphs[0].add_run(hdr)
@@ -1553,49 +2120,53 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
 
     # ─── RESULTS PAGES ─────────────────────────────────────────────────
     _add_section_title(doc, "Rezultate analiza similaritate")
+    _add_section_title(doc, f"Mărci active ({len(active_results)})", size=16)
 
     sub_p = doc.add_paragraph()
-    sub_p.add_run(f"Marci similare ({len(all_results)}) - {query}")
+    sub_p.add_run(query)
     sub_p.runs[0].font.size = Pt(10)
     sub_p.runs[0].font.color.rgb = RGBColor(0x44,0x44,0x44)
     sub_p.runs[0].font.name = "Arial"
     sub_p.paragraph_format.space_after = Pt(8)
 
-    if not all_results:
+    if not active_results and not expired_results:
         p_empty = doc.add_paragraph("Niciun conflict detectat.")
         p_empty.runs[0].font.color.rgb = RGBColor(0x1E,0x84,0x49)
     else:
-        for tm in all_results:
+        for tm in active_results:
             _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM)
 
     # ─── SUMMARY PAGE ──────────────────────────────────────────────────
     doc.add_page_break()
-    _add_section_title(doc, "Summary")
+    _add_section_title(doc, "Sumar rezultate")
 
     risk_groups = [
         (very_high, "Risc foarte ridicat  (>= 90%)", "C0392B", "FDECEA"),
         (high,      "Risc ridicat  (75-89%)",         "AF4D00", "FEEBCF"),
         (medium,    "Risc mediu  (60-74%)",            "9A7600", "FFF9DB"),
-        (low,       "Risc scazut  (45-59%)",           "1E8449", "EAFAF1"),
+        (low,       "Risc scăzut  (45-59%)",           "1E8449", "EAFAF1"),
     ]
 
     for grp, lbl, fg_hex, bg_hex2 in risk_groups:
         fgc = RGBColor(int(fg_hex[0:2],16), int(fg_hex[2:4],16), int(fg_hex[4:6],16))
         sh = doc.add_table(rows=1, cols=1); sh.style = "Table Grid"
+        _set_table_col_widths_cm(sh, [CONTENT_W_CM])
         shc = sh.cell(0,0); _set_cell_bg(shc, bg_hex2)
-        shr = shc.paragraphs[0].add_run(f"  {lbl}  —  {len(grp)} trademarks")
+        shr = shc.paragraphs[0].add_run(f"  {lbl}  -  {len(grp)} mărci")
         shr.bold = True; shr.font.size = Pt(10); shr.font.name = "Arial"; shr.font.color.rgb = fgc
         doc.add_paragraph()
 
         if not grp:
-            doc.add_paragraph("  No trademarks in this category.").runs[0].font.size = Pt(9)
+            doc.add_paragraph("  Nicio marcă.").runs[0].font.size = Pt(9)
             doc.add_paragraph(); continue
 
         st2 = doc.add_table(rows=1, cols=6); st2.style = "Table Grid"
-        sh2 = ["#","Trademark","Office","Owner","Status","Score"]
-        sw2 = [Cm(0.8),Cm(7.5),Cm(3.3),Cm(8.5),Cm(3.8),Cm(3.2)]
-        for ci,(ch,cw) in enumerate(zip(sh2,sw2)):
-            c = st2.cell(0,ci); _set_cell_bg(c,"0F3460"); c.width = cw
+        sh2 = ["#", "Denumire marcă", "Oficiu", "Titular", "Status", "Scor"]
+        summary_scale = CONTENT_W_CM / 27.1
+        sw2_cm = [v * summary_scale for v in (0.8, 7.5, 3.3, 8.5, 3.8, 3.2)]
+        _set_table_col_widths_cm(st2, sw2_cm)
+        for ci,ch in enumerate(sh2):
+            c = st2.cell(0,ci); _set_cell_bg(c,"0F3460")
             p = c.paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             r = p.add_run(ch); r.bold = True; r.font.size = Pt(8); r.font.name = "Arial"
             r.font.color.rgb = RGBColor(255,255,255)
@@ -1620,76 +2191,141 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
 
     # ─── CONCLUSIONS PAGE ──────────────────────────────────────────────
     doc.add_page_break()
-    _add_section_title(doc, "Concluzii și Recomandări")
+    _add_section_title(doc, "Concluzii și recomandări")
 
-    # Risk summary conclusion
-    if very_high or high:
-        p1 = doc.add_paragraph()
-        r1 = p1.add_run("⚠️  Rezultatul căutării: EXISTENȚĂ DE RISCURI SEMNIFICATIVE")
-        r1.bold = True
-        r1.font.size = Pt(11)
-        r1.font.color.rgb = RGBColor(0xC0, 0x39, 0x2B)
-        p1.paragraph_format.space_after = Pt(6)
+    high_risk_count = len(very_high) + len(high)
+    medium_risk_count = len(medium)
+    minimal_risk_count = len(low)
 
-        p2 = doc.add_paragraph(
-            f"Au fost identificate {len(very_high) + len(high)} mărci cu similaritate ridicată "
-            f"(≥76%) care ar putea constitui o amenințare pentru depunerea sau înregistrarea "
-            f"mărcii dumneavoastră. Recomandăm consultarea cu un specialist în proprietate "
-            f"intelectuală pentru a evalua riscurile juridice specifice."
+    if high_risk_count:
+        risk_heading = "Concluzie privind riscul relativ: risc semnificativ"
+        risk_color = RGBColor(0xC0, 0x39, 0x2B)
+        risk_body = (
+            f"Au fost identificate {high_risk_count} mărci cu risc ridicat sau foarte ridicat, "
+            f"{medium_risk_count} mărci cu risc mediu și {minimal_risk_count} mărci cu risc minim/scăzut. "
+            "În raport cu motivele relative de refuz, acest rezultat indică o probabilitate relevantă de "
+            "opoziție sau de refuz întemeiat pe existența unor drepturi anterioare, în special atunci când "
+            "se cumulează similitudinea semnului cu proximitatea produselor sau serviciilor revendicate."
         )
-        p2.paragraph_format.space_after = Pt(10)
-    elif medium:
-        p1 = doc.add_paragraph()
-        r1 = p1.add_run("⚠️  Rezultatul căutării: PREZENȚĂ DE RISCURI MODERATE")
-        r1.bold = True
-        r1.font.size = Pt(11)
-        r1.font.color.rgb = RGBColor(0xD3, 0x54, 0x00)
-        p1.paragraph_format.space_after = Pt(6)
-
-        p2 = doc.add_paragraph(
-            f"Au fost identificate {len(medium)} mărci cu similaritate moderată "
-            f"(51-75%). Deși riscul este mai redus, recomandăm evaluare suplimentară "
-            f"a cazurilor relevante."
+    elif medium_risk_count:
+        risk_heading = "Concluzie privind riscul relativ: risc moderat"
+        risk_color = RGBColor(0xAF, 0x4D, 0x00)
+        risk_body = (
+            f"Au fost identificate {high_risk_count} mărci cu risc ridicat sau foarte ridicat, "
+            f"{medium_risk_count} mărci cu risc mediu și {minimal_risk_count} mărci cu risc minim/scăzut. "
+            "În raport cu motivele relative de refuz, rezultatele indică necesitatea unei evaluări juridice "
+            "suplimentare a mărcilor aflate în zona medie, deoarece riscul de confuzie depinde de impresia de "
+            "ansamblu a semnelor și de gradul de apropiere dintre produsele sau serviciile vizate."
         )
-        p2.paragraph_format.space_after = Pt(10)
     else:
-        p1 = doc.add_paragraph()
-        r1 = p1.add_run("✅ Rezultatul căutării: DISPONIBILITATE RELATIV BUNĂ")
-        r1.bold = True
-        r1.font.size = Pt(11)
-        r1.font.color.rgb = RGBColor(0x1E, 0x84, 0x49)
-        p1.paragraph_format.space_after = Pt(6)
-
-        p2 = doc.add_paragraph(
-            "Nu au fost identificate mărci cu similaritate ridicată. Marca dumneavoastră "
-            "pare a avea disponibilitate relativ bună. Totuși, recomandăm consultare cu "
-            "un specialist pentru evaluare finală."
+        risk_heading = "Concluzie privind riscul relativ: risc redus"
+        risk_color = RGBColor(0x1E, 0x84, 0x49)
+        risk_body = (
+            f"Au fost identificate {high_risk_count} mărci cu risc ridicat sau foarte ridicat, "
+            f"{medium_risk_count} mărci cu risc mediu și {minimal_risk_count} mărci cu risc minim/scăzut. "
+            "Pe baza conflictelor identificate, motivele relative de refuz par limitate; totuși, disponibilitatea "
+            "juridică finală trebuie confirmată prin analiza individuală a drepturilor anterioare relevante."
         )
-        p2.paragraph_format.space_after = Pt(10)
 
-    # Recommendations
-    doc.add_paragraph()
-    p_rec = doc.add_paragraph()
-    r_rec = p_rec.add_run("Recomandări:")
-    r_rec.bold = True
-    r_rec.font.size = Pt(10)
-    r_rec.font.color.rgb = RGBColor(0x0F, 0x34, 0x60)
-    p_rec.paragraph_format.space_after = Pt(4)
-
-    recommendations = [
-        "Consultați un agent de proprietate intelectuală certificat pentru interpretare juridică",
-        "Analizați paginile de înregistrare ale conflictelor potențiale în bazele de date oficiale",
-        "Evaluați domenii și țări prioritare pentru protecție",
-        "Luați în considerare modificări minore la marcă dacă sunt identificate conflicte majore",
-        "Monitorizați noile depuneri în categoriile NICE selectate",
+    conclusion_blocks = [
+        (risk_heading, risk_body, risk_color),
+        (
+            "Opinia privind motivele absolute de refuz",
+            "Prezentul raport are în principal o funcție de cercetare a conflictelor relative și nu poate stabili "
+            "în mod definitiv incidența motivelor absolute de refuz. În practica oficiilor și a jurisprudenței "
+            "europene, examinarea motivelor absolute vizează în special caracterul distinctiv, eventuala "
+            "descriptivitate, caracterul uzual, posibilul caracter înșelător și conformitatea semnului cu ordinea "
+            "publică. În consecință, marca trebuie analizată separat și prin raportare exactă la lista produselor "
+            "și serviciilor revendicate.",
+            BLUE,
+        ),
+        (
+            "Opinia privind validitatea mărcii",
+            "Condiția validității unei viitoare înregistrări depinde cumulativ de absența impedimentelor absolute, "
+            "de inexistența unor drepturi anterioare opozabile și de formularea adecvată a specificației de produse "
+            "și servicii. Chiar și în ipoteza unui risc relativ redus, validitatea nu poate fi considerată automat "
+            "îndeplinită fără verificarea completă a cadrului juridic aplicabil pe teritoriile selectate.",
+            BLUE,
+        ),
+        (
+            "Opinia privind distinctivitatea",
+            "Distinctivitatea trebuie apreciată din perspectiva publicului relevant și în raport direct cu produsele "
+            "sau serviciile pentru care se solicită protecția. În mod obișnuit, semnele fanteziste sau arbitrare au "
+            "o forță distinctivă mai ridicată, în timp ce semnele descriptive, laudative ori slab individualizante "
+            "sunt mai expuse obiecțiilor la examinare și beneficiază de o protecție mai restrânsă. Dacă denumirea "
+            "propusă evocă în mod imediat natura, calitatea, destinația sau alte caracteristici ale produselor sau "
+            "serviciilor, se recomandă o reevaluare a semnului înainte de depunere.",
+            BLUE,
+        ),
+        (
+            "Recomandare finală",
+            "Rezultatele acestui raport trebuie utilizate ca instrument de triere a riscului, nu ca opinie juridică "
+            "definitivă. Pentru depunere, este recomandată o analiză specializată privind opozabilitatea drepturilor "
+            "anterioare, formularea claselor NICE și sustenabilitatea mărcii sub aspectul distinctivității și al "
+            "motivelor absolute de refuz.",
+            BLUE,
+        ),
     ]
 
-    for i, rec in enumerate(recommendations, 1):
-        p_item = doc.add_paragraph(rec, style="List Bullet")
-        for run in p_item.runs:
+    for title, body, color in conclusion_blocks:
+        p_title = doc.add_paragraph()
+        r_title = p_title.add_run(title)
+        r_title.bold = True
+        r_title.font.size = Pt(10.5)
+        r_title.font.name = "Arial"
+        r_title.font.color.rgb = color
+        p_title.paragraph_format.space_after = Pt(4)
+
+        p_body = doc.add_paragraph(body)
+        for run in p_body.runs:
             run.font.size = Pt(9)
             run.font.name = "Arial"
-        p_item.paragraph_format.space_after = Pt(2)
+            run.font.color.rgb = GRAY
+        p_body.paragraph_format.space_after = Pt(8)
+
+    _add_section_title(doc, f"Mărci expirate ({len(expired_results)})", size=16, color=RED)
+    p_exp = doc.add_paragraph()
+    r_exp = p_exp.add_run("Aceste mărci sunt listate separat deoarece au statut expirat/inactiv.")
+    r_exp.font.size = Pt(8)
+    r_exp.font.name = "Arial"
+    r_exp.font.color.rgb = GRAY
+    p_exp.paragraph_format.space_after = Pt(6)
+
+    sh_exp = doc.add_table(rows=1, cols=1); sh_exp.style = "Table Grid"
+    _set_table_col_widths_cm(sh_exp, [CONTENT_W_CM])
+    shc_exp = sh_exp.cell(0,0); _set_cell_bg(shc_exp, "FDECEA")
+    shr_exp = shc_exp.paragraphs[0].add_run(f"  Mărci expirate  -  {len(expired_results)} mărci")
+    shr_exp.bold = True; shr_exp.font.size = Pt(10); shr_exp.font.name = "Arial"; shr_exp.font.color.rgb = RED
+    doc.add_paragraph()
+
+    if expired_results:
+        st_exp = doc.add_table(rows=1, cols=5); st_exp.style = "Table Grid"
+        exp_headers = ["#", "Denumire marcă", "Oficiu", "Status", "Scor"]
+        exp_widths = [0.8, 9.2, 3.2, 9.0, 2.4]
+        _set_table_col_widths_cm(st_exp, exp_widths)
+        for ci, ch in enumerate(exp_headers):
+            c = st_exp.cell(0, ci); _set_cell_bg(c, "C0392B")
+            p = c.paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = p.add_run(ch); r.bold = True; r.font.size = Pt(8); r.font.name = "Arial"; r.font.color.rgb = RGBColor(255,255,255)
+        for ri, tm in enumerate(expired_results, 1):
+            score2 = tm.get("similarity",{}).get("combined_score",0)
+            row = st_exp.add_row()
+            row.height = Cm(0.6)
+            vals = [str(ri), tm.get("tmName","—"), tm.get("office","—"), tm.get("status") or "—", f"{score2}%"]
+            for ci, val in enumerate(vals):
+                c = row.cells[ci]
+                if ri % 2 == 0: _set_cell_bg(c, "FFF5F5")
+                p = c.paragraphs[0]
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER if ci in (0,2,4) else WD_ALIGN_PARAGRAPH.LEFT
+                r = p.add_run(val); r.font.size = Pt(8); r.font.name = "Arial"
+                if ci == 4:
+                    r.bold = True; r.font.color.rgb = RED
+        _set_borders(st_exp)
+        doc.add_paragraph()
+    else:
+        p_noexp = doc.add_paragraph("Nicio marcă expirată.")
+        p_noexp.runs[0].font.size = Pt(9)
+        doc.add_paragraph()
 
     # Footer note
     doc.add_paragraph()
