@@ -1864,26 +1864,17 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
 
     _add_protectmark_header(doc, query, offices)
 
-    active_conflicts = sorted(
-        results or [],
-        key=lambda x: x.get("similarity", {}).get("combined_score", 0),
-        reverse=True,
-    )
-    active_similar = sorted(
-        similar or [],
-        key=lambda x: x.get("similarity", {}).get("combined_score", 0),
-        reverse=True,
-    )
-    expired_conflicts = sorted(
-        expired_conflicts or [],
-        key=lambda x: x.get("similarity", {}).get("combined_score", 0),
-        reverse=True,
-    )
-    expired_similar = sorted(
-        expired_similar or [],
-        key=lambda x: x.get("similarity", {}).get("combined_score", 0),
-        reverse=True,
-    )
+    _RISK_ORDER = {"very_high": 0, "high": 1, "medium": 2, "low": 3, "small": 4}
+
+    def _risk_sort_key(x):
+        sim = x.get("similarity", {})
+        lvl = x.get("risk_level") or sim.get("risk_level") or "low"
+        return (_RISK_ORDER.get(lvl, 9), -sim.get("combined_score", 0))
+
+    active_conflicts = sorted(results or [], key=_risk_sort_key)
+    active_similar   = sorted(similar or [],  key=_risk_sort_key)
+    expired_conflicts = sorted(expired_conflicts or [], key=_risk_sort_key)
+    expired_similar   = sorted(expired_similar or [],   key=_risk_sort_key)
     all_results = active_conflicts + active_similar + expired_conflicts + expired_similar
 
     very_high = [r for r in active_conflicts if r.get("risk_level") == "very_high"]
