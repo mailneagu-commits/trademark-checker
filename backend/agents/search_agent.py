@@ -291,12 +291,19 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
         print(f"[TMVIEW] POST status={r.status_code} crit={criteria} term={term[:20]} offices={sorted(offices)} territories={sorted(territories)}")
         if r.status_code == 200:
             _cb_record_success()
+            # Check content-type before parsing — Imperva returns text/html (200) when blocking
+            ct = r.headers.get("content-type", "")
+            body = r.text
+            if not body.strip() or "json" not in ct.lower():
+                _cb_record_failure()
+                print(f"[TMVIEW] IMPERVA BLOCK — ct={ct!r} body_len={len(body)}")
+                return [], 0
             # Check if response is actually JSON (not HTML/redirect)
             try:
                 data  = r.json()
             except ValueError:
                 # Response is not JSON (probably HTML error page or redirect)
-                resp_preview = str(r.text[:100]).lower()
+                resp_preview = body[:100].lower()
                 if "html" in resp_preview or "<!doctype" in resp_preview or "302" in str(r.status_code):
                     _cb_record_failure()
                     print(f"[TMVIEW] HTML response (possible IP ban/redirect): {resp_preview}")
@@ -642,6 +649,8 @@ class SearchAgent:
             except Exception as e:
                 print(f"[EUIPO] search error: {type(e).__name__}: {e}")
 
+        if _cb_open:
+            return _demo_marks(name, nice_classes, offices), "demo (TMview blocat — lipiți sesiunea browser din DevTools)"
         return _demo_marks(name, nice_classes, offices), "demo (TMview/EUIPO indisponibil — date demonstrative)"
 
     async def search_expired(self, name: str, nice_classes: List[str],

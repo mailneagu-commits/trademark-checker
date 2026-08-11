@@ -1110,8 +1110,9 @@ function setLoading(on) {
 
 // ---- Render results ----
 function renderResults(data) {
-  const isDemo = data.source && data.source.startsWith("demo");
-  const safe   = data.risky_marks === 0;
+  const isDemo    = data.source && data.source.startsWith("demo");
+  const isBlocked = isDemo && data.source.includes("blocat");
+  const safe      = data.risky_marks === 0;
   const variantTotal = data.variants
     ? (data.variants.search_terms?.length || 0) +
       (data.variants.fragments4?.length || 0) +
@@ -1133,6 +1134,18 @@ function renderResults(data) {
     </div>
     ${data.variants ? `<div class="badge badge-blue">🔤 Variante căutate: <strong>${variantTotal}</strong></div>` : ""}
   `;
+
+  const errorBox = document.getElementById("errorBox");
+  if (isBlocked) {
+    errorBox.innerHTML = `<strong>TMview blocat de protecția anti-bot (Imperva).</strong>
+      Mergi pe <a href="https://www.tmdn.org/tmview/" target="_blank">tmdn.org/tmview</a>,
+      fă o căutare în browser, deschide DevTools (F12) → Network → filtrează <em>results</em>
+      → click dreapta pe request → <em>Copy as cURL</em>, apoi lipești în câmpul
+      "Sesiune browser" din panoul de setări.`;
+    errorBox.style.display = "block";
+  } else {
+    errorBox.style.display = "none";
+  }
 
   const variantsCard = document.getElementById("variantsCard");
   const variantsInline = document.getElementById("variantsInline");
