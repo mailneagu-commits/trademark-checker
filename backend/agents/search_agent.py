@@ -621,12 +621,17 @@ class SearchAgent:
         if only_euipo:
             try:
                 loop = asyncio.get_event_loop()
-                euipo_marks = await loop.run_in_executor(None, search_euipo, name, nice_classes)
+                euipo_marks = await asyncio.wait_for(
+                    loop.run_in_executor(None, search_euipo, name, nice_classes),
+                    timeout=20.0
+                )
                 if euipo_marks:
                     if not include_expired:
                         euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
                     print(f"[EUIPO] Direct search: {len(euipo_marks)} marks")
                     return euipo_marks, "live:euipo"
+            except asyncio.TimeoutError:
+                print("[EUIPO] Direct search timeout \u2014 falling back")
             except Exception as e:
                 print(f"[EUIPO] Direct search error: {type(e).__name__}: {e}")
 
@@ -667,7 +672,10 @@ class SearchAgent:
         if euipo_available():
             try:
                 loop = asyncio.get_event_loop()
-                euipo_marks = await loop.run_in_executor(None, search_euipo, name, nice_classes)
+                euipo_marks = await asyncio.wait_for(
+                    loop.run_in_executor(None, search_euipo, name, nice_classes),
+                    timeout=20.0
+                )
                 if euipo_marks:
                     if not include_expired:
                         euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
