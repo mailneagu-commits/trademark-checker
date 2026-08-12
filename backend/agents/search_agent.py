@@ -163,6 +163,7 @@ def set_browser_session(curl_text: str) -> bool:
     if parsed["cookies"] or parsed["headers"]:
         _browser_session = parsed
         _save_session(parsed)
+        _cb_reset()  # sesiune nouă = resetăm circuit breaker-ul
         return True
     return False
 

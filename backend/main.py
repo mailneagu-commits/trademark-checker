@@ -143,6 +143,13 @@ async def session_status():
     return {"active": has_browser_session()}
 
 
+@app.post("/api/reset-circuit-breaker")
+async def reset_circuit_breaker():
+    from agents.search_agent import _cb_reset
+    _cb_reset()
+    return {"status": "ok", "message": "Circuit breaker resetat. TMview va fi reîncercat."}
+
+
 class TestSmtpRequest(BaseModel):
     email: str
 
