@@ -1,55 +1,19 @@
 import os
-import time
 import requests
 from typing import List, Dict
 
 EUIPO_CLIENT_ID     = os.environ.get("EUIPO_CLIENT_ID", "")
 EUIPO_CLIENT_SECRET = os.environ.get("EUIPO_CLIENT_SECRET", "")
-# Use Production (where subscription is active)
-EUIPO_ENVIRONMENT   = os.environ.get("EUIPO_ENV", "production")  # "production" (Sandbox: "sandbox")
-EUIPO_TOKEN_URL     = f"https://auth.euipo.europa.eu/oidc/accessToken" if EUIPO_ENVIRONMENT == "production" else f"https://auth-sandbox.euipo.europa.eu/oidc/accessToken"
-EUIPO_SEARCH_URL    = f"https://api.euipo.europa.eu/trademark-search/trademarks" if EUIPO_ENVIRONMENT == "production" else f"https://api-sandbox.euipo.europa.eu/trademark-search/trademarks"
+EUIPO_SEARCH_URL    = "https://api.euipo.europa.eu/trademark-search/trademarks"
 
 if EUIPO_CLIENT_ID:
-    print(f"[EUIPO] Configured ({EUIPO_ENVIRONMENT}): {EUIPO_CLIENT_ID[:8]}...")
+    print(f"[EUIPO] Configured: {EUIPO_CLIENT_ID[:8]}...")
 else:
     print("[EUIPO] Not configured — set EUIPO_CLIENT_ID and EUIPO_CLIENT_SECRET")
-
-_token_cache: Dict = {"token": None, "expires_at": 0}
 
 
 def euipo_available() -> bool:
     return bool(EUIPO_CLIENT_ID and EUIPO_CLIENT_SECRET)
-
-
-def _get_token() -> str:
-    """
-    Obtain OAuth2 access token using Client Credentials flow.
-    Format: https://dev.euipo.europa.eu/security#application-flow
-    """
-    now = time.time()
-    if _token_cache["token"] and now < _token_cache["expires_at"] - 60:
-        return _token_cache["token"]
-    
-    try:
-        resp = requests.post(EUIPO_TOKEN_URL, 
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data={
-                "grant_type": "client_credentials",
-                "client_id": EUIPO_CLIENT_ID,
-                "client_secret": EUIPO_CLIENT_SECRET,
-                "scope": "uid",
-            }, 
-            timeout=15
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        _token_cache["token"]      = data.get("access_token")
-        _token_cache["expires_at"] = now + data.get("expires_in", 28800)
-        return _token_cache["token"]
-    except Exception as e:
-        print(f"[EUIPO] OAuth token error: {type(e).__name__}: {str(e)[:100]}")
-        raise
 
 
 def _to_internal(tm: dict) -> dict:
@@ -81,17 +45,11 @@ def _to_internal(tm: dict) -> dict:
 def search_euipo(name: str, nice_classes: List[str]) -> List[Dict]:
     if not euipo_available():
         return []
-    try:
-        token = _get_token()
-    except Exception as e:
-        print(f"[EUIPO] Cannot obtain token: {e}")
-        return []
 
-    # Per EUIPO security docs, both headers required:
-    # https://dev.euipo.europa.eu/security#using-access-token
+    # IBM API Connect: autentificare directă cu client credentials în headers
     headers = {
-        "Authorization": f"Bearer {token}",
-        "X-IBM-Client-Id": EUIPO_CLIENT_ID,
+        "X-IBM-Client-Id":     EUIPO_CLIENT_ID,
+        "X-IBM-Client-Secret": EUIPO_CLIENT_SECRET,
         "Accept": "application/json",
     }
 

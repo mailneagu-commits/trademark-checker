@@ -152,15 +152,11 @@ async def reset_circuit_breaker():
 
 @app.get("/api/debug-euipo")
 async def debug_euipo():
-    """Testează conectivitatea EUIPO — token + search."""
+    """Testează conectivitatea EUIPO — search direct cu IBM API Connect credentials."""
     import asyncio
-    from agents.euipo_agent import (
-        EUIPO_CLIENT_ID, EUIPO_CLIENT_SECRET, EUIPO_TOKEN_URL, EUIPO_SEARCH_URL,
-        euipo_available, _get_token
-    )
+    from agents.euipo_agent import EUIPO_CLIENT_ID, EUIPO_SEARCH_URL, euipo_available, search_euipo
     result = {
         "configured": euipo_available(),
-        "token_url": EUIPO_TOKEN_URL,
         "search_url": EUIPO_SEARCH_URL,
         "client_id_prefix": EUIPO_CLIENT_ID[:8] if EUIPO_CLIENT_ID else None,
     }
@@ -168,16 +164,16 @@ async def debug_euipo():
         return result
     try:
         loop = asyncio.get_event_loop()
-        token = await asyncio.wait_for(
-            loop.run_in_executor(None, _get_token),
-            timeout=12.0
+        marks = await asyncio.wait_for(
+            loop.run_in_executor(None, search_euipo, "TEST", ["9"]),
+            timeout=15.0
         )
-        result["token_ok"] = bool(token)
-        result["token_prefix"] = token[:20] if token else None
+        result["search_ok"] = True
+        result["marks_found"] = len(marks)
     except asyncio.TimeoutError:
-        result["token_error"] = "timeout (>12s)"
+        result["search_error"] = "timeout (>15s)"
     except Exception as e:
-        result["token_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+        result["search_error"] = f"{type(e).__name__}: {str(e)[:200]}"
     return result
 
 
