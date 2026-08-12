@@ -323,6 +323,9 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
             for m in marks:
                 m.setdefault("_found_by", term)
             return marks, int(data.get("total") or 0)
+        elif r.status_code == 499:
+            _cb_record_failure()
+            print(f"[TMVIEW] 499 — IP partajat detectat (ScraperAPI datacenter ban)")
         elif r.status_code in (429, 503):
             _cb_record_failure()
             print(f"[TMVIEW] Rate-limit {r.status_code} — aștept 10s")
@@ -612,6 +615,20 @@ class SearchAgent:
                 merged.append(mark)
 
             return merged
+
+        # Dac\u0103 user-ul caut\u0103 doar pe EUIPO (EM) \u0219i API-ul e disponibil, s\u0103rim TMview
+        only_euipo = set(offices) <= {"EM", "WO"} and euipo_available()
+        if only_euipo:
+            try:
+                loop = asyncio.get_event_loop()
+                euipo_marks = await loop.run_in_executor(None, search_euipo, name, nice_classes)
+                if euipo_marks:
+                    if not include_expired:
+                        euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
+                    print(f"[EUIPO] Direct search: {len(euipo_marks)} marks")
+                    return euipo_marks, "live:euipo"
+            except Exception as e:
+                print(f"[EUIPO] Direct search error: {type(e).__name__}: {e}")
 
         # _PROXY_LIST include ScraperAPI proxy dac\u0103 SCRAPERAPI_KEY e setat
         candidates = _PROXY_LIST + [""]
