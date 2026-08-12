@@ -625,11 +625,11 @@ class SearchAgent:
                     loop.run_in_executor(None, search_euipo, name, nice_classes),
                     timeout=20.0
                 )
-                if euipo_marks:
-                    if not include_expired:
-                        euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
-                    print(f"[EUIPO] Direct search: {len(euipo_marks)} marks")
-                    return euipo_marks, "live:euipo"
+                # Return\u0103m imediat \u2014 chiar \u0219i 0 rezultate e un r\u0103spuns valid de la EUIPO
+                if not include_expired:
+                    euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
+                print(f"[EUIPO] Direct search: {len(euipo_marks)} marks")
+                return euipo_marks, "live:euipo"
             except asyncio.TimeoutError:
                 print("[EUIPO] Direct search timeout \u2014 falling back")
             except Exception as e:

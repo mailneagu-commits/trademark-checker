@@ -152,9 +152,9 @@ async def reset_circuit_breaker():
 
 @app.get("/api/debug-euipo")
 async def debug_euipo():
-    """Testează conectivitatea EUIPO — search direct cu IBM API Connect credentials."""
-    import asyncio
-    from agents.euipo_agent import EUIPO_CLIENT_ID, EUIPO_SEARCH_URL, euipo_available, search_euipo
+    """Testează conectivitatea EUIPO — arată răspunsul raw."""
+    import asyncio, requests as _req
+    from agents.euipo_agent import EUIPO_CLIENT_ID, EUIPO_CLIENT_SECRET, EUIPO_SEARCH_URL, euipo_available
     result = {
         "configured": euipo_available(),
         "search_url": EUIPO_SEARCH_URL,
@@ -162,18 +162,31 @@ async def debug_euipo():
     }
     if not euipo_available():
         return result
+
+    def _raw_search():
+        hdrs = {
+            "X-IBM-Client-Id":     EUIPO_CLIENT_ID,
+            "X-IBM-Client-Secret": EUIPO_CLIENT_SECRET,
+            "Accept": "application/json",
+        }
+        r = _req.get(EUIPO_SEARCH_URL,
+                     headers=hdrs,
+                     params={"query": "wordMarkSpecification.verbalElement==TEST", "size": 3, "page": 0},
+                     timeout=12)
+        return r.status_code, r.text[:800]
+
     try:
         loop = asyncio.get_event_loop()
-        marks = await asyncio.wait_for(
-            loop.run_in_executor(None, search_euipo, "TEST", ["9"]),
+        status, body = await asyncio.wait_for(
+            loop.run_in_executor(None, _raw_search),
             timeout=15.0
         )
-        result["search_ok"] = True
-        result["marks_found"] = len(marks)
+        result["http_status"] = status
+        result["raw_body"] = body
     except asyncio.TimeoutError:
-        result["search_error"] = "timeout (>15s)"
+        result["error"] = "timeout (>15s)"
     except Exception as e:
-        result["search_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+        result["error"] = f"{type(e).__name__}: {str(e)[:200]}"
     return result
 
 
