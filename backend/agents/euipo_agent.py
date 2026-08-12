@@ -2,8 +2,8 @@ import os
 import requests
 from typing import List, Dict
 
-EUIPO_CLIENT_ID     = os.environ.get("EUIPO_CLIENT_ID", "")
-EUIPO_CLIENT_SECRET = os.environ.get("EUIPO_CLIENT_SECRET", "")
+EUIPO_CLIENT_ID     = os.environ.get("EUIPO_CLIENT_ID", "").strip()
+EUIPO_CLIENT_SECRET = os.environ.get("EUIPO_CLIENT_SECRET", "").strip()
 EUIPO_SEARCH_URL    = "https://api.euipo.europa.eu/trademark-search/trademarks"
 
 if EUIPO_CLIENT_ID:
