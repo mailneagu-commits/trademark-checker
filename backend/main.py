@@ -150,6 +150,37 @@ async def reset_circuit_breaker():
     return {"status": "ok", "message": "Circuit breaker resetat. TMview va fi reîncercat."}
 
 
+@app.get("/api/debug-euipo")
+async def debug_euipo():
+    """Testează conectivitatea EUIPO — token + search."""
+    import asyncio
+    from agents.euipo_agent import (
+        EUIPO_CLIENT_ID, EUIPO_CLIENT_SECRET, EUIPO_TOKEN_URL, EUIPO_SEARCH_URL,
+        euipo_available, _get_token
+    )
+    result = {
+        "configured": euipo_available(),
+        "token_url": EUIPO_TOKEN_URL,
+        "search_url": EUIPO_SEARCH_URL,
+        "client_id_prefix": EUIPO_CLIENT_ID[:8] if EUIPO_CLIENT_ID else None,
+    }
+    if not euipo_available():
+        return result
+    try:
+        loop = asyncio.get_event_loop()
+        token = await asyncio.wait_for(
+            loop.run_in_executor(None, _get_token),
+            timeout=12.0
+        )
+        result["token_ok"] = bool(token)
+        result["token_prefix"] = token[:20] if token else None
+    except asyncio.TimeoutError:
+        result["token_error"] = "timeout (>12s)"
+    except Exception as e:
+        result["token_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    return result
+
+
 class TestSmtpRequest(BaseModel):
     email: str
 
