@@ -382,12 +382,15 @@ def _fetch_image_bytes(url: str, size=(60, 60), _cache: dict = {}) -> Optional[b
 # ── Excel ──────────────────────────────────────────────────────────────
 def build_excel(query: str, nice_classes: List[str], offices: List[str],
                 results: List[Dict], similar: List[Dict] = None,
-                expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None) -> bytes:
+                expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None,
+                include_expired: bool = True) -> bytes:
     from datetime import datetime as _dt
 
     results, similar, expired_conflicts, expired_similar = _segregate_expired(
         results, similar, expired_conflicts or [], expired_similar or []
     )
+    if not include_expired:
+        expired_conflicts, expired_similar = [], []
 
     def _xdate(d):
         if not d: return ""
@@ -597,7 +600,8 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
 # ── PDF ────────────────────────────────────────────────────────────────
 def build_pdf(query: str, nice_classes: List[str], offices: List[str],
               results: List[Dict], similar: List[Dict] = None,
-              expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None) -> bytes:
+              expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None,
+              include_expired: bool = True) -> bytes:
     from reportlab.lib.pagesizes import landscape, A4
     from reportlab.platypus import KeepTogether, PageBreak
     from datetime import datetime as dt
@@ -605,6 +609,8 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
     results, similar, expired_conflicts, expired_similar = _segregate_expired(
         results, similar, expired_conflicts or [], expired_similar or []
     )
+    if not include_expired:
+        expired_conflicts, expired_similar = [], []
 
     PAGE = landscape(A4)
     LM = RM = 1.4 * cm
@@ -1897,7 +1903,8 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
 
 def build_word(query: str, nice_classes: List[str], offices: List[str],
                results: List[Dict], similar: List[Dict] = None,
-               expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None) -> bytes:
+               expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None,
+               include_expired: bool = True) -> bytes:
     from datetime import datetime as dt
     from docx.enum.section import WD_ORIENT
 
@@ -1931,8 +1938,10 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
 
     # Separam defensiv marcile expirate din listele active (garantie indiferent de API)
     results, similar, expired_conflicts, expired_similar = _segregate_expired(
-        results, similar, expired_conflicts, expired_similar
+        results, similar, expired_conflicts or [], expired_similar or []
     )
+    if not include_expired:
+        expired_conflicts, expired_similar = [], []
 
     _RISK_ORDER = {"very_high": 0, "high": 1, "medium": 2, "low": 3, "small": 4}
 

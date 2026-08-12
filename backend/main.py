@@ -251,23 +251,19 @@ async def export_report(request: ExportRequest):
     similar = request.similar
     expired_conflicts = request.expired_conflicts
     expired_similar = request.expired_similar
-
-    # Excludem mărci expirate din Word dacă utilizatorul a deselectat opțiunea
-    if fmt == "word" and not request.include_expired:
-        expired_conflicts = []
-        expired_similar = []
+    include_expired = request.include_expired
 
     try:
         if fmt == "excel":
-            data = build_excel(name, classes, offices, results, similar, expired_conflicts, expired_similar)
+            data = build_excel(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired)
             filename = f"raport_marca_{name.replace(' ', '_')}.xlsx"
             media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         elif fmt == "pdf":
-            data = build_pdf(name, classes, offices, results, similar, expired_conflicts, expired_similar)
+            data = build_pdf(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired)
             filename = f"raport_marca_{name.replace(' ', '_')}.pdf"
             media_type = "application/pdf"
         elif fmt == "word":
-            data = build_word(name, classes, offices, results, similar, expired_conflicts, expired_similar)
+            data = build_word(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired)
             filename = f"raport_marca_{name.replace(' ', '_')}.docx"
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:
