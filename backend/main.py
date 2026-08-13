@@ -152,52 +152,49 @@ async def reset_circuit_breaker():
 
 @app.get("/api/debug-euipo")
 async def debug_euipo():
-    """Testează mai multe metode de auth EUIPO și arată care merge."""
+    """Testează diferite query-uri EUIPO API."""
     import asyncio, requests as _req
     from agents.euipo_agent import EUIPO_CLIENT_ID, EUIPO_CLIENT_SECRET, EUIPO_SEARCH_URL, euipo_available
     result = {
         "configured": euipo_available(),
         "client_id_prefix": EUIPO_CLIENT_ID[:8] if EUIPO_CLIENT_ID else None,
-        "client_secret_len": len(EUIPO_CLIENT_SECRET) if EUIPO_CLIENT_SECRET else 0,
     }
     if not euipo_available():
         return result
 
-    def _try(label, headers, params):
+    hdrs = {
+        "X-IBM-Client-Id":     EUIPO_CLIENT_ID,
+        "X-IBM-Client-Secret": EUIPO_CLIENT_SECRET,
+        "Accept": "application/json",
+    }
+
+    def _try(label, params):
         try:
-            r = _req.get(EUIPO_SEARCH_URL, headers=headers, params=params, timeout=10)
-            return {"label": label, "status": r.status_code, "body": r.text[:300]}
+            r = _req.get(EUIPO_SEARCH_URL, headers=hdrs, params=params, timeout=10)
+            return {"label": label, "status": r.status_code, "body": r.text[:400]}
         except Exception as e:
             return {"label": label, "error": str(e)[:100]}
 
-    attempts = [
-        ("X-IBM headers", {
-            "X-IBM-Client-Id": EUIPO_CLIENT_ID,
-            "X-IBM-Client-Secret": EUIPO_CLIENT_SECRET,
-            "Accept": "application/json",
-        }, {"query": "wordMarkSpecification.verbalElement==APPLE", "size": 3}),
-        ("X-IBM-Client-Id only", {
-            "X-IBM-Client-Id": EUIPO_CLIENT_ID,
-            "Accept": "application/json",
-        }, {"query": "wordMarkSpecification.verbalElement==APPLE", "size": 3}),
-        ("apikey param", {
-            "Accept": "application/json",
-        }, {"query": "wordMarkSpecification.verbalElement==APPLE", "size": 3,
-            "client_id": EUIPO_CLIENT_ID, "client_secret": EUIPO_CLIENT_SECRET}),
+    queries = [
+        ("eq APPLE",        {"query": "wordMarkSpecification.verbalElement==APPLE", "size": 3}),
+        ("like %APPLE%",    {"query": "wordMarkSpecification.verbalElement=like=%APPLE%", "size": 3}),
+        ("ilike %APPLE%",   {"query": "wordMarkSpecification.verbalElement=ilike=%APPLE%", "size": 3}),
+        ("no query",        {"size": 3}),
+        ("name field",      {"query": "tradeMarkName==APPLE", "size": 3}),
     ]
 
     loop = asyncio.get_event_loop()
     results = []
-    for label, hdrs, params in attempts:
+    for label, params in queries:
         try:
             r = await asyncio.wait_for(
-                loop.run_in_executor(None, _try, label, hdrs, params),
+                loop.run_in_executor(None, _try, label, params),
                 timeout=12.0
             )
             results.append(r)
         except asyncio.TimeoutError:
             results.append({"label": label, "error": "timeout"})
-    result["attempts"] = results
+    result["queries"] = results
     return result
 
 
