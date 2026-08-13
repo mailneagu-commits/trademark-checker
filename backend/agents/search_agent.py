@@ -616,24 +616,22 @@ class SearchAgent:
 
             return merged
 
-        # Dac\u0103 user-ul caut\u0103 doar pe EUIPO (EM) \u0219i API-ul e disponibil, s\u0103rim TMview
-        only_euipo = set(offices) <= {"EM", "WO"} and euipo_available()
-        if only_euipo:
+        # \u00cencearc\u0103 EUIPO API primul (rapid, f\u0103r\u0103 blocaje Imperva)
+        if euipo_available():
             try:
                 loop = asyncio.get_event_loop()
                 euipo_marks = await asyncio.wait_for(
                     loop.run_in_executor(None, search_euipo, name, nice_classes),
                     timeout=20.0
                 )
-                # Return\u0103m imediat \u2014 chiar \u0219i 0 rezultate e un r\u0103spuns valid de la EUIPO
                 if not include_expired:
                     euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
-                print(f"[EUIPO] Direct search: {len(euipo_marks)} marks")
+                print(f"[EUIPO] Primary search: {len(euipo_marks)} marks")
                 return euipo_marks, "live:euipo"
             except asyncio.TimeoutError:
-                print("[EUIPO] Direct search timeout \u2014 falling back")
+                print("[EUIPO] Primary search timeout \u2014 falling back to TMview")
             except Exception as e:
-                print(f"[EUIPO] Direct search error: {type(e).__name__}: {e}")
+                print(f"[EUIPO] Primary search error: {type(e).__name__}: {e}")
 
         # _PROXY_LIST include ScraperAPI proxy dac\u0103 SCRAPERAPI_KEY e setat
         candidates = _PROXY_LIST + [""]
