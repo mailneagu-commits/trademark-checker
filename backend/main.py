@@ -86,21 +86,28 @@ async def debug_tmview():
     if not HAS_CURL_CFFI:
         return {"error": "curl_cffi not available"}
     results = {}
-    payload = {"page": "1", "pageSize": "5", "criteria": "F",
-               "basicSearch": "TEST", "newPage": True,
-               "fields": ["ST13", "tmName"], "territories": ["RO"]}
-    # Test direct (fara proxy)
+    payload_ro = {"page": "1", "pageSize": "3", "criteria": "F",
+                  "basicSearch": "TEST", "newPage": True,
+                  "fields": ["ST13", "tmName"], "territories": ["RO"]}
+    payload_em = {"page": "1", "pageSize": "3", "criteria": "Z",
+                  "basicSearch": "APPLE", "newPage": True,
+                  "fields": ["ST13", "tmName"], "offices": ["EM"]}
     try:
         async with AsyncSession(impersonate="chrome120", proxies=None, verify=True) as session:
             r = await session.get(TMVIEW_HOME, timeout=10)
-            results["direct_home_status"] = r.status_code
-            results["direct_home_ct"] = r.headers.get("content-type", "")[:60]
-            r2 = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=15)
-            results["direct_api_status"] = r2.status_code
-            results["direct_api_ct"] = r2.headers.get("content-type", "")[:60]
-            results["direct_api_preview"] = r2.text[:300]
+            results["home_status"] = r.status_code
+            # Test cu territories RO
+            r2 = await session.post(TMVIEW_URL, json=payload_ro, headers=_build_headers(), timeout=12)
+            results["ro_status"] = r2.status_code
+            results["ro_ct"] = r2.headers.get("content-type", "")[:50]
+            results["ro_preview"] = r2.text[:200]
+            # Test cu offices EM
+            r3 = await session.post(TMVIEW_URL, json=payload_em, headers=_build_headers(), timeout=12)
+            results["em_status"] = r3.status_code
+            results["em_ct"] = r3.headers.get("content-type", "")[:50]
+            results["em_preview"] = r3.text[:300]
     except Exception as e:
-        results["direct_error"] = f"{type(e).__name__}: {e}"
+        results["error"] = f"{type(e).__name__}: {e}"
     return results
 
 
