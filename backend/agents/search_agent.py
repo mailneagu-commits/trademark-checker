@@ -676,10 +676,10 @@ class SearchAgent:
                     loop.run_in_executor(None, search_euipo, name, nice_classes),
                     timeout=20.0
                 )
-                if euipo_marks:
-                    if not include_expired:
-                        euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
-                    return euipo_marks, "live:euipo"
+                # Returnăm imediat — chiar și 0 rezultate e valid (TMview e blocat)
+                if not include_expired:
+                    euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
+                return euipo_marks, "live:euipo (TMview indisponibil)"
             except Exception as e:
                 print(f"[EUIPO] search error: {type(e).__name__}: {e}")
 
