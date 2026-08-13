@@ -13,16 +13,8 @@ from typing import List, Dict, Tuple, Optional
 _TMDN_API_KEY = os.environ.get("TMDN_API_KEY", "")
 _TMDN_API_SECRET = os.environ.get("TMDN_API_SECRET", "")
 
-# Proxy rotation: citește PROXY_URL (singur) sau PROXY_URLS (listă separată cu virgulă)
-# ScraperAPI: dacă e setat SCRAPERAPI_KEY, construim automat URL-ul proxy
-_scraperapi_key = os.environ.get("SCRAPERAPI_KEY", "")
-if _scraperapi_key and not os.environ.get("PROXY_URL") and not os.environ.get("PROXY_URLS"):
-    _auto_proxy = f"http://scraperapi:{_scraperapi_key}@proxy-server.scraperapi.com:8001"
-    print(f"[PROXY] ScraperAPI auto-configured from SCRAPERAPI_KEY")
-else:
-    _auto_proxy = ""
-
-_proxy_list_raw = os.environ.get("PROXY_URLS", "") or os.environ.get("PROXY_URL", "") or _auto_proxy
+# Proxy: doar PROXY_URL/PROXY_URLS manual configurate (ScraperAPI blocat de TMview — 499)
+_proxy_list_raw = os.environ.get("PROXY_URLS", "") or os.environ.get("PROXY_URL", "")
 _PROXY_LIST: List[str] = [p.strip() for p in _proxy_list_raw.split(",") if p.strip()]
 _PROXY_URL  = _PROXY_LIST[0] if _PROXY_LIST else ""
 _PROXIES    = {"https": _PROXY_URL, "http": _PROXY_URL} if _PROXY_URL else None
