@@ -81,27 +81,26 @@ async def set_curl(request: CurlRequest):
 
 @app.get("/api/debug-tmview")
 async def debug_tmview():
-    """Test connectivity to TMview API — for diagnostics only."""
-    from agents.search_agent import AsyncSession, TMVIEW_URL, TMVIEW_HOME, _PROXIES, _build_headers, HAS_CURL_CFFI
+    """Test TMview direct (fara proxy) si cu proxy."""
+    from agents.search_agent import AsyncSession, TMVIEW_URL, TMVIEW_HOME, _build_headers, HAS_CURL_CFFI
     if not HAS_CURL_CFFI:
         return {"error": "curl_cffi not available"}
     results = {}
+    payload = {"page": "1", "pageSize": "5", "criteria": "F",
+               "basicSearch": "TEST", "newPage": True,
+               "fields": ["ST13", "tmName"], "territories": ["RO"]}
+    # Test direct (fara proxy)
     try:
-        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
-            r = await session.get(TMVIEW_HOME, timeout=60)
-            results["home_status"] = r.status_code
-            results["home_cookies"] = list(session.cookies.keys())
-            results["home_body_preview"] = r.text[:300]
-            r2 = await session.post(TMVIEW_URL, json={
-                "page": "1", "pageSize": "5", "criteria": "F",
-                "basicSearch": "TEST", "newPage": True,
-                "fields": ["ST13", "tmName"],
-                "territories": ["RO"]
-            }, headers=_build_headers(), timeout=60)
-            results["api_status"] = r2.status_code
-            results["api_body_preview"] = r2.text[:500]
+        async with AsyncSession(impersonate="chrome120", proxies=None, verify=True) as session:
+            r = await session.get(TMVIEW_HOME, timeout=10)
+            results["direct_home_status"] = r.status_code
+            results["direct_home_ct"] = r.headers.get("content-type", "")[:60]
+            r2 = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=15)
+            results["direct_api_status"] = r2.status_code
+            results["direct_api_ct"] = r2.headers.get("content-type", "")[:60]
+            results["direct_api_preview"] = r2.text[:300]
     except Exception as e:
-        results["error"] = f"{type(e).__name__}: {e}"
+        results["direct_error"] = f"{type(e).__name__}: {e}"
     return results
 
 
