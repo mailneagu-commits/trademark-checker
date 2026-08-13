@@ -633,57 +633,27 @@ class SearchAgent:
             except Exception as e:
                 print(f"[EUIPO] Primary search error: {type(e).__name__}: {e}")
 
-        # _PROXY_LIST include ScraperAPI proxy dac\u0103 SCRAPERAPI_KEY e setat
-        candidates = _PROXY_LIST + [""]
-        for proxy_url in candidates:
-            label = proxy_url[:30] if proxy_url else "direct"
-            try:
-                marks = await asyncio.wait_for(
-                    _fetch_tmview(name, nice_classes, offices, proxy_url=proxy_url, include_expired=include_expired, extra_terms=extra_terms, wildcard_patterns=wildcard_patterns),
-                    timeout=75.0 if proxy_url else 45.0
-                )
-                if marks is not None and len(marks) > 0:  # Only success if we have actual results
-                    print(f"[TMVIEW] success via {label}, {len(marks)} marks")
-                    source = "live:tmview"
-                    merged_marks = marks
-
-                    if euipo_available():
-                        try:
-                            loop = asyncio.get_event_loop()
-                            euipo_marks = await loop.run_in_executor(None, search_euipo, name, nice_classes)
-                            if euipo_marks:
-                                merged_marks = _merge_marks(merged_marks, euipo_marks)
-                                source = "live:tmview+euipo"
-                        except Exception as e:
-                            print(f"[EUIPO] search error: {type(e).__name__}: {e}")
-
-                    if not include_expired:
-                        merged_marks = [m for m in merged_marks if not _is_expired_mark(m)]
-
-                    return merged_marks, source
-                print(f"[TMVIEW] internal error via {label}, trying next")
-            except asyncio.TimeoutError:
-                print(f"[TMVIEW] timeout via {label}")
-            except Exception as e:
-                print(f"[TMVIEW] error via {label}: {type(e).__name__}: {e}")
-
-        if euipo_available():
-            try:
-                loop = asyncio.get_event_loop()
-                euipo_marks = await asyncio.wait_for(
-                    loop.run_in_executor(None, search_euipo, name, nice_classes),
-                    timeout=20.0
-                )
-                # Returnăm imediat — chiar și 0 rezultate e valid (TMview e blocat)
+        # 2. Incearca TMview direct (fara proxy - ScraperAPI e blocat de TMview)
+        _cb_reset()
+        try:
+            marks = await asyncio.wait_for(
+                _fetch_tmview(name, nice_classes, offices, proxy_url="",
+                              include_expired=include_expired,
+                              extra_terms=extra_terms,
+                              wildcard_patterns=wildcard_patterns),
+                timeout=20.0
+            )
+            if marks is not None and len(marks) > 0:
+                print(f"[TMVIEW] direct success: {len(marks)} marks")
                 if not include_expired:
-                    euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
-                return euipo_marks, "live:euipo (TMview indisponibil)"
-            except Exception as e:
-                print(f"[EUIPO] search error: {type(e).__name__}: {e}")
+                    marks = [m for m in marks if not _is_expired_mark(m)]
+                return marks, "live:tmview"
+        except asyncio.TimeoutError:
+            print("[TMVIEW] direct timeout")
+        except Exception as e:
+            print(f"[TMVIEW] direct error: {type(e).__name__}: {e}")
 
-        if _cb_open:
-            return _demo_marks(name, nice_classes, offices), "demo (TMview blocat — lipiți sesiunea browser din DevTools)"
-        return _demo_marks(name, nice_classes, offices), "demo (TMview/EUIPO indisponibil — date demonstrative)"
+        return _demo_marks(name, nice_classes, offices), "demo (TMview/EUIPO indisponibil - date demonstrative)"
 
     async def search_expired(self, name: str, nice_classes: List[str],
                              offices: List[str]) -> Tuple[List[Dict], str]:

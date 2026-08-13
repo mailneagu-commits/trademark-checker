@@ -17,10 +17,10 @@ def euipo_available() -> bool:
 
 
 def _to_internal(tm: dict) -> dict:
-    app_num   = tm.get("applicationNumber", "")
-    verbal    = (tm.get("wordMarkSpecification") or {}).get("verbalElement", "")
+    app_num    = tm.get("applicationNumber", "")
+    verbal     = (tm.get("wordMarkSpecification") or {}).get("verbalElement", "")
     applicants = tm.get("applicants") or []
-    names     = [a.get("name", "") for a in applicants if a.get("name")]
+    names      = [a.get("name", "") for a in applicants if a.get("name")]
 
     def iso(d):
         return f"{d}T00:00:00.000Z" if d else None
@@ -46,20 +46,16 @@ def search_euipo(name: str, nice_classes: List[str]) -> List[Dict]:
     if not euipo_available():
         return []
 
-    # IBM API Connect: autentificare directă cu client credentials în headers
     headers = {
         "X-IBM-Client-Id":     EUIPO_CLIENT_ID,
         "X-IBM-Client-Secret": EUIPO_CLIENT_SECRET,
         "Accept": "application/json",
     }
 
-    nc_filter = ""
     nc_ints = [str(int(c)) for c in nice_classes if c.isdigit()]
-    if nc_ints:
-        nc_filter = f";niceClasses=in=({','.join(nc_ints)})"
+    nc_filter = f";niceClasses=in=({','.join(nc_ints)})" if nc_ints else ""
 
     upper = name.upper()
-    # RSQL query format: https://dev.euipo.europa.eu/product/trademark-search_110
     queries = [
         f"wordMarkSpecification.verbalElement=={upper}",
         f"wordMarkSpecification.verbalElement==*{upper}*",
@@ -69,25 +65,26 @@ def search_euipo(name: str, nice_classes: List[str]) -> List[Dict]:
     all_marks: List[Dict] = []
 
     for q in queries:
-        try:
-            resp = requests.get(EUIPO_SEARCH_URL, 
-                headers=headers,
-                params={"query": q + nc_filter, "size": 100, "page": 0},
-                timeout=15)
-            
-            if resp.status_code == 200:
-                for tm in resp.json().get("trademarks", []):
-                    key = tm.get("applicationNumber", "")
-                    if key and key not in seen:
-                        seen.add(key)
-                        all_marks.append(_to_internal(tm))
-            elif resp.status_code == 403:
-                print(f"[EUIPO] 403 Forbidden - app not subscribed to Trademark Search API")
-                break
-            else:
-                print(f"[EUIPO] {resp.status_code}: {resp.text[:100]}")
-        except Exception as e:
-            print(f"[EUIPO] Request error: {type(e).__name__}: {str(e)[:100]}")
+        resp = requests.get(
+            EUIPO_SEARCH_URL,
+            headers=headers,
+            params={"query": q + nc_filter, "size": 100, "page": 0},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            items = (data.get("trademarks") or data.get("items") or
+                     data.get("results") or data.get("data") or [])
+            for tm in items:
+                key = tm.get("applicationNumber", "")
+                if key and key not in seen:
+                    seen.add(key)
+                    all_marks.append(_to_internal(tm))
+        elif resp.status_code in (401, 403):
+            # Propagăm eroarea — nu returnăm [] silențios
+            raise Exception(f"EUIPO {resp.status_code}: {resp.text[:120]}")
+        else:
+            print(f"[EUIPO] {resp.status_code}: {resp.text[:100]}")
 
     if all_marks:
         print(f"[EUIPO] Found {len(all_marks)} marks for '{name}'")
