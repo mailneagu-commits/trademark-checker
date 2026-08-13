@@ -412,23 +412,22 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     proxies   = _make_proxies(proxy_url) if use_proxy else None
 
     if use_proxy:
-        # Cu proxy: 2 criterii secvențiale cu pauză între ele (evită detecția bot Imperva)
         main_searches = [("Z", upper), ("C", f"*{upper}*")]
     elif many_territories:
         main_searches = [("Z", upper), ("C", f"*{upper}*")]
     else:
+        # Direct Railway connection: limităm la 4 criterii principale (sub 25s total)
         main_searches = [
-            ("Z", upper), ("C", upper), ("S", upper), ("E", upper),
-            ("F", upper), ("C", f"*{upper}*"), ("C", f"{upper}*"), ("C", f"*{upper}"),
+            ("Z", upper), ("F", upper),
+            ("C", f"*{upper}*"), ("C", f"{upper}*"),
         ]
 
     all_phonetic = list(set(
         build_phonetic_variants(name) + build_vowel_variants(name) +
         build_plural_stem_variants(name)[:4]
     ))
-    # Cu proxy: max 3 variante fonetice pentru a nu depăși timeout-ul
-    phonetic_terms = all_phonetic[:3] if use_proxy else all_phonetic
-    req_timeout = 55 if use_proxy else 25
+    phonetic_terms = all_phonetic[:3] if use_proxy else all_phonetic[:4]
+    req_timeout = 55 if use_proxy else 12
     extra_searches = [("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper]
 
     async with AsyncSession(impersonate="chrome120", proxies=proxies, verify=not use_proxy) as session:
@@ -633,7 +632,7 @@ class SearchAgent:
                               include_expired=include_expired,
                               extra_terms=extra_terms,
                               wildcard_patterns=wildcard_patterns),
-                timeout=20.0
+                timeout=25.0
             )
             if marks is not None and len(marks) > 0:
                 print(f"[TMVIEW] direct success: {len(marks)} marks")
