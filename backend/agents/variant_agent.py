@@ -158,55 +158,35 @@ def build_offices_and_territories(user_offices: List[str]):
     Convertește selecția utilizatorului în offices + territories pentru TMview.
 
     Logică:
-    - EU_FULL  → expandează în toate cele 27 state UE + EM + WO
-    - EM       → offices = ["EM", "WO"]  (nu mai explodez în 27 state — API acceptă EM direct)
+    - EM       → territories = toate cele 27 state UE  (TMview 400 la offices=["EM"])
     - WO       → offices = ["WO"]
-    - BE/NL/LU → territories = ["BX"], offices += ["BX", "WO", "EM"]
-    - Stat UE  → territories = [cod], offices += [cod, "WO", "EM"]
-                 Adăugăm oficiul național (ex. "RO" pentru OSIM), WIPO (mărci cu
-                 teritoriul desemnat) și EUIPO (mărci UE valabile în orice stat UE).
-    - Altele   → territories = [cod]  (non-UE: offices rămâne gol → TMview returnează
-                 mărci din orice oficiu cu acoperire pe acel teritoriu)
+    - BE/NL/LU → territories = ["BX"], offices += ["BX", "WO"]
+    - Stat UE  → territories = [cod], offices += [cod, "WO"]
+                 Mărci EUIPO apar automat via filtru teritoriu (EM acoperă toate statele UE).
+    - Altele   → territories = [cod]
     """
-    # Expandează EU_FULL în toate cele 27 state UE + EM + WO
-    expanded: List[str] = []
-    for code in user_offices:
-        if code.upper() == "EU_FULL":
-            expanded.extend(ALL_EU_TERRITORIES)
-            expanded.append("EM")
-            expanded.append("WO")
-        else:
-            expanded.append(code)
-    user_offices = expanded
-
     offices_set:     Set[str] = set()
     territories_set: Set[str] = set()
 
-    has_eu_country = False
     for code in user_offices:
         c = code.upper()
         if c in _BENELUX:
             territories_set.add("BX")
-            offices_set.add("BX")   # BOIP — oficiu Benelux
-            offices_set.add("WO")   # WIPO cu Benelux desemnat
-            has_eu_country = True
+            offices_set.add("BX")
+            offices_set.add("WO")
         elif c == "WO":
             offices_set.add("WO")
         elif c == "EM":
-            # API acceptă EM direct — mult mai eficient decât a expanda în 27 state
-            offices_set.add("EM")
+            # TMview returnează 400 PARAMETER_INCORRECT_FORMAT dacă offices conține "EM".
+            # Mărci EUIPO acoperă toate statele UE — le găsim prin filtru de teritoriu.
+            territories_set.update(ALL_EU_TERRITORIES)
             offices_set.add("WO")
         elif c in _EU_COUNTRY_SET:
             territories_set.add(c)
-            offices_set.add(c)      # oficiu național (ex. RO → OSIM, DE → DPMA)
-            offices_set.add("WO")   # WIPO cu acest teritoriu desemnat
-            has_eu_country = True
+            offices_set.add(c)
+            offices_set.add("WO")
         else:
             territories_set.add(c)
-
-    # Stat UE selectat → adăugăm și EUIPO (mărci UE acoperă toate statele membre)
-    if has_eu_country and "EM" not in offices_set:
-        offices_set.add("EM")
 
     return sorted(offices_set), sorted(territories_set)
 
@@ -326,50 +306,6 @@ def build_abbreviation_variants(name: str) -> List[str]:
     return variants
 
 
-def build_wildcard_patterns(name: str) -> List[str]:
-    """
-    Strategie 8: Pattern-uri cu wildcard la poziții specifice.
-    Generează variante ca E*E*IX și E?E?IX din EMETIX (pentru a captura EZEPIX, EBEBIX etc.).
-    
-    Strategii (doar pentru cuvinte >= 5 caractere):
-    1. Bigramă — păstrează poziții pare/impare (cu * și ?)
-    2. Tri-grame — subșiruri de 3 litere consecutive (sliding window)
-    3. Prefix-suffix — primele N + ultimele M caractere
-    
-    Limită: max ~12 pattern-uri pentru a nu spama API.
-    """
-    upper = name.upper().strip()
-    n = len(upper)
-    
-    # Doar pentru cuvinte suficient de lungi (evităm noise pentru cuvinte scurte)
-    if n < 5:
-        return []
-    
-    patterns: List[str] = []
-    seen: Set[str] = set()
-    
-    def add(pattern: str):
-        if pattern not in seen:
-            seen.add(pattern)
-            patterns.append(pattern)
-    
-    # Bigramă: păstrează poziții pare (0,2,4...) cu * (0 sau mai multe)
-    even_pattern = "".join(upper[i] if i % 2 == 0 else "*" for i in range(n))
-    add(even_pattern)  # Varianta 2: E*E*I*
-
-    # Bigramă terminând cu ultimele 2 caractere (E*E*IX din EMETIX)
-    if n >= 3:
-        even_pattern_end = "".join(upper[i] if i % 2 == 0 else "*" for i in range(n - 2)) + upper[-2:]
-        add(even_pattern_end)  # Varianta 3: E*E*IX
-
-    # Bigramă cu 2 wildcard-uri consecutive înainte de ultimul caracter
-    if n >= 4:
-        even_pattern_double = "".join(upper[i] if i % 2 == 0 else "*" for i in range(n - 3)) + "**" + upper[-1]
-        add(even_pattern_double)  # Varianta 4: E*E**X
-
-    return patterns
-
-
 
 def generate_all_variants(name: str) -> dict:
     inputs        = build_input_list(name)
@@ -377,7 +313,6 @@ def generate_all_variants(name: str) -> dict:
     plurals       = build_plural_stem_variants(name)
     vowels        = build_vowel_variants(name)
     abbreviations = build_abbreviation_variants(name)
-    wildcard_patterns = build_wildcard_patterns(name)
 
     upper = name.upper().strip()
     n = len(upper)
@@ -395,7 +330,7 @@ def generate_all_variants(name: str) -> dict:
             progressive_truncations.append(f"*{upper[cut:]}*")
             progressive_truncations.append(f"*{upper[:-cut]}*")
 
-    all_extra = phonetic + plurals + vowels + abbreviations + wildcard_patterns
+    all_extra = phonetic + plurals + vowels + abbreviations
 
     return {
         "original":      name.upper().strip(),
@@ -407,6 +342,5 @@ def generate_all_variants(name: str) -> dict:
         "plurals":       plurals,
         "vowels":        vowels,
         "abbreviations": abbreviations,
-        "wildcard_patterns": wildcard_patterns,
         "all_extra":     all_extra,
     }
