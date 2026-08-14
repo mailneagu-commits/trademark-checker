@@ -65,17 +65,27 @@ from docx.oxml import OxmlElement
 
 
 def _translate_to_ro(text: str, _cache: dict = {}) -> str:
-    """Traduce text în română via Google Translate. Fallback la original dacă eșuează."""
+    """Traduce text în română. Încearcă MyMemory (REST API oficial, funcționează pe servere),
+    apoi GoogleTranslator ca fallback, apoi returnează originalul."""
     if not text or not text.strip():
         return text
     if text in _cache:
         return _cache[text]
+    result = None
+    # MyMemory: REST API oficial, nu face scraping, merge pe IP-uri de server/cloud
     try:
-        from deep_translator import GoogleTranslator
-        result = GoogleTranslator(source="auto", target="ro").translate(text[:4999])
-        _cache[text] = result or text
+        from deep_translator import MyMemoryTranslator
+        result = MyMemoryTranslator(source="en-US", target="ro-RO").translate(text[:4999])
     except Exception:
-        _cache[text] = text
+        pass
+    # Fallback: GoogleTranslator (poate fi blocat pe unele IP-uri cloud)
+    if not result:
+        try:
+            from deep_translator import GoogleTranslator
+            result = GoogleTranslator(source="auto", target="ro").translate(text[:4999])
+        except Exception:
+            pass
+    _cache[text] = result or text
     return _cache[text]
 
 
