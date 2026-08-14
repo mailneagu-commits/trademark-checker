@@ -288,28 +288,26 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     if _cb_is_open():
         return [], 0
     try:
-        r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=55 if _PROXIES else 25)
+        r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=55 if _PROXIES else 15)
         print(f"[TMVIEW] POST status={r.status_code} crit={criteria} term={term[:20]} offices={sorted(offices)} territories={sorted(territories)}")
         if r.status_code == 200:
-            _cb_record_success()
-            # Check content-type before parsing — Imperva returns text/html (200) when blocking
+            # Check content-type before parsing — Imperva returns text/html (200) when blocking.
+            # Do NOT count Imperva blocks as circuit-breaker failures (they're IP-level, not connection errors).
             ct = r.headers.get("content-type", "")
             body = r.text
             if not body.strip() or "json" not in ct.lower():
-                _cb_record_failure()
                 print(f"[TMVIEW] IMPERVA BLOCK — ct={ct!r} body_len={len(body)}")
                 return [], 0
             # Check if response is actually JSON (not HTML/redirect)
             try:
                 data  = r.json()
             except ValueError:
-                # Response is not JSON (probably HTML error page or redirect)
                 resp_preview = body[:100].lower()
                 if "html" in resp_preview or "<!doctype" in resp_preview or "302" in str(r.status_code):
-                    _cb_record_failure()
                     print(f"[TMVIEW] HTML response (possible IP ban/redirect): {resp_preview}")
                     return [], 0
                 raise
+            _cb_record_success()
             marks = data.get("tradeMarks", [])
             print(f"[TMVIEW] found {len(marks)} marks")
             for m in marks:
@@ -350,7 +348,7 @@ TERRITORY_BATCH = 7   # teritorii per request — evită WAF blocking
 # ── Circuit breaker ──────────────────────────────────────────────────────────
 # Dacă TMview resetează conexiunea de N ori consecutiv, oprim requests automat
 _cb_failures   = 0        # erori consecutive curente
-_CB_THRESHOLD  = 1        # 1 eroare = TMview ban, revino mai târziu
+_CB_THRESHOLD  = 3        # 3 erori consecutive = TMview ban, revino mai târziu
 _cb_open       = False    # True = circuit deschis (requests oprite)
 
 def _cb_record_success():
@@ -470,25 +468,29 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
 
         all_marks = all_marks[:MAX_TOTAL]
 
-        # Variante fonetice (max 3 cu proxy, toate fără proxy)
-        phon_ter = territories[:TERRITORY_BATCH] if (many_territories or use_proxy) else territories
-        for term in phonetic_terms:
-            if len(all_marks) >= MAX_TOTAL or _cb_is_open():
-                break
-            marks = await _search_term(session, term, nice_classes, offices, phon_ter, "C", seen)
-            for m in marks:
-                m["_phonetic"] = True
-            all_marks.extend(marks)
-            await asyncio.sleep(random.uniform(base_delay, base_delay + 0.8))
-        all_marks = all_marks[:MAX_TOTAL]
+        # Variante fonetice — sărite complet pentru many_territories (27 state);
+        # fiecare term folosea implicit MAX_PAGES_PER_TERM=5 pagini → depășea timeout-ul de 45s.
+        if not many_territories:
+            phon_ter = territories if not use_proxy else territories[:TERRITORY_BATCH]
+            for term in phonetic_terms:
+                if len(all_marks) >= MAX_TOTAL or _cb_is_open():
+                    break
+                marks = await _search_term(session, term, nice_classes, offices, phon_ter, "C", seen,
+                                           max_pages=2)
+                for m in marks:
+                    m["_phonetic"] = True
+                all_marks.extend(marks)
+                await asyncio.sleep(random.uniform(base_delay, base_delay + 0.8))
+            all_marks = all_marks[:MAX_TOTAL]
 
         # Wildcard patterns cu poziții specifice → marcate ca "Risc Ridicat"
-        if wildcard_patterns:
-            wildcard_ter = territories[:TERRITORY_BATCH] if (many_territories or use_proxy) else territories
+        if wildcard_patterns and not many_territories:
+            wildcard_ter = territories if not use_proxy else territories[:TERRITORY_BATCH]
             for term in wildcard_patterns:
                 if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                     break
-                marks = await _search_term(session, term, nice_classes, offices, wildcard_ter, "C", seen)
+                marks = await _search_term(session, term, nice_classes, offices, wildcard_ter, "C", seen,
+                                           max_pages=2)
                 for m in marks:
                     m["_risk_high"] = True  # Marchez ca risc ridicat
                 all_marks.extend(marks)
@@ -640,7 +642,7 @@ class SearchAgent:
                               include_expired=include_expired,
                               extra_terms=extra_terms,
                               wildcard_patterns=wildcard_patterns),
-                timeout=45.0
+                timeout=60.0
             )
             if marks is not None and len(marks) > 0:
                 print(f"[TMVIEW] direct success: {len(marks)} marks")
