@@ -426,9 +426,10 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         build_phonetic_variants(name) + build_vowel_variants(name) +
         build_plural_stem_variants(name)[:4]
     ))
-    phonetic_terms = all_phonetic[:3] if use_proxy else all_phonetic[:4]
+    phonetic_terms = all_phonetic[:2] if (use_proxy or many_territories) else all_phonetic[:4]
     req_timeout = 55 if use_proxy else 12
-    extra_searches = [("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper]
+    # Cu many_territories (ex. EM→27 state), extra_searches ar genera sute de request-uri.
+    extra_searches = [] if many_territories else [("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper]
 
     async with AsyncSession(impersonate="chrome120", proxies=proxies, verify=not use_proxy) as session:
         # Warmup GET — esențial pentru cookie-uri Imperva (atât direct cât și prin proxy)
@@ -632,7 +633,7 @@ class SearchAgent:
                               include_expired=include_expired,
                               extra_terms=extra_terms,
                               wildcard_patterns=wildcard_patterns),
-                timeout=25.0
+                timeout=45.0
             )
             if marks is not None and len(marks) > 0:
                 print(f"[TMVIEW] direct success: {len(marks)} marks")
