@@ -85,56 +85,87 @@ def _translate_to_ro(text: str, _cache: dict = {}) -> str:
 # MEDIUM    51–75% →  galben
 # LOW       20–50% →  verde
 
-def _is_mark_expired(tm: dict) -> bool:
-    """Detecteaza daca o marca este expirata/anulata/retrasa, indiferent de sursa datelor."""
-    status = str(tm.get("tradeMarkStatus") or tm.get("status") or "").lower()
-    if any(w in status for w in ("expir", "lapsed", "cancelled", "refused",
-                                  "withdrawn", "surrendered", "invalidated", "abandoned", "ended")):
-        return True
+_TERMINATED_WORDS = {"cancelled", "refused", "withdrawn", "surrendered", "invalidated", "abandoned"}
+_ACTIVE_WORDS     = {"registered", "active", "published", "pending", "examination",
+                     "application", "renewal", "opposition", "granted", "filed"}
+
+
+def _inactive_category(tm: dict) -> str:
+    """Returnează 'ended', 'terminated', 'expired' sau '' (activ)."""
+    from datetime import date as _d
+    status = str(tm.get("status") or tm.get("markCurrentStatusCode")
+                 or tm.get("tradeMarkStatus") or "").lower()
+
+    # Dacă statusul conține cuvinte active, marca e activă
+    if any(w in status for w in _ACTIVE_WORDS):
+        return ""
+
+    if "ended" in status:
+        return "ended"
+    if any(w in status for w in _TERMINATED_WORDS):
+        return "terminated"
+    if "expir" in status or "lapsed" in status:
+        return "expired"
+
+    # Fallback dată expirată
     exp_str = str(tm.get("expiryDate") or "")
     if exp_str:
         try:
-            from datetime import date as _d
-            return _d.fromisoformat(exp_str[:10]) < _d.today()
+            if _d.fromisoformat(exp_str[:10]) < _d.today():
+                return "expired"
         except Exception:
             pass
-    return False
+    return ""
 
 
-def _segregate_expired(
+def _segregate_inactive(
     results: List[Dict], similar: List[Dict],
+    ended_marks: List[Dict], terminated_marks: List[Dict],
     expired_conflicts: List[Dict], expired_similar: List[Dict],
 ) -> tuple:
-    """Muta marcile expirate din listele active in listele expirate.
+    """Mută mărcile inactive din listele active în categoriile corecte.
 
-    Garanteaza ca nicio marca expirata nu apare in prima sectiune,
-    indiferent de clasificarea primita de la API.
+    Garantează că nicio marcă inactivă nu apare la activi și că
+    ended/terminated nu ajung la expirate și invers.
     """
+    seen: set = set()
+    for lst in (ended_marks, terminated_marks, expired_conflicts, expired_similar):
+        for tm in lst:
+            k = tm.get("ST13") or tm.get("applicationNumber")
+            if k:
+                seen.add(k)
+
     clean_results, clean_similar = [], []
-    exp_c, exp_s = list(expired_conflicts), list(expired_similar)
-    seen_exp = {tm.get("ST13") or tm.get("applicationNumber") for tm in exp_c + exp_s if tm.get("ST13") or tm.get("applicationNumber")}
+    end_out  = list(ended_marks)
+    ter_out  = list(terminated_marks)
+    exp_c    = list(expired_conflicts)
+    exp_s    = list(expired_similar)
+
+    def _route(tm, high_risk: bool):
+        cat = _inactive_category(tm)
+        if not cat:
+            return False  # activ
+        key = tm.get("ST13") or tm.get("applicationNumber")
+        if key and key in seen:
+            return True   # deja în lista corectă
+        if key:
+            seen.add(key)
+        if cat == "ended":
+            end_out.append(tm)
+        elif cat == "terminated":
+            ter_out.append(tm)
+        else:
+            (exp_c if high_risk else exp_s).append(tm)
+        return True
 
     for tm in (results or []):
-        if _is_mark_expired(tm):
-            key = tm.get("ST13") or tm.get("applicationNumber")
-            if not key or key not in seen_exp:
-                exp_c.append(tm)
-                if key:
-                    seen_exp.add(key)
-        else:
+        if not _route(tm, high_risk=True):
             clean_results.append(tm)
-
     for tm in (similar or []):
-        if _is_mark_expired(tm):
-            key = tm.get("ST13") or tm.get("applicationNumber")
-            if not key or key not in seen_exp:
-                exp_s.append(tm)
-                if key:
-                    seen_exp.add(key)
-        else:
+        if not _route(tm, high_risk=False):
             clean_similar.append(tm)
 
-    return clean_results, clean_similar, exp_c, exp_s
+    return clean_results, clean_similar, end_out, ter_out, exp_c, exp_s
 
 
 def _risk_level(score: float) -> str:
@@ -387,11 +418,11 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
                 ended_marks: List[Dict] = None, terminated_marks: List[Dict] = None) -> bytes:
     from datetime import datetime as _dt
 
-    results, similar, expired_conflicts, expired_similar = _segregate_expired(
-        results, similar, expired_conflicts or [], expired_similar or []
+    results, similar, ended_marks, terminated_marks, expired_conflicts, expired_similar = _segregate_inactive(
+        results, similar, ended_marks or [], terminated_marks or [], expired_conflicts or [], expired_similar or []
     )
     if not include_expired:
-        expired_conflicts, expired_similar = [], []
+        ended_marks, terminated_marks, expired_conflicts, expired_similar = [], [], [], []
 
     def _xdate(d):
         if not d: return ""
@@ -624,11 +655,11 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
     from reportlab.platypus import KeepTogether, PageBreak
     from datetime import datetime as dt
 
-    results, similar, expired_conflicts, expired_similar = _segregate_expired(
-        results, similar, expired_conflicts or [], expired_similar or []
+    results, similar, ended_marks, terminated_marks, expired_conflicts, expired_similar = _segregate_inactive(
+        results, similar, ended_marks or [], terminated_marks or [], expired_conflicts or [], expired_similar or []
     )
     if not include_expired:
-        expired_conflicts, expired_similar = [], []
+        ended_marks, terminated_marks, expired_conflicts, expired_similar = [], [], [], []
 
     PAGE = landscape(A4)
     LM = RM = 1.4 * cm
@@ -1961,9 +1992,9 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
 
     _add_protectmark_header(doc, query, offices)
 
-    # Separam defensiv marcile expirate din listele active (garantie indiferent de API)
-    results, similar, expired_conflicts, expired_similar = _segregate_expired(
-        results, similar, expired_conflicts or [], expired_similar or []
+    # Separam defensiv marcile inactive din listele active (garantie indiferent de API)
+    results, similar, ended_marks, terminated_marks, expired_conflicts, expired_similar = _segregate_inactive(
+        results, similar, ended_marks or [], terminated_marks or [], expired_conflicts or [], expired_similar or []
     )
     if not include_expired:
         expired_conflicts, expired_similar = [], []
