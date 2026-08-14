@@ -87,36 +87,35 @@ async def debug_tmview():
         return {"error": "curl_cffi not available"}
     results = {}
 
-    def mk(territories=None, offices=None, term="APPLE", crit="Z", size=5):
+    def mk(territories=None, offices=None, term="TEST", crit="F", size=3):
         p = {"page": "1", "pageSize": str(size), "criteria": crit,
              "basicSearch": term, "newPage": True, "fields": ["ST13", "tmName", "tmOffice"]}
         if territories: p["territories"] = territories
         if offices:     p["offices"]     = offices
         return p
 
+    # Test CRITERIILE: care coduri accepta TMview? (toate cu territories=["RO"])
+    # Test TERITORIILE: care coduri de teritoriu sunt valide? (toate cu criteria="F")
     tests = {
-        # CE STIM DEJA
-        "ro_single":      mk(territories=["RO"]),
-        "offices_em":     mk(offices=["EM"]),                        # stim 400
-        # BENELUX: BE vs BX
-        "ter_BE":         mk(territories=["BE"]),                    # BE valid?
-        "ter_BX":         mk(territories=["BX"]),                    # BX valid?
-        # BATCH 7 fara Benelux
-        "ter_7_nobenelux": mk(territories=["AT","DE","FR","IT","ES","PL","RO"]),
-        # BATCH 7 cu BX
-        "ter_7_withBX":   mk(territories=["BX","AT","DE","FR","IT","ES","PL"]),
-        # BATCH 7 cu BE (varianta actuala din cod)
-        "ter_7_withBE":   mk(territories=["BE","AT","DE","FR","IT","ES","PL"]),
-        # EM ca teritoriu
-        "ter_EM":         mk(territories=["EM"]),                    # stim 400
-        # 27 state (cu BE/NL/LU)
-        "ter_27_withBE":  mk(territories=["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR",
-                                          "DE","GR","HU","IE","IT","LV","LT","LU","MT","NL",
-                                          "PL","PT","RO","SK","SI","ES","SE"]),
-        # 25 state (BX inlocuieste BE/NL/LU)
-        "ter_25_withBX":  mk(territories=["AT","BX","BG","HR","CY","CZ","DK","EE","FI","FR",
-                                          "DE","GR","HU","IE","IT","LV","LT","MT",
-                                          "PL","PT","RO","SK","SI","ES","SE"]),
+        # Criterii — doar RO ca sa izolam variabila
+        "crit_F_ro":   mk(territories=["RO"], crit="F"),   # stiam ca merge
+        "crit_C_ro":   mk(territories=["RO"], crit="C"),
+        "crit_Z_ro":   mk(territories=["RO"], crit="Z"),   # suspect 400
+        "crit_E_ro":   mk(territories=["RO"], crit="E"),
+        "crit_S_ro":   mk(territories=["RO"], crit="S"),
+        # Teritorii — doar criteria="F" care stiam ca merge
+        "ter_RO":      mk(territories=["RO"],  crit="F"),
+        "ter_DE":      mk(territories=["DE"],  crit="F"),
+        "ter_BE":      mk(territories=["BE"],  crit="F"),
+        "ter_BX":      mk(territories=["BX"],  crit="F"),
+        "ter_LU":      mk(territories=["LU"],  crit="F"),
+        "ter_NL":      mk(territories=["NL"],  crit="F"),
+        "ter_EM":      mk(territories=["EM"],  crit="F"),
+        "ter_WO":      mk(territories=["WO"],  crit="F"),
+        # Batch-uri cu criteria="F"
+        "ter_7_nobenelux": mk(territories=["AT","DE","FR","IT","ES","PL","RO"], crit="F"),
+        "ter_7_withBX":    mk(territories=["BX","AT","DE","FR","IT","ES","PL"], crit="F"),
+        "ter_7_withBE":    mk(territories=["BE","AT","DE","FR","IT","ES","PL"], crit="F"),
     }
 
     try:
@@ -124,7 +123,7 @@ async def debug_tmview():
             r = await session.get(TMVIEW_HOME, timeout=10)
             results["home_status"] = r.status_code
             import asyncio as _aio
-            await _aio.sleep(0.3)
+            await _aio.sleep(1.0)
             for name, payload in tests.items():
                 try:
                     rx = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=15)
@@ -135,7 +134,7 @@ async def debug_tmview():
                                          "offices": [m.get("tmOffice") for m in d.get("tradeMarks", [])[:3]]}
                     else:
                         results[name] = {"status": rx.status_code, "body": rx.text[:120]}
-                    await _aio.sleep(0.3)
+                    await _aio.sleep(1.0)
                 except Exception as ex:
                     results[name] = {"error": str(ex)[:100]}
     except Exception as e:
