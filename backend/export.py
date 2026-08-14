@@ -493,6 +493,18 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.row_dimensions[4].height = 28
 
+    # Pre-traduce G&S în paralel înainte de buclă → populează cache-ul _translate_to_ro
+    _xl_gs_texts = list({
+        gs.get("goodsAndServices", "")
+        for tm in all_results
+        for gs in tm.get("goodAndServices", [])
+        if gs.get("goodsAndServices", "").strip()
+    })
+    if _xl_gs_texts:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as _pool:
+            list(_pool.map(_translate_to_ro, _xl_gs_texts))
+
     # ── Rânduri date ──────────────────────────────────────────────────
     RISK_LABELS_XL = {
         "very_high": "RISC FOARTE RIDICAT",
@@ -525,7 +537,7 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
             nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
         if tm.get("goodAndServices"):
             nice_desc = "\n".join(
-                f"Cls {g['niceClass']} – {g.get('niceShort','')}: {g['goodsAndServices']}"
+                f"Cls {g['niceClass']} – {g.get('niceShort','')}: {_translate_to_ro(g['goodsAndServices'])}"
                 for g in tm["goodAndServices"] if g.get("goodsAndServices")
             )
         else:
@@ -902,6 +914,18 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
 
     MAX_GS = 600  # caractere max / clasă G&S
 
+    # Pre-traduce G&S în paralel înainte de buclă → populează cache-ul _translate_to_ro
+    _pdf_gs_texts = list({
+        gs.get("goodsAndServices", "")
+        for tm in all_results
+        for gs in tm.get("goodAndServices", [])
+        if gs.get("goodsAndServices", "").strip()
+    })
+    if _pdf_gs_texts:
+        from concurrent.futures import ThreadPoolExecutor as _TPEPDF
+        with _TPEPDF(max_workers=8) as _pool:
+            list(_pool.map(_translate_to_ro, _pdf_gs_texts))
+
     for i, tm in enumerate(all_results):
         sim   = tm.get("similarity") or {}
         score = sim.get("combined_score") or 0
@@ -1192,7 +1216,8 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
                                leading=11, spaceAfter=0)
                 )])
             if text:
-                disp = text[:MAX_GS] + ("…" if len(text) > MAX_GS else "")
+                translated = _translate_to_ro(text)
+                disp = translated[:MAX_GS] + ("…" if len(translated) > MAX_GS else "")
                 box_rows.append([Paragraph(
                     disp, sty(f"gtx{i}{nc}", fontSize=8, textColor=colors.HexColor("#444444"),
                               leading=12, spaceAfter=0)
