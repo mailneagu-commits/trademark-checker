@@ -1072,34 +1072,33 @@ function _applyRepToCard(tm, idx) {
   if (el && span) { span.textContent = name; el.style.display = ''; }
 }
 
-async function _prefetchRepsFor(marksWithIdx) {
-  const CONCURRENCY = 3;
-  const queue = marksWithIdx.filter(({tm}) =>
-    tm.ST13 && !tm.ST13.startsWith("DEMO") && !_detailFetchedST13s.has(tm.ST13)
-  );
-  let ptr = 0;
-  async function worker() {
-    while (ptr < queue.length) {
-      const {tm, idx} = queue[ptr++];
-      if (_detailFetchedST13s.has(tm.ST13)) { _applyRepToCard(tm, idx); continue; }
-      _detailFetchedST13s.add(tm.ST13);
-      try {
-        const resp = await fetch(`/api/tm-detail?st13=${encodeURIComponent(tm.ST13)}`);
-        if (resp.ok) {
-          const detail = await resp.json();
-          if (detail && !detail.error) {
-            Object.assign(tm, detail);
-            if (detail.applicants_detail && detail.applicants_detail.length)
-              tm.applicants = detail.applicants_detail;
-            tm._detailFetched = true;
-            _applyRepToCard(tm, idx);
-          }
+async function _prefetchRepsFor(marksWithIdx, isLive) {
+  // Nu prefetch în demo mode — evită flood TMview și blocarea Imperva
+  if (!isLive) return;
+  // Conservativ: 1 request la un moment dat, 2s delay, max 10 mărci
+  const MAX_PREFETCH = 10;
+  const DELAY_MS = 2000;
+  const queue = marksWithIdx
+    .filter(({tm}) => tm.ST13 && !tm.ST13.startsWith("DEMO") && !_detailFetchedST13s.has(tm.ST13))
+    .slice(0, MAX_PREFETCH);
+  for (const {tm, idx} of queue) {
+    if (_detailFetchedST13s.has(tm.ST13)) { _applyRepToCard(tm, idx); continue; }
+    _detailFetchedST13s.add(tm.ST13);
+    try {
+      const resp = await fetch(`/api/tm-detail?st13=${encodeURIComponent(tm.ST13)}`);
+      if (resp.ok) {
+        const detail = await resp.json();
+        if (detail && !detail.error) {
+          Object.assign(tm, detail);
+          if (detail.applicants_detail && detail.applicants_detail.length)
+            tm.applicants = detail.applicants_detail;
+          tm._detailFetched = true;
+          _applyRepToCard(tm, idx);
         }
-      } catch(e) {}
-      await new Promise(r => setTimeout(r, 120));
-    }
+      }
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, DELAY_MS));
   }
-  Promise.all(Array(CONCURRENCY).fill(null).map(worker)); // fire-and-forget
 }
 
 // ---- Search ----
@@ -1141,7 +1140,8 @@ async function doSearch() {
     renderExpired(
       (data.expired_conflicts || []).concat(data.expired_similar || [])
     );
-    // Pre-fetch detalii (reprezentant) pentru toate cardurile în background
+    // Pre-fetch detalii (reprezentant) — doar în live mode, conservativ
+    const _isLive = data.source && !data.source.startsWith("demo");
     _detailFetchedST13s.clear();
     _prefetchRepsFor([
       ...(data.results || []).map((tm, i) => ({tm, idx: i})),
@@ -1149,7 +1149,7 @@ async function doSearch() {
       ...(data.ended_marks || []).map((tm, i) => ({tm, idx: `end${i}`})),
       ...(data.terminated_marks || []).map((tm, i) => ({tm, idx: `ter${i}`})),
       ...((data.expired_conflicts||[]).concat(data.expired_similar||[])).map((tm,i) => ({tm, idx:`exp${i}`})),
-    ]);
+    ], _isLive);
   } catch(e) {
     setExportControlsEnabled(false);
     showError("Nu s-a putut contacta serverul. Asigurați-vă că backend-ul rulează pe portul 8000.");
