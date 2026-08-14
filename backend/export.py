@@ -64,31 +64,6 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 
-import os as _os
-_MYMEMORY_EMAIL = _os.getenv("MYMEMORY_EMAIL", "mailneagu@gmail.com")  # 10M chars/zi cu email
-
-def _translate_to_ro(text: str, _cache: dict = {}) -> str:
-    """Traduce text în română via MyMemory REST API.
-    GoogleTranslator NU e folosit — returnează pagina de eroare 500 ca text în loc de excepție.
-    Fallback: textul original (mai bine netradus decât mesaj de eroare în export)."""
-    if not text or not text.strip():
-        return text
-    if text in _cache:
-        return _cache[text]
-    result = None
-    try:
-        from deep_translator import MyMemoryTranslator
-        r = MyMemoryTranslator(
-            source="en-US", target="ro-RO",
-            email=_MYMEMORY_EMAIL,
-        ).translate(text[:4999])
-        # MyMemory returnează avertisment text când depășim limita — nu salvăm asta
-        if r and "MYMEMORY WARNING" not in r and "QUERY LENGTH LIMIT" not in r:
-            result = r
-    except Exception:
-        pass
-    _cache[text] = result or text
-    return _cache[text]
 
 
 # ── Risk thresholds ────────────────────────────────────────────────────
@@ -505,18 +480,6 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.row_dimensions[4].height = 28
 
-    # Pre-traduce G&S în paralel înainte de buclă → populează cache-ul _translate_to_ro
-    _xl_gs_texts = list({
-        gs.get("goodsAndServices", "")
-        for tm in all_results
-        for gs in tm.get("goodAndServices", [])
-        if gs.get("goodsAndServices", "").strip()
-    })
-    if _xl_gs_texts:
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=8) as _pool:
-            list(_pool.map(_translate_to_ro, _xl_gs_texts))
-
     # ── Rânduri date ──────────────────────────────────────────────────
     RISK_LABELS_XL = {
         "very_high": "RISC FOARTE RIDICAT",
@@ -549,7 +512,7 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
             nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
         if tm.get("goodAndServices"):
             nice_desc = "\n".join(
-                f"Cls {g['niceClass']} – {g.get('niceShort','')}: {_translate_to_ro(g['goodsAndServices'])}"
+                f"Cls {g['niceClass']} – {g.get('niceShort','')}: {g['goodsAndServices']}"
                 for g in tm["goodAndServices"] if g.get("goodsAndServices")
             )
         else:
@@ -926,17 +889,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
 
     MAX_GS = 600  # caractere max / clasă G&S
 
-    # Pre-traduce G&S în paralel înainte de buclă → populează cache-ul _translate_to_ro
-    _pdf_gs_texts = list({
-        gs.get("goodsAndServices", "")
-        for tm in all_results
-        for gs in tm.get("goodAndServices", [])
-        if gs.get("goodsAndServices", "").strip()
-    })
-    if _pdf_gs_texts:
-        from concurrent.futures import ThreadPoolExecutor as _TPEPDF
-        with _TPEPDF(max_workers=8) as _pool:
-            list(_pool.map(_translate_to_ro, _pdf_gs_texts))
+
 
     for i, tm in enumerate(all_results):
         sim   = tm.get("similarity") or {}
@@ -1228,8 +1181,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
                                leading=11, spaceAfter=0)
                 )])
             if text:
-                translated = _translate_to_ro(text)
-                disp = translated[:MAX_GS] + ("…" if len(translated) > MAX_GS else "")
+                disp = text[:MAX_GS] + ("…" if len(text) > MAX_GS else "")
                 box_rows.append([Paragraph(
                     disp, sty(f"gtx{i}{nc}", fontSize=8, textColor=colors.HexColor("#444444"),
                               leading=12, spaceAfter=0)
@@ -1981,7 +1933,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
             if info["short"]:
                 _p(gs_c2, info["short"], size=8, color=GRAY, align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             if info["text"]:
-                _p(gs_c2, _translate_to_ro(info["text"]), size=8, color=RGBColor(0x33,0x33,0x33), align=WD_ALIGN_PARAGRAPH.JUSTIFY)
+                _p(gs_c2, info["text"], size=8, color=RGBColor(0x33,0x33,0x33), align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             if info["desc"]:
                 pd2 = gs_c2.add_paragraph()
                 pd2.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
@@ -2085,19 +2037,6 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         else:              tier = 3
         return (tier, -cnt)
     geo_sorted = sorted(geo_counts.items(), key=_geo_key)
-
-    # Pre-traduce în paralel toate textele goodsAndServices unice → populează cache-ul
-    # _translate_to_ro înainte de a construi cardurile, ca fiecare card să citească din cache (0 latență).
-    _all_gs_texts = list({
-        gs.get("goodsAndServices", "")
-        for tm in all_results
-        for gs in tm.get("goodAndServices", [])
-        if gs.get("goodsAndServices", "").strip()
-    })
-    if _all_gs_texts:
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=8) as _pool:
-            list(_pool.map(_translate_to_ro, _all_gs_texts))
 
     # Pre-fetch imagini în paralel → populează cache-ul _fetch_image_bytes
     _all_img_urls = list({
