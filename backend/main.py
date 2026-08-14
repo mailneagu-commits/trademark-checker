@@ -180,6 +180,55 @@ async def session_status():
     return {"active": has_browser_session()}
 
 
+@app.get("/api/debug-search")
+async def debug_search(name: str = "VISUAL", offices: str = "EM"):
+    """Rulează căutarea reală și returnează source + primul rezultat + log intern."""
+    import asyncio, io, sys
+    from agents.search_agent import _fetch_tmview, _cb_reset, HAS_CURL_CFFI, _cb_is_open
+    from agents.variant_agent import build_offices_and_territories
+
+    office_list = [o.strip().upper() for o in offices.split(",") if o.strip()]
+    built_offices, territories = build_offices_and_territories(office_list)
+    many = len(territories) > 7
+
+    if not HAS_CURL_CFFI:
+        return {"error": "curl_cffi not available"}
+
+    _cb_reset()
+    log_lines = []
+
+    # Redirect stdout temporarily to capture print() logs
+    old_stdout = sys.stdout
+    sys.stdout = buf = io.StringIO()
+    try:
+        marks = await asyncio.wait_for(
+            _fetch_tmview(name, [], office_list, proxy_url=""),
+            timeout=60.0
+        )
+        source = "live:tmview" if (marks and len(marks) > 0) else "demo (0 marks)"
+    except asyncio.TimeoutError:
+        marks = None
+        source = "TIMEOUT (>60s)"
+    except Exception as e:
+        marks = None
+        source = f"ERROR: {type(e).__name__}: {e}"
+    finally:
+        sys.stdout = old_stdout
+        log_lines = buf.getvalue().splitlines()
+
+    return {
+        "name": name,
+        "offices_input": office_list,
+        "built_offices": built_offices,
+        "territories": territories,
+        "many_territories": many,
+        "source": source,
+        "marks_count": len(marks) if marks else 0,
+        "first_mark": marks[0] if marks else None,
+        "log": log_lines[-40:],  # ultimele 40 linii de log
+    }
+
+
 @app.post("/api/reset-circuit-breaker")
 async def reset_circuit_breaker():
     from agents.search_agent import _cb_reset
