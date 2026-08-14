@@ -505,8 +505,9 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
         if tm.get("goodAndServices"):
             nice_desc = "\n".join(
-                f"Cls {g['niceClass']}: {g['goodsAndServices']}"
-                for g in tm["goodAndServices"] if g.get("goodsAndServices")
+                f"Cls {int(g['niceClass'])}: {g['goodsAndServices']}"
+                for g in tm["goodAndServices"]
+                if g.get("goodsAndServices") and str(g.get("niceClass","")).isdigit()
             )
         else:
             nice_desc = ""
@@ -1138,6 +1139,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         for g in (tm.get("goodAndServices") or []):
             nc = str(g.get("niceClass") or "")
             if nc and nc.isdigit():
+                nc = str(int(nc))  # normalizează "09" → "9"
                 if nc not in all_cls:
                     all_cls[nc] = {"text": "", "short": "", "desc": ""}
                 all_cls[nc]["text"]  = g.get("goodsAndServices") or ""
@@ -1145,6 +1147,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         for nd in nice_detailed:
             nc = str(nd.get("class", ""))
             if nc and nc.isdigit():
+                nc = str(int(nc))  # normalizează "09" → "9"
                 if nc not in all_cls:
                     all_cls[nc] = {"text": "", "short": "", "desc": ""}
                 if not all_cls[nc]["short"]:
@@ -1873,12 +1876,14 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
     for g in (tm.get("goodAndServices") or []):
         nc = str(g.get("niceClass") or "")
         if nc and nc.isdigit():
+            nc = str(int(nc))  # normalizează "09" → "9"
             if nc not in all_cls_w: all_cls_w[nc] = {"text":"","short":"","desc":""}
             all_cls_w[nc]["text"]  = g.get("goodsAndServices") or ""
             all_cls_w[nc]["short"] = g.get("niceShort") or ""
     for nd in nice_detailed_w:
         nc = str(nd.get("class",""))
         if nc and nc.isdigit():
+            nc = str(int(nc))  # normalizează "09" → "9"
             if nc not in all_cls_w: all_cls_w[nc] = {"text":"","short":"","desc":""}
             if not all_cls_w[nc]["short"]: all_cls_w[nc]["short"] = nd.get("short") or ""
             all_cls_w[nc]["desc"] = nd.get("description") or ""
