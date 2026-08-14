@@ -92,6 +92,15 @@ async def debug_tmview():
     payload_em = {"page": "1", "pageSize": "3", "criteria": "Z",
                   "basicSearch": "APPLE", "newPage": True,
                   "fields": ["ST13", "tmName"], "offices": ["EM"]}
+    payload_ter_em = {"page": "1", "pageSize": "5", "criteria": "Z",
+                      "basicSearch": "APPLE", "newPage": True,
+                      "fields": ["ST13", "tmName", "tmOffice"], "territories": ["EM"]}
+    payload_ter_27 = {"page": "1", "pageSize": "5", "criteria": "Z",
+                      "basicSearch": "APPLE", "newPage": True,
+                      "fields": ["ST13", "tmName", "tmOffice"],
+                      "territories": ["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR",
+                                      "DE","GR","HU","IE","IT","LV","LT","LU","MT","NL",
+                                      "PL","PT","RO","SK","SI","ES","SE"]}
     try:
         async with AsyncSession(impersonate="chrome120", proxies=None, verify=True) as session:
             r = await session.get(TMVIEW_HOME, timeout=10)
@@ -101,11 +110,36 @@ async def debug_tmview():
             results["ro_status"] = r2.status_code
             results["ro_ct"] = r2.headers.get("content-type", "")[:50]
             results["ro_preview"] = r2.text[:200]
-            # Test cu offices EM
+            # Test cu offices EM (stim ca da 400)
             r3 = await session.post(TMVIEW_URL, json=payload_em, headers=_build_headers(), timeout=12)
-            results["em_status"] = r3.status_code
-            results["em_ct"] = r3.headers.get("content-type", "")[:50]
-            results["em_preview"] = r3.text[:300]
+            results["offices_em_status"] = r3.status_code
+            results["offices_em_preview"] = r3.text[:200]
+            # Test cu territories=["EM"] — daca TMview accepta EM ca teritoriu, reducem la 1 batch
+            r4 = await session.post(TMVIEW_URL, json=payload_ter_em, headers=_build_headers(), timeout=15)
+            results["territories_em_status"] = r4.status_code
+            results["territories_em_ct"] = r4.headers.get("content-type", "")[:50]
+            try:
+                d4 = r4.json()
+                results["territories_em_total"] = d4.get("total")
+                results["territories_em_marks"] = [
+                    {"ST13": m.get("ST13"), "tmName": m.get("tmName"), "tmOffice": m.get("tmOffice")}
+                    for m in d4.get("tradeMarks", [])[:5]
+                ]
+            except Exception:
+                results["territories_em_preview"] = r4.text[:300]
+            # Test cu territories=toate 27 state UE (varianta actuala) — primul batch
+            r5 = await session.post(TMVIEW_URL, json=payload_ter_27, headers=_build_headers(), timeout=15)
+            results["territories_27eu_status"] = r5.status_code
+            results["territories_27eu_ct"] = r5.headers.get("content-type", "")[:50]
+            try:
+                d5 = r5.json()
+                results["territories_27eu_total"] = d5.get("total")
+                results["territories_27eu_marks"] = [
+                    {"ST13": m.get("ST13"), "tmName": m.get("tmName"), "tmOffice": m.get("tmOffice")}
+                    for m in d5.get("tradeMarks", [])[:5]
+                ]
+            except Exception:
+                results["territories_27eu_preview"] = r5.text[:300]
     except Exception as e:
         results["error"] = f"{type(e).__name__}: {e}"
     return results
