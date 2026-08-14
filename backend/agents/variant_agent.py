@@ -189,24 +189,15 @@ _BENELUX_OFFICES = {"BX", "BENELUX"}
 
 def build_offices_and_territories(user_offices: List[str]):
     """
-    Convertește selecția utilizatorului în offices + territories pentru TMview.
+    Convertează selecția utilizatorului în offices + territories pentru TMview.
 
     Logică:
-    - EM       → territories = ["EM"] + toate cele 27 state membre UE
-                 Reproduce exact comportamentul TMview când selectezi 'EUIPO':
-                 · mărci EUIPO (office EM)
-                 · mărci WIPO care desemnează UE sau state membre individual
-                 · mărci naționale din fiecare stat UE
+    - EM       → territories = toate cele 27 state UE (TMview returnează 400 la offices=["EM"])
+                 Mărci EUIPO acoperă toate statele membre, deci apar în rezultatele pe teritoriu.
     - WO       → offices = ["WO"]
-                 (mărci internaționale WIPO indiferent de teritorii desemnate)
-    - BX/BENELUX → territories = ["BX"] + offices = ["EM"]
-                 (caută atât Benelux național, cât și marcile europene care acoperă Benelux)
+    - BX/BENELUX → territories = ["BX"]
     - BE/NL/LU → territories = [cod_țară]
     - Orice altă țară → territories = [cod_țară]
-
-    Important: pentru o selecție de țară națională (de exemplu RO), nu adăugăm
-    automat EUIPO, deoarece aceasta lărgește excesiv căutarea și produce rezultate
-    necorespunzătoare pentru cerințele de clasă/office specifice.
     """
     offices_set: Set[str] = set()
     territories_set: Set[str] = set()
@@ -215,13 +206,13 @@ def build_offices_and_territories(user_offices: List[str]):
         c = code.upper()
         if c in _BENELUX_OFFICES:
             territories_set.add("BX")
-            offices_set.add("EM")
         elif c in _BENELUX:
             territories_set.add(c)
         elif c == "WO":
             offices_set.add("WO")
         elif c == "EM":
-            territories_set.add("EM")
+            # TMview returnează 400 PARAMETER_INCORRECT_FORMAT dacă offices sau territories
+            # conține "EM". Mărci EUIPO acoperă toate statele UE — le găsim prin teritoriu.
             territories_set.update(ALL_EU_TERRITORIES)
         elif c in _EU_COUNTRY_SET:
             territories_set.add(c)
