@@ -330,9 +330,9 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     return [], 0
 
 
-async def _search_term(session, term, nice_classes, offices, territories, criteria, seen):
+async def _search_term(session, term, nice_classes, offices, territories, criteria, seen, max_pages=MAX_PAGES_PER_TERM):
     collected = []
-    for page in range(1, MAX_PAGES_PER_TERM + 1):
+    for page in range(1, max_pages + 1):
         marks, total = await _search_page(
             session, term, nice_classes, offices, territories, criteria, page)
         for m in marks:
@@ -377,7 +377,7 @@ def _cb_reset():
     print("[CIRCUIT BREAKER] Manual reset — gata pentru reincercare")
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _search_batched(session, term, nice_classes, offices, territories, crit, seen):
+async def _search_batched(session, term, nice_classes, offices, territories, crit, seen, max_pages=5):
     """Caută cu împărțire automată în loturi dacă sunt multe teritorii."""
     collected = []
     if territories and len(territories) > TERRITORY_BATCH:
@@ -390,10 +390,13 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
         if _cb_is_open():
             print("[CIRCUIT BREAKER] Request omis — circuit deschis.")
             break
-        marks = await _search_term(session, term, nice_classes, offices, batch, crit, seen)
+        if len(collected) >= MAX_TOTAL:
+            break
+        marks = await _search_term(session, term, nice_classes, offices, batch, crit, seen,
+                                   max_pages=max_pages)
         collected.extend(marks)
         if idx < len(batches) - 1:
-            await asyncio.sleep(random.uniform(1.2, 2.0))
+            await asyncio.sleep(0.2)
     return collected
 
 
@@ -452,16 +455,18 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         for crit, term in main_searches:
             if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                 break
-            marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen)
+            marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen,
+                                               max_pages=(1 if many_territories else MAX_PAGES_PER_TERM))
             all_marks.extend(marks)
-            await asyncio.sleep(random.uniform(base_delay, base_delay + 0.8))
+            await asyncio.sleep(random.uniform(0.15, 0.4))
 
         for crit, term in extra_searches:
             if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                 break
-            marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen)
+            marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen,
+                                               max_pages=(1 if many_territories else MAX_PAGES_PER_TERM))
             all_marks.extend(marks)
-            await asyncio.sleep(random.uniform(base_delay, base_delay + 0.8))
+            await asyncio.sleep(random.uniform(0.15, 0.4))
 
         all_marks = all_marks[:MAX_TOTAL]
 
