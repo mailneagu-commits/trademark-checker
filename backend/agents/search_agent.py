@@ -246,7 +246,15 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
             "oppositionEndDate":     (tm.get("oppositionEndDate") or "")[:10],
             "viennaCodes":           [v.get("code", "") for v in data.get("viennaCodes", [])],
             "designatedCountries":   designated,
-            "applicants_detail":     data.get("applicants", []),
+            "applicants_detail": [
+                {
+                    "name":    a.get("organizationName") or a.get("fullName") or a.get("name") or "",
+                    "address": a.get("fullAddress") or a.get("address") or "",
+                    "country": a.get("nationalityCode") or a.get("incorporationCountryCode") or a.get("country") or "",
+                }
+                for a in data.get("applicants", [])
+                if a.get("organizationName") or a.get("fullName") or a.get("name")
+            ],
             "representatives":       [
                 {
                     "fullName":    r.get("fullName") or r.get("name") or r.get("organizationName") or "",
@@ -259,6 +267,44 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
         }
     except Exception:
         return {}
+
+
+async def enrich_marks_with_detail(marks: list) -> list:
+    """Fetch and merge TMview detail for each mark. Best-effort: falls back to original on error."""
+    if not HAS_CURL_CFFI or not marks:
+        return marks
+    sem = asyncio.Semaphore(10)
+
+    async def _enrich_one(session, mark):
+        st13 = mark.get("ST13", "")
+        if not st13 or st13.startswith("DEMO"):
+            return mark
+        try:
+            async with sem:
+                detail = await _fetch_detail(session, st13)
+            if detail:
+                merged = {**mark, **detail}
+                # applicants_detail has normalized {name, address, country}
+                if detail.get("applicants_detail"):
+                    merged["applicants"] = detail["applicants_detail"]
+                return merged
+        except Exception:
+            pass
+        return mark
+
+    try:
+        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES,
+                                verify=not bool(_PROXIES)) as session:
+            await session.get(TMVIEW_HOME, timeout=8, headers=_build_headers())
+            results = await asyncio.wait_for(
+                asyncio.gather(*(_enrich_one(session, m) for m in marks),
+                               return_exceptions=True),
+                timeout=28,
+            )
+        return [m if not isinstance(m, Exception) else marks[i]
+                for i, m in enumerate(results)]
+    except Exception:
+        return marks
 
 
 def _build_headers() -> Dict:

@@ -477,7 +477,13 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         row_idx = i + 4
 
         # Date text
-        applicant = ", ".join(a.get("name", "") for a in tm.get("applicants", []) if a.get("name")) or "—"
+        applicant = (", ".join(a.get("name", "") for a in tm.get("applicants", []) if a.get("name"))
+                     or (tm.get("applicantName", [""])[0] if isinstance(tm.get("applicantName"), list) else tm.get("applicantName", ""))
+                     or "—")
+        reps = tm.get("representatives", [])
+        rep_str = "; ".join(r.get("fullName") or r.get("name") or "" for r in reps if r.get("fullName") or r.get("name"))
+        if rep_str:
+            applicant = applicant + "\nRepr: " + rep_str
         nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
         if tm.get("goodAndServices"):
             nice_desc = "\n".join(

@@ -427,6 +427,31 @@ async def export_report(request: ExportRequest):
     terminated_marks = request.terminated_marks
     include_expired = request.include_expired
 
+    # Enrich all marks with TMview detail (G&S text, representatives, exact dates, etc.)
+    import agents.search_agent as _sa
+    all_export_marks = results + similar + ended_marks + terminated_marks + expired_conflicts + expired_similar
+    if all_export_marks:
+        enriched_map = {}
+        try:
+            enriched_list = await _sa.enrich_marks_with_detail(all_export_marks)
+            for orig, enriched in zip(all_export_marks, enriched_list):
+                key = orig.get("ST13") or orig.get("applicationNumber") or id(orig)
+                enriched_map[key] = enriched
+            def _enrich(lst):
+                out = []
+                for m in lst:
+                    key = m.get("ST13") or m.get("applicationNumber") or id(m)
+                    out.append(enriched_map.get(key, m))
+                return out
+            results          = _enrich(results)
+            similar          = _enrich(similar)
+            ended_marks      = _enrich(ended_marks)
+            terminated_marks = _enrich(terminated_marks)
+            expired_conflicts = _enrich(expired_conflicts)
+            expired_similar  = _enrich(expired_similar)
+        except Exception as _e:
+            print(f"[EXPORT] Detail enrichment failed: {_e} — exporting with available data")
+
     try:
         if fmt == "excel":
             data = build_excel(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired, ended_marks=ended_marks, terminated_marks=terminated_marks)
