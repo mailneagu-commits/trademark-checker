@@ -181,51 +181,52 @@ async def session_status():
 
 
 @app.get("/api/debug-search")
-async def debug_search(name: str = "VISUAL", offices: str = "EM"):
-    """Rulează căutarea reală și returnează source + primul rezultat + log intern."""
+async def debug_search(name: str = "VISUAL", offices: str = "EM", nc: str = "9", full: str = "0"):
+    """Rulează căutarea și returnează source + log intern.
+    full=1 → folosește search_agent.search() complet (cu EUIPO); full=0 → _fetch_tmview direct.
+    """
     import asyncio, io, sys
-    from agents.search_agent import _fetch_tmview, _cb_reset, HAS_CURL_CFFI, _cb_is_open
+    from agents.search_agent import _fetch_tmview, _cb_reset, HAS_CURL_CFFI
     from agents.variant_agent import build_offices_and_territories
 
     office_list = [o.strip().upper() for o in offices.split(",") if o.strip()]
+    nc_list = [c.strip() for c in nc.split(",") if c.strip()]
     built_offices, territories = build_offices_and_territories(office_list)
     many = len(territories) > 7
 
     if not HAS_CURL_CFFI:
         return {"error": "curl_cffi not available"}
 
-    _cb_reset()
-    log_lines = []
-
-    # Redirect stdout temporarily to capture print() logs
     old_stdout = sys.stdout
     sys.stdout = buf = io.StringIO()
+    marks = None
+    source = "?"
     try:
-        marks = await asyncio.wait_for(
-            _fetch_tmview(name, [], office_list, proxy_url=""),
-            timeout=60.0
-        )
-        source = "live:tmview" if (marks and len(marks) > 0) else "demo (0 marks)"
+        if full == "1":
+            marks, source = await search_agent.search(name, nc_list, office_list)
+        else:
+            _cb_reset()
+            marks = await asyncio.wait_for(
+                _fetch_tmview(name, nc_list, office_list, proxy_url=""),
+                timeout=60.0
+            )
+            source = "live:tmview" if (marks and len(marks) > 0) else "demo (0 marks)"
     except asyncio.TimeoutError:
-        marks = None
         source = "TIMEOUT (>60s)"
     except Exception as e:
-        marks = None
         source = f"ERROR: {type(e).__name__}: {e}"
     finally:
         sys.stdout = old_stdout
-        log_lines = buf.getvalue().splitlines()
 
+    log_lines = buf.getvalue().splitlines()
     return {
-        "name": name,
-        "offices_input": office_list,
-        "built_offices": built_offices,
-        "territories": territories,
-        "many_territories": many,
-        "source": source,
+        "mode": "full search_agent.search()" if full == "1" else "_fetch_tmview direct",
+        "name": name, "offices_input": office_list, "nc": nc_list,
+        "built_offices": built_offices, "territories": territories,
+        "many_territories": many, "source": source,
         "marks_count": len(marks) if marks else 0,
-        "first_mark": marks[0] if marks else None,
-        "log": log_lines[-40:],  # ultimele 40 linii de log
+        "first_mark": (marks[0] if marks else None),
+        "log": log_lines[-50:],
     }
 
 
