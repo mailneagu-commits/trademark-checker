@@ -429,7 +429,9 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     phonetic_terms = all_phonetic[:2] if (use_proxy or many_territories) else all_phonetic[:4]
     req_timeout = 55 if use_proxy else 12
     # Cu many_territories (ex. EM→27 state), extra_searches ar genera sute de request-uri.
-    extra_searches = [] if many_territories else [("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper]
+    # Limităm extra_searches la max 4 termeni pentru a evita timeout-ul (prea multe request-uri)
+    _extra_pool = [("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper]
+    extra_searches = [] if many_territories else _extra_pool[:4]
 
     async with AsyncSession(impersonate="chrome120", proxies=proxies, verify=not use_proxy) as session:
         # Warmup GET — esențial pentru cookie-uri Imperva (atât direct cât și prin proxy)
