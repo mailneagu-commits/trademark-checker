@@ -353,14 +353,24 @@ async def check_trademark(request: SearchRequest):
 
     name = request.trademark_name.strip()
 
-    # Generează variante wildcard (afișate în UI); search_agent le reconstruiește intern
     variants = generate_all_variants(name)
+    extra_terms = list(variants.get("search_terms", []))
+
+    # Adaugă și termenele de căutare ale variantei fonetice principale (ex. CARTEZIAN pt KARTEZIAN).
+    # Astfel trunchierile *CART*, *CARTE* din CARTEZIAN sunt căutate și când se caută KARTEZIAN,
+    # găsind mărci ca CARTESIA care altfel ar fi ratate.
+    from agents.variant_agent import build_phonetic_variants, build_input_list as _bil
+    _phon_extras = [t for t in build_phonetic_variants(name) if not t.startswith("*") and len(t) >= 3]
+    for _phon in _phon_extras[:1]:
+        for _t in _bil(_phon):
+            if _t not in extra_terms:
+                extra_terms.append(_t)
 
     trademarks, source = await search_agent.search(
         name,
         request.nice_classes,
         request.offices,
-        extra_terms=variants.get("search_terms", []),
+        extra_terms=extra_terms,
         wildcard_patterns=variants.get("wildcard_patterns", []),
         include_expired=request.include_expired,
     )

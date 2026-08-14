@@ -423,16 +423,19 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
 
     if use_proxy or many_territories:
         main_searches = [("E", upper), ("C", f"*{upper}*")]
-        for _pt in _phon_plain[:1]:  # +1 variantă fonetică exactă (ex. CARTEZIAN pt KARTEZIAN)
+        for _pt in _phon_plain[:1]:
+            # E + F + C pentru varianta fonetică — F prinde și prefixe/parțiale (ex. CARTESIA din CARTEZIAN)
             main_searches.append(("E", _pt))
+            main_searches.append(("F", _pt))
             main_searches.append(("C", f"*{_pt}*"))
     else:
         main_searches = [
             ("E", upper), ("F", upper),
             ("C", f"*{upper}*"), ("C", f"{upper}*"),
         ]
-        for _pt in _phon_plain[:2]:  # +2 variante fonetice exacte pt single-territory
+        for _pt in _phon_plain[:2]:
             main_searches.append(("E", _pt))
+            main_searches.append(("F", _pt))
             main_searches.append(("C", f"*{_pt}*"))
 
     all_phonetic = list(set(
