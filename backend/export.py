@@ -89,7 +89,7 @@ def _is_mark_expired(tm: dict) -> bool:
     """Detecteaza daca o marca este expirata/anulata/retrasa, indiferent de sursa datelor."""
     status = str(tm.get("tradeMarkStatus") or tm.get("status") or "").lower()
     if any(w in status for w in ("expir", "lapsed", "cancelled", "refused",
-                                  "withdrawn", "surrendered", "invalidated", "abandoned")):
+                                  "withdrawn", "surrendered", "invalidated", "abandoned", "ended")):
         return True
     exp_str = str(tm.get("expiryDate") or "")
     if exp_str:
@@ -383,7 +383,8 @@ def _fetch_image_bytes(url: str, size=(60, 60), _cache: dict = {}) -> Optional[b
 def build_excel(query: str, nice_classes: List[str], offices: List[str],
                 results: List[Dict], similar: List[Dict] = None,
                 expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None,
-                include_expired: bool = True) -> bytes:
+                include_expired: bool = True,
+                ended_marks: List[Dict] = None, terminated_marks: List[Dict] = None) -> bytes:
     from datetime import datetime as _dt
 
     results, similar, expired_conflicts, expired_similar = _segregate_expired(
@@ -424,7 +425,7 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         return (_RISK_ORDER_XL.get(lvl, 9), -sim.get("combined_score", 0))
 
     all_results = sorted(
-        (results or []) + (similar or []) + (expired_conflicts or []) + (expired_similar or []),
+        (results or []) + (similar or []) + (ended_marks or []) + (terminated_marks or []) + (expired_conflicts or []) + (expired_similar or []),
         key=_xl_sort,
     )
 
@@ -540,10 +541,20 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
                 cell.alignment = left
                 cell.fill      = alt_fill
                 cell.font      = Font(bold=True, size=10, color="FF1a1a2e")
-            elif col in (6, 7):  # Birou, Status
+            elif col == 6:  # Birou
                 cell.alignment = center
                 cell.fill      = alt_fill
                 cell.font      = Font(size=9)
+            elif col == 7:  # Status — color ended/terminated distinctly
+                cell.alignment = center
+                cell.fill      = alt_fill
+                sl = (status or "").lower()
+                if "ended" in sl:
+                    cell.font = Font(size=9, bold=True, color="FFE67E22")
+                elif any(w in sl for w in ("cancelled", "refused", "withdrawn", "surrendered", "invalidated", "abandoned")):
+                    cell.font = Font(size=9, bold=True, color="FFC0392B")
+                else:
+                    cell.font = Font(size=9)
             elif col == 8:  # Titular
                 cell.alignment = left
                 cell.fill      = alt_fill
@@ -601,7 +612,8 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
 def build_pdf(query: str, nice_classes: List[str], offices: List[str],
               results: List[Dict], similar: List[Dict] = None,
               expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None,
-              include_expired: bool = True) -> bytes:
+              include_expired: bool = True,
+              ended_marks: List[Dict] = None, terminated_marks: List[Dict] = None) -> bytes:
     from reportlab.lib.pagesizes import landscape, A4
     from reportlab.platypus import KeepTogether, PageBreak
     from datetime import datetime as dt
@@ -647,7 +659,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
     }
 
     all_results = sorted(
-        (results or []) + (similar or []) + (expired_conflicts or []) + (expired_similar or []),
+        (results or []) + (similar or []) + (ended_marks or []) + (terminated_marks or []) + (expired_conflicts or []) + (expired_similar or []),
         key=lambda x: x.get("similarity", {}).get("combined_score", 0),
         reverse=True
     )
@@ -731,7 +743,13 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         badge_cell("Data raport",   date.today().strftime("%d.%m.%Y"),  "#F2F3F4", "#566573", bold_val=False),
     ]
 
-    for row in [row1, row2]:
+    row3 = [
+        badge_cell("Ended",           len(ended_marks or []),                                   "#FEF5E7", "#E67E22"),
+        badge_cell("Anulate/Retrase", len(terminated_marks or []),                              "#FDEDEC", "#C0392B"),
+        badge_cell("Expirate",        len((expired_conflicts or []) + (expired_similar or [])), "#F4ECF7", "#6C3483"),
+    ]
+
+    for row in [row1, row2, row3]:
         bt = Table([row], colWidths=[W/3, W/3, W/3])
         bt.setStyle(GAP)
         story.append(bt)
@@ -1904,7 +1922,8 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
 def build_word(query: str, nice_classes: List[str], offices: List[str],
                results: List[Dict], similar: List[Dict] = None,
                expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None,
-               include_expired: bool = True) -> bytes:
+               include_expired: bool = True,
+               ended_marks: List[Dict] = None, terminated_marks: List[Dict] = None) -> bytes:
     from datetime import datetime as dt
     from docx.enum.section import WD_ORIENT
 
@@ -1954,7 +1973,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     active_similar    = sorted(similar or [],            key=_risk_sort_key)
     expired_conflicts = sorted(expired_conflicts or [],  key=_risk_sort_key)
     expired_similar   = sorted(expired_similar or [],    key=_risk_sort_key)
-    all_results = active_conflicts + active_similar + expired_conflicts + expired_similar
+    all_results = active_conflicts + active_similar + (ended_marks or []) + (terminated_marks or []) + expired_conflicts + expired_similar
 
     very_high = [r for r in active_conflicts if r.get("risk_level") == "very_high"]
     high      = [r for r in active_conflicts if r.get("risk_level") == "high"]
@@ -2222,6 +2241,26 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         for tm in expired_conflicts + expired_similar:
             _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
 
+    if ended_marks:
+        doc.add_page_break()
+        p_end = doc.add_paragraph()
+        r_end = p_end.add_run("Mărci cu statut Ended (perioadă încheiată)")
+        r_end.bold = True; r_end.font.size = Pt(11); r_end.font.name = "Arial"
+        r_end.font.color.rgb = RGBColor(0xE6, 0x7E, 0x22)
+        p_end.paragraph_format.space_after = Pt(6)
+        for tm in ended_marks:
+            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
+
+    if terminated_marks:
+        doc.add_page_break()
+        p_ter = doc.add_paragraph()
+        r_ter = p_ter.add_run("Mărci anulate / retrase / refuzate")
+        r_ter.bold = True; r_ter.font.size = Pt(11); r_ter.font.name = "Arial"
+        r_ter.font.color.rgb = RGBColor(0xC0, 0x39, 0x2B)
+        p_ter.paragraph_format.space_after = Pt(6)
+        for tm in terminated_marks:
+            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
+
     # ─── SUMMARY PAGE ──────────────────────────────────────────────────
     doc.add_page_break()
     _add_section_title(doc, "Rezumat rapid")
@@ -2251,9 +2290,14 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         ("Similare", len(active_similar), "FFF3CD", "856404"),
     ])
     _badge_row([
+        ("Ended", len(ended_marks or []), "FEF5E7", "E67E22"),
+        ("Anulate/Retrase", len(terminated_marks or []), "FDEDEC", "C0392B"),
         ("Expirate", expired_count, "F4ECF7", "6C3483"),
+    ])
+    _badge_row([
         ("Clase NICE", len(nice_classes), "E8F0FB", "0F3460"),
         ("Teritorii", len(offices), "E8F0FB", "0F3460"),
+        ("Data raport", date.today().strftime("%d.%m.%Y"), "F2F3F4", "566573"),
     ])
 
     p_note = doc.add_paragraph()

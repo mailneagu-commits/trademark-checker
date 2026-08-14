@@ -67,6 +67,8 @@ class ExportRequest(BaseModel):
     similar: List[dict] = []
     expired_conflicts: List[dict] = []
     expired_similar: List[dict] = []
+    ended_marks: List[dict] = []
+    terminated_marks: List[dict] = []
     format: str  # "excel", "pdf" or "word"
     include_expired: bool = True  # dacă False, exclude mărci expirate din exportul Word
 
@@ -421,19 +423,21 @@ async def export_report(request: ExportRequest):
     similar = request.similar
     expired_conflicts = request.expired_conflicts
     expired_similar = request.expired_similar
+    ended_marks = request.ended_marks
+    terminated_marks = request.terminated_marks
     include_expired = request.include_expired
 
     try:
         if fmt == "excel":
-            data = build_excel(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired)
+            data = build_excel(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired, ended_marks=ended_marks, terminated_marks=terminated_marks)
             filename = f"raport_marca_{name.replace(' ', '_')}.xlsx"
             media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         elif fmt == "pdf":
-            data = build_pdf(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired)
+            data = build_pdf(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired, ended_marks=ended_marks, terminated_marks=terminated_marks)
             filename = f"raport_marca_{name.replace(' ', '_')}.pdf"
             media_type = "application/pdf"
         elif fmt == "word":
-            data = build_word(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired)
+            data = build_word(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired, ended_marks=ended_marks, terminated_marks=terminated_marks)
             filename = f"raport_marca_{name.replace(' ', '_')}.docx"
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:

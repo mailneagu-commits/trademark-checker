@@ -1846,22 +1846,29 @@ async function doExport(format) {
   const allSim = lastResults.similar || [];
   const allExpiredRes = lastResults.expired_conflicts || [];
   const allExpiredSim = lastResults.expired_similar || [];
+  const allEnded = lastResults.ended_marks || [];
+  const allTerminated = lastResults.terminated_marks || [];
   let exportResults, exportSimilar;
   let exportExpiredConflicts, exportExpiredSimilar;
+  let exportEnded, exportTerminated;
 
   if (exportSel.size > 0) {
     exportResults = allRes.filter(tm => exportSel.has(tm.ST13 || ""));
     exportSimilar = allSim.filter(tm => exportSel.has(tm.ST13 || ""));
     exportExpiredConflicts = allExpiredRes.filter(tm => exportSel.has(tm.ST13 || ""));
     exportExpiredSimilar = allExpiredSim.filter(tm => exportSel.has(tm.ST13 || ""));
+    exportEnded = allEnded.filter(tm => exportSel.has(tm.ST13 || ""));
+    exportTerminated = allTerminated.filter(tm => exportSel.has(tm.ST13 || ""));
     // Dacă nimic nu se potrivește (ST13 gol), fallback la toate selectate
     if (exportResults.length === 0 && exportSimilar.length === 0 && exportExpiredConflicts.length === 0 && exportExpiredSimilar.length === 0) {
       exportResults = allRes; exportSimilar = allSim;
       exportExpiredConflicts = allExpiredRes; exportExpiredSimilar = allExpiredSim;
+      exportEnded = allEnded; exportTerminated = allTerminated;
     }
   } else {
     exportResults = allRes; exportSimilar = allSim;
     exportExpiredConflicts = allExpiredRes; exportExpiredSimilar = allExpiredSim;
+    exportEnded = allEnded; exportTerminated = allTerminated;
   }
 
   try {
@@ -1876,6 +1883,8 @@ async function doExport(format) {
         similar:        exportSimilar,
         expired_conflicts: exportExpiredConflicts,
         expired_similar:   exportExpiredSimilar,
+        ended_marks:       exportEnded,
+        terminated_marks:  exportTerminated,
         format,
         include_expired: format === 'word' ? (document.getElementById('wordIncludeExpired')?.checked ?? true) : true,
       }),
