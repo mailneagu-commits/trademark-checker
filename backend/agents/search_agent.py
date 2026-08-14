@@ -417,13 +417,23 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     # și trimiterea a 20+ coduri de offices provoacă 400 PARAMETER_INCORRECT_FORMAT în TMview.
     effective_offices = [] if many_territories else offices
 
+    # Variante fonetice plain (fără wildcard) pentru includere în main_searches cu criteriu E.
+    # Asigură că KARTEZIAN → CARTEZIAN (K↔C) se caută la același nivel cu termenul original.
+    _phon_plain = [t for t in build_phonetic_variants(name) if not t.startswith("*") and len(t) >= 3]
+
     if use_proxy or many_territories:
         main_searches = [("E", upper), ("C", f"*{upper}*")]
+        for _pt in _phon_plain[:1]:  # +1 variantă fonetică exactă (ex. CARTEZIAN pt KARTEZIAN)
+            main_searches.append(("E", _pt))
+            main_searches.append(("C", f"*{_pt}*"))
     else:
         main_searches = [
             ("E", upper), ("F", upper),
             ("C", f"*{upper}*"), ("C", f"{upper}*"),
         ]
+        for _pt in _phon_plain[:2]:  # +2 variante fonetice exacte pt single-territory
+            main_searches.append(("E", _pt))
+            main_searches.append(("C", f"*{_pt}*"))
 
     all_phonetic = list(set(
         build_phonetic_variants(name) + build_vowel_variants(name) +
