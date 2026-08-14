@@ -502,21 +502,14 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         rep_str = "; ".join(r.get("fullName") or r.get("name") or "" for r in reps if r.get("fullName") or r.get("name"))
         if rep_str:
             applicant = applicant + "\nRepr: " + rep_str
-        _nd_sorted = sorted(
-            tm.get("niceDetailed") or [],
-            key=lambda x: int(str(x.get("class", 0))) if str(x.get("class","0")).isdigit() else 0
-        )
-        if _nd_sorted:
-            nice_nums = ", ".join(f"Cls {nd['class']} – {nd.get('short','')}" for nd in _nd_sorted)
-        else:
-            nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
+        nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
         if tm.get("goodAndServices"):
             nice_desc = "\n".join(
-                f"Cls {g['niceClass']} – {g.get('niceShort','')}: {g['goodsAndServices']}"
+                f"Cls {g['niceClass']}: {g['goodsAndServices']}"
                 for g in tm["goodAndServices"] if g.get("goodsAndServices")
             )
         else:
-            nice_desc = "; ".join(nd.get("short", "") for nd in _nd_sorted)
+            nice_desc = ""
 
         status = tm.get("status", "") or "—"
         exp_date = _xdate(tm.get("expiryDate", ""))
@@ -938,18 +931,14 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
             tm.get("niceDetailed") or [],
             key=lambda nd: int(str(nd.get("class", 0))) if str(nd.get("class","0")).isdigit() else 0
         )
-        if nice_detailed:
-            nice_html = "  ·  ".join(
-                f'<font color="#0F3460"><b>Cls {nd["class"]}</b></font>'
-                f'<font color="#555555"> – {nd.get("short") or ""}</font>'
-                for nd in nice_detailed
-            )
-        else:
-            nice_html = "  ".join(
-                f'<font color="#0F3460"><b>Cls {c}</b></font>'
-                for c in sorted(tm.get("niceClass") or [],
-                                key=lambda x: int(x) if str(x).isdigit() else 0)
-            )
+        nice_html = "  ·  ".join(
+            f'<font color="#0F3460"><b>Cls {nd["class"]}</b></font>'
+            for nd in nice_detailed
+        ) or "  ".join(
+            f'<font color="#0F3460"><b>Cls {c}</b></font>'
+            for c in sorted(tm.get("niceClass") or [],
+                            key=lambda x: int(x) if str(x).isdigit() else 0)
+        )
 
         # ── Info column ──────────────────────────────────────────────────
         name_p = Paragraph(
@@ -1165,31 +1154,17 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         gs_blocks = []
         for nc in sorted(all_cls.keys(), key=lambda x: int(x)):
             info  = all_cls[nc]
-            short = info["short"]
             text  = info["text"]
-            desc  = info["desc"]
 
-            # Titlu: doar numărul clasei (short apare deja în chips-urile din card)
             box_rows = [
                 [Paragraph(f"Clasa {nc}", styb(f"gt{i}{nc}", fontSize=8.5, textColor=BLUE,
                                                leading=11, spaceAfter=0))],
             ]
-            # Short ca primă linie de conținut (o singură apariție)
-            if short:
-                box_rows.append([Paragraph(
-                    short, sty(f"gts{i}{nc}", fontSize=8, textColor=DKGRAY,
-                               leading=11, spaceAfter=0)
-                )])
             if text:
                 disp = text[:MAX_GS] + ("…" if len(text) > MAX_GS else "")
                 box_rows.append([Paragraph(
                     disp, sty(f"gtx{i}{nc}", fontSize=8, textColor=colors.HexColor("#444444"),
                               leading=12, spaceAfter=0)
-                )])
-            if desc:
-                box_rows.append([Paragraph(
-                    desc, sty(f"gdc{i}{nc}", fontSize=7, leading=11, spaceAfter=0,
-                              textColor=colors.HexColor("#AAAAAA"))
                 )])
 
             box = Table(box_rows, colWidths=[W])
@@ -1748,13 +1723,11 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
         tm.get("niceDetailed") or [],
         key=lambda nd: int(str(nd.get("class","0"))) if str(nd.get("class","0")).isdigit() else 0
     )
-    if nice_detailed_w:
-        classes_str = "  |  ".join(
-            f"Cls {nd['class']} — {nd.get('short','')}" for nd in nice_detailed_w)
-    else:
-        classes_str = "  ".join(
-            f"Cls {c}" for c in sorted(tm.get("niceClass") or [],
-                                       key=lambda x: int(x) if str(x).isdigit() else 0))
+    classes_str = "  |  ".join(
+        f"Cls {nd['class']}" for nd in nice_detailed_w
+    ) or "  ".join(
+        f"Cls {c}" for c in sorted(tm.get("niceClass") or [],
+                                   key=lambda x: int(x) if str(x).isdigit() else 0))
 
     # ── Dimensiuni coloane dinamice ──────────────────────────────────────
     STRIP_W = 0.40
@@ -1930,16 +1903,8 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
             _set_cell_bg(gs_c2, "FFFFFF"); _set_left_accent(gs_c2, "0F3460")
 
             _p(gs_c2, f"Clasa {nc}", bold=True, size=8.5, color=BLUE, first=True)
-            if info["short"]:
-                _p(gs_c2, info["short"], size=8, color=GRAY, align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             if info["text"]:
                 _p(gs_c2, info["text"], size=8, color=RGBColor(0x33,0x33,0x33), align=WD_ALIGN_PARAGRAPH.JUSTIFY)
-            if info["desc"]:
-                pd2 = gs_c2.add_paragraph()
-                pd2.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                rd2 = pd2.add_run(info["desc"])
-                rd2.font.size = Pt(7); rd2.font.name = "Arial"; rd2.italic = True
-                rd2.font.color.rgb = RGBColor(0xAA,0xAA,0xAA)
             _set_borders(gs_t)
             _fix_table_layout(gs_t, [page_w_cm])
             _cant_split(gs_t)
