@@ -1060,6 +1060,48 @@ function segBar(sim) {
     </div>`;
 }
 
+// ---- Background prefetch representatives ----
+const _detailFetchedST13s = new Set();
+
+function _applyRepToCard(tm, idx) {
+  const rep0 = (tm.representatives || [])[0];
+  const name = rep0 ? (rep0.fullName || rep0.organizationName || '') : '';
+  if (!name) return;
+  const el   = document.getElementById(`rep-row-${idx}`);
+  const span = document.getElementById(`rep-name-${idx}`);
+  if (el && span) { span.textContent = name; el.style.display = ''; }
+}
+
+async function _prefetchRepsFor(marksWithIdx) {
+  const CONCURRENCY = 3;
+  const queue = marksWithIdx.filter(({tm}) =>
+    tm.ST13 && !tm.ST13.startsWith("DEMO") && !_detailFetchedST13s.has(tm.ST13)
+  );
+  let ptr = 0;
+  async function worker() {
+    while (ptr < queue.length) {
+      const {tm, idx} = queue[ptr++];
+      if (_detailFetchedST13s.has(tm.ST13)) { _applyRepToCard(tm, idx); continue; }
+      _detailFetchedST13s.add(tm.ST13);
+      try {
+        const resp = await fetch(`/api/tm-detail?st13=${encodeURIComponent(tm.ST13)}`);
+        if (resp.ok) {
+          const detail = await resp.json();
+          if (detail && !detail.error) {
+            Object.assign(tm, detail);
+            if (detail.applicants_detail && detail.applicants_detail.length)
+              tm.applicants = detail.applicants_detail;
+            tm._detailFetched = true;
+            _applyRepToCard(tm, idx);
+          }
+        }
+      } catch(e) {}
+      await new Promise(r => setTimeout(r, 120));
+    }
+  }
+  Promise.all(Array(CONCURRENCY).fill(null).map(worker)); // fire-and-forget
+}
+
 // ---- Search ----
 async function doSearch() {
   const name = document.getElementById("trademarkName").value.trim();
@@ -1099,6 +1141,15 @@ async function doSearch() {
     renderExpired(
       (data.expired_conflicts || []).concat(data.expired_similar || [])
     );
+    // Pre-fetch detalii (reprezentant) pentru toate cardurile în background
+    _detailFetchedST13s.clear();
+    _prefetchRepsFor([
+      ...(data.results || []).map((tm, i) => ({tm, idx: i})),
+      ...(data.similar || []).map((tm, i) => ({tm, idx: `s${i}`})),
+      ...(data.ended_marks || []).map((tm, i) => ({tm, idx: `end${i}`})),
+      ...(data.terminated_marks || []).map((tm, i) => ({tm, idx: `ter${i}`})),
+      ...((data.expired_conflicts||[]).concat(data.expired_similar||[])).map((tm,i) => ({tm, idx:`exp${i}`})),
+    ]);
   } catch(e) {
     setExportControlsEnabled(false);
     showError("Nu s-a putut contacta serverul. Asigurați-vă că backend-ul rulează pe portul 8000.");
@@ -1501,7 +1552,7 @@ function _buildCard(tm, sim, idx, container) {
       </div>
       <div class="tm-rows">
         <div class="tm-row"><strong>Titular:</strong> ${applicant}${applicantCountry ? ' <span style="font-size:.7rem;color:#888;">('+applicantCountry+')</span>' : ''}</div>
-        <div class="tm-row" id="rep-row-${idx}" style="display:none"><strong>Reprezentant:</strong> <span id="rep-name-${idx}"></span></div>
+        <div class="tm-row" id="rep-row-${idx}"${(() => { const r0=(tm.representatives||[])[0]; return (r0?.fullName||r0?.organizationName) ? '' : ' style="display:none"'; })()}><strong>Reprezentant:</strong> <span id="rep-name-${idx}">${(tm.representatives||[])[0]?.fullName||(tm.representatives||[])[0]?.organizationName||''}</span></div>
         <div class="tm-row"><strong>Nr. marcă:</strong> ${tm.registrationNumber||"—"} &nbsp;|&nbsp; <strong>Nr. depozit:</strong> ${tm.applicationNumber||"—"}</div>
         <div class="tm-row"><strong>Depus:</strong> ${tm.applicationDate||"—"} &nbsp;|&nbsp; <strong>Înreg.:</strong> ${tm.registrationDate||"—"} &nbsp;|&nbsp; <strong>Expiră:</strong> <span style="color:${tm.expiryDate?"#c0392b":"#aaa"}">${tm.expiryDate||"—"}</span></div>
         ${(tm.office==="WO"||tm.tmOffice==="WO") && (tm.designatedCountries||[]).length ? `<div class="tm-row"><strong>Țări desemnate (Madrid):</strong> <span style="font-size:.73rem;color:#555;">${tm.designatedCountries.join(", ")}</span></div>` : ""}
@@ -1564,7 +1615,8 @@ async function toggleCard(idx, tm, sim) {
     det.innerHTML = `<div style="padding:20px;color:#aaa;text-align:center;font-size:.85rem;">Se încarcă detalii...</div>`;
 
     // Fetch enriched detail (representatives, goods, dates) on demand
-    if (tm.ST13 && !tm.ST13.startsWith("DEMO")) {
+    // Skip if already fetched by background prefetch
+    if (tm.ST13 && !tm.ST13.startsWith("DEMO") && !tm._detailFetched) {
       try {
         const resp = await fetch(`/api/tm-detail?st13=${encodeURIComponent(tm.ST13)}`);
         if (resp.ok) {
