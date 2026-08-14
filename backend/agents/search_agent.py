@@ -288,7 +288,7 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     if _cb_is_open():
         return [], 0
     try:
-        r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=55 if _PROXIES else 15)
+        r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=55 if _PROXIES else 10)
         print(f"[TMVIEW] POST status={r.status_code} crit={criteria} term={term[:20]} offices={sorted(offices)} territories={sorted(territories)}")
         if r.status_code == 200:
             # Check content-type before parsing — Imperva returns text/html (200) when blocking.
@@ -322,7 +322,8 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
             await asyncio.sleep(10)
     except Exception as _e:
         err_str = str(_e).lower()
-        if "connection reset" in err_str or "connection refused" in err_str or "ssl" in err_str or "json" in err_str:
+        if any(w in err_str for w in ("connection reset", "connection refused", "ssl", "json",
+                                       "timed out", "timeout", "connection timed")):
             _cb_record_failure()
         print(f"[TMVIEW] _search_page error: {type(_e).__name__}: {_e}")
     return [], 0
@@ -429,7 +430,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         build_plural_stem_variants(name)[:4]
     ))
     phonetic_terms = all_phonetic[:2] if (use_proxy or many_territories) else all_phonetic[:4]
-    req_timeout = 55 if use_proxy else 12
+    req_timeout = 55 if use_proxy else 6
     _extra_pool = [("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper]
     extra_searches = [] if many_territories else _extra_pool[:4]
 
