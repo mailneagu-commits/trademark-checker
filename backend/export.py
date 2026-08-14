@@ -505,7 +505,9 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
         if tm.get("goodAndServices"):
             nice_desc = "\n".join(
-                f"Cls {int(g['niceClass'])}: {g['goodsAndServices']}"
+                (f"Cls {int(g['niceClass'])} — {g['niceShort']}: {g['goodsAndServices']}"
+                 if g.get("niceShort") else
+                 f"Cls {int(g['niceClass'])}: {g['goodsAndServices']}")
                 for g in tm["goodAndServices"]
                 if g.get("goodsAndServices") and str(g.get("niceClass","")).isdigit()
             )
@@ -1158,10 +1160,14 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         for nc in sorted(all_cls.keys(), key=lambda x: int(x)):
             info  = all_cls[nc]
             text  = info["text"]
+            if not text:
+                continue
 
+            short = info.get("short") or ""
+            hdr   = f"Clasa {nc} — {short}" if short else f"Clasa {nc}"
             box_rows = [
-                [Paragraph(f"Clasa {nc}", styb(f"gt{i}{nc}", fontSize=8.5, textColor=BLUE,
-                                               leading=11, spaceAfter=0))],
+                [Paragraph(hdr, styb(f"gt{i}{nc}", fontSize=8.5, textColor=BLUE,
+                                     leading=11, spaceAfter=0))],
             ]
             if text:
                 disp = text[:MAX_GS] + ("…" if len(text) > MAX_GS else "")
@@ -1903,11 +1909,15 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
 
         for nc in sorted(all_cls_w.keys(), key=lambda x: int(x)):
             info = all_cls_w[nc]
+            if not info["text"]:
+                continue
             gs_t = doc.add_table(rows=1, cols=1); gs_t.style = "Table Grid"; gs_t.autofit = False
             gs_c2 = gs_t.cell(0,0); gs_c2.width = Cm(page_w_cm)
             _set_cell_bg(gs_c2, "FFFFFF"); _set_left_accent(gs_c2, "0F3460")
 
-            _p(gs_c2, f"Clasa {nc}", bold=True, size=8.5, color=BLUE, first=True)
+            short_w = info.get("short") or ""
+            hdr_w   = f"Clasa {nc} — {short_w}" if short_w else f"Clasa {nc}"
+            _p(gs_c2, hdr_w, bold=True, size=8.5, color=BLUE, first=True)
             if info["text"]:
                 _p(gs_c2, info["text"], size=8, color=RGBColor(0x33,0x33,0x33), align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             _set_borders(gs_t)

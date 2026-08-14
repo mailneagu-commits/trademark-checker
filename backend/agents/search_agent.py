@@ -429,7 +429,7 @@ def _cb_reset():
     print("[CIRCUIT BREAKER] Manual reset — gata pentru reincercare")
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _search_batched(session, term, nice_classes, offices, territories, crit, seen, max_pages=5):
+async def _search_batched(session, term, nice_classes, offices, territories, crit, seen, max_pages=5, batch_delay=0.2):
     """Caută cu împărțire automată în loturi dacă sunt multe teritorii."""
     collected = []
     if territories and len(territories) > TERRITORY_BATCH:
@@ -448,7 +448,7 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
                                    max_pages=max_pages)
         collected.extend(marks)
         if idx < len(batches) - 1:
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(batch_delay)
     return collected
 
 
@@ -474,7 +474,10 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     # Asigură că KARTEZIAN → CARTEZIAN (K↔C) se caută la același nivel cu termenul original.
     _phon_plain = [t for t in build_phonetic_variants(name) if not t.startswith("*") and len(t) >= 3]
 
-    if use_proxy or many_territories:
+    if many_territories:
+        # Minimal — evităm Imperva: doar exact + wildcard, fără fonetic în main_searches
+        main_searches = [("E", upper), ("C", f"*{upper}*")]
+    elif use_proxy:
         main_searches = [("E", upper), ("C", f"*{upper}*")]
         for _pt in _phon_plain[:1]:
             # E + F + C pentru varianta fonetică — F prinde și prefixe/parțiale (ex. CARTESIA din CARTEZIAN)
@@ -514,24 +517,40 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         all_marks: List[Dict] = []
 
         base_delay = 1.5 if use_proxy else 1.0
+        # Pentru many_territories (EU_FULL): delay mai mare între batch-uri și între căutări
+        inter_batch_delay  = 1.0 if many_territories else 0.2
+        inter_search_delay = (1.0, 1.5) if many_territories else (0.15, 0.4)
 
         for crit, term in main_searches:
             if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                 break
             marks = await _search_batched(session, term, nice_classes, effective_offices, territories, crit, seen,
-                                               max_pages=(1 if many_territories else MAX_PAGES_PER_TERM))
+                                               max_pages=(1 if many_territories else MAX_PAGES_PER_TERM),
+                                               batch_delay=inter_batch_delay)
             all_marks.extend(marks)
-            await asyncio.sleep(random.uniform(0.15, 0.4))
+            await asyncio.sleep(random.uniform(*inter_search_delay))
 
         for crit, term in extra_searches:
             if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                 break
             marks = await _search_batched(session, term, nice_classes, effective_offices, territories, crit, seen,
-                                               max_pages=(1 if many_territories else MAX_PAGES_PER_TERM))
+                                               max_pages=(1 if many_territories else MAX_PAGES_PER_TERM),
+                                               batch_delay=inter_batch_delay)
             all_marks.extend(marks)
-            await asyncio.sleep(random.uniform(0.15, 0.4))
+            await asyncio.sleep(random.uniform(*inter_search_delay))
 
         all_marks = all_marks[:MAX_TOTAL]
+
+        # Mărci WIPO/Madrid cu teritoriu de destinație UE (EM) — căutare separată
+        # necesară pentru many_territories deoarece effective_offices=[] acolo.
+        if many_territories and "EM" in territories and not _cb_is_open():
+            for crit, term in [("E", upper), ("C", f"*{upper}*")]:
+                if len(all_marks) >= MAX_TOTAL or _cb_is_open():
+                    break
+                await asyncio.sleep(random.uniform(*inter_search_delay))
+                marks = await _search_term(session, term, nice_classes, ["WO"], ["EM"], crit, seen, max_pages=2)
+                all_marks.extend(marks)
+            all_marks = all_marks[:MAX_TOTAL]
 
         # Variante fonetice — sărite complet pentru many_territories (27 state);
         # fiecare term folosea implicit MAX_PAGES_PER_TERM=5 pagini → depășea timeout-ul de 45s.

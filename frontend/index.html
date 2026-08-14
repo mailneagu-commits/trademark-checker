@@ -853,7 +853,7 @@ const NICE_CLASSES = [
 
 const COUNTRIES = [
   {code:"EM",name:"Uniunea Europeană (EUIPO)",flag:"🇪🇺",group:"supra"},
-  {code:"EU_FULL",name:"UE Complet (EUIPO + 27 state + WIPO)",flag:"🌍",group:"supra"},
+  {code:"EU_FULL",name:"UE Complet (27 state + Benelux + EUIPO + WIPO)",flag:"🌍",group:"supra"},
   {code:"WO",name:"Internațional (WIPO)",flag:"🌐",group:"supra"},
   {code:"RO",name:"România",flag:"🇷🇴",group:"eu"},{code:"DE",name:"Germania",flag:"🇩🇪",group:"eu"},
   {code:"FR",name:"Franța",flag:"🇫🇷",group:"eu"},{code:"IT",name:"Italia",flag:"🇮🇹",group:"eu"},
@@ -928,7 +928,7 @@ function selectAllNice()     { NICE_CLASSES.forEach(([n]) => selectedNice.add(St
 function clearNice()         { selectedNice.clear(); buildNiceChips(document.getElementById("niceSearch").value); updateInfo(); }
 function selectAllCountries(){ COUNTRIES.forEach(c => selectedCountries.add(c.code)); buildCountries(); updateInfo(); }
 function clearCountries()    { selectedCountries.clear(); buildCountries(); updateInfo(); }
-function selectEU()          { selectedCountries.clear(); COUNTRIES.filter(c=>c.group==="eu"||c.code==="EM").forEach(c=>selectedCountries.add(c.code)); buildCountries(); updateInfo(); }
+function selectEU()          { selectedCountries.clear(); selectedCountries.add("EU_FULL"); buildCountries(); updateInfo(); }
 
 function updateInfo() {
   const n = selectedNice.size, t = selectedCountries.size;

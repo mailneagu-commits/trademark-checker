@@ -158,6 +158,7 @@ def build_offices_and_territories(user_offices: List[str]):
     Convertește selecția utilizatorului în offices + territories pentru TMview.
 
     Logică:
+    - EU_FULL  → toate cele 27 state UE (individual) + BX (oficiu Benelux) + EM + offices=["WO"] = 29 teritorii
     - EM       → territories = ["EM"]  (TMview acceptă "EM" ca teritoriu; returnează EUIPO+WIPO/EU)
     - WO       → offices = ["WO"]
     - BE/NL/LU → territories = ["BX"]  (TMview folosește codul Benelux BX)
@@ -169,7 +170,16 @@ def build_offices_and_territories(user_offices: List[str]):
 
     for code in user_offices:
         c = code.upper()
-        if c in _BENELUX:
+        if c == "EU_FULL":
+            # Toate cele 27 state UE ca teritorii individuale (inclusiv BE, NL, LU)
+            # + BX (oficiul Benelux — mărci separate de cele naționale BE/NL/LU)
+            # + EM (EUIPO) + WO (WIPO/Madrid)
+            for eu_c in ALL_EU_TERRITORIES:
+                territories_set.add(eu_c)  # BE, NL, LU incluse individual
+            territories_set.add("BX")      # oficiul Benelux separat
+            territories_set.add("EM")
+            offices_set.add("WO")
+        elif c in _BENELUX:
             territories_set.add("BX")
         elif c == "WO":
             offices_set.add("WO")
