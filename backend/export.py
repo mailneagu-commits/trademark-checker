@@ -880,7 +880,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
     SCORE = 4.20 * cm   # coloana scor — mai lată
     INFO  = W - STRIP - LOGO - SCORE
 
-    MAX_GS = 600  # caractere max / clasă G&S
+    MAX_GS = 3000  # caractere max / clasă G&S
 
 
 

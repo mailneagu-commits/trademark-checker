@@ -89,7 +89,7 @@ TMVIEW_HOME   = "https://www.tmdn.org/tmview/"
 FIELDS = [
     "ST13", "markImageURI", "tmName", "tmOffice",
     "applicationNumber", "registrationNumber", "applicationDate", "tradeMarkStatus",
-    "markCurrentStatusCode", "niceClass", "applicantName",
+    "markCurrentStatusCode", "niceClass", "applicantName", "goodAndServices",
 ]
 
 HEADERS = {
