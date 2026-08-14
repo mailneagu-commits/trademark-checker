@@ -179,8 +179,8 @@ def build_offices_and_territories(user_offices: List[str]):
         elif c == "EM":
             # TMview returnează 400 PARAMETER_INCORRECT_FORMAT dacă offices conține "EM".
             # Mărci EUIPO acoperă toate statele UE — le găsim prin filtru de teritoriu.
+            # Nu filtrăm pe offices — am găsi doar mărci WIPO, nu și cele EUIPO directe.
             territories_set.update(ALL_EU_TERRITORIES)
-            offices_set.add("WO")
         elif c in _EU_COUNTRY_SET:
             territories_set.add(c)
             offices_set.add(c)
