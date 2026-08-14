@@ -312,7 +312,7 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
             print(f"[TMVIEW] found {len(marks)} marks")
             for m in marks:
                 m.setdefault("_found_by", term)
-            return marks, int(data.get("total") or 0)
+            return marks, int(data.get("totalResults") or data.get("total") or 0)
         elif r.status_code == 499:
             _cb_record_failure()
             print(f"[TMVIEW] 499 — IP partajat detectat (ScraperAPI datacenter ban)")
@@ -413,13 +413,13 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     proxies   = _make_proxies(proxy_url) if use_proxy else None
 
     if use_proxy:
-        main_searches = [("Z", upper), ("C", f"*{upper}*")]
+        main_searches = [("E", upper), ("C", f"*{upper}*")]
     elif many_territories:
-        main_searches = [("Z", upper), ("C", f"*{upper}*")]
+        main_searches = [("E", upper), ("C", f"*{upper}*")]
     else:
         # Direct Railway connection: limităm la 4 criterii principale (sub 25s total)
         main_searches = [
-            ("Z", upper), ("F", upper),
+            ("E", upper), ("F", upper),
             ("C", f"*{upper}*"), ("C", f"{upper}*"),
         ]
 
@@ -542,7 +542,7 @@ async def _fetch_tmview_expired(name: str, nice_classes: List[str], user_offices
         offices = list(set(offices) | {"EM"})
 
     upper = name.upper().strip()
-    exp_searches = [("Z", upper), ("C", f"*{upper}*")] if _PROXIES else [("F", upper), ("C", f"*{upper}*"), ("Z", upper)]
+    exp_searches = [("E", upper), ("C", f"*{upper}*")] if _PROXIES else [("F", upper), ("C", f"*{upper}*"), ("E", upper)]
     req_timeout = 55 if _PROXIES else 20
 
     async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
