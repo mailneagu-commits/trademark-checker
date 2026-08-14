@@ -412,12 +412,13 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     use_proxy = bool(proxy_url)
     proxies   = _make_proxies(proxy_url) if use_proxy else None
 
-    if use_proxy:
-        main_searches = [("E", upper), ("C", f"*{upper}*")]
-    elif many_territories:
+    # Pentru many_territories nu trimitem offices — batchurile de teritorii sunt suficiente
+    # și trimiterea a 20+ coduri de offices provoacă 400 PARAMETER_INCORRECT_FORMAT în TMview.
+    effective_offices = [] if many_territories else offices
+
+    if use_proxy or many_territories:
         main_searches = [("E", upper), ("C", f"*{upper}*")]
     else:
-        # Direct Railway connection: limităm la 4 criterii principale (sub 25s total)
         main_searches = [
             ("E", upper), ("F", upper),
             ("C", f"*{upper}*"), ("C", f"{upper}*"),
@@ -429,13 +430,10 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     ))
     phonetic_terms = all_phonetic[:2] if (use_proxy or many_territories) else all_phonetic[:4]
     req_timeout = 55 if use_proxy else 12
-    # Cu many_territories (ex. EM→27 state), extra_searches ar genera sute de request-uri.
-    # Limităm extra_searches la max 4 termeni pentru a evita timeout-ul (prea multe request-uri)
     _extra_pool = [("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper]
     extra_searches = [] if many_territories else _extra_pool[:4]
 
     async with AsyncSession(impersonate="chrome120", proxies=proxies, verify=not use_proxy) as session:
-        # Warmup GET — esențial pentru cookie-uri Imperva (atât direct cât și prin proxy)
         if not has_browser_session():
             try:
                 r = await session.get(TMVIEW_HOME, timeout=req_timeout)
@@ -448,12 +446,12 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         seen: set = set()
         all_marks: List[Dict] = []
 
-        base_delay = 1.5 if use_proxy else 1.0  # delay de bază între requests
+        base_delay = 1.5 if use_proxy else 1.0
 
         for crit, term in main_searches:
             if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                 break
-            marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen,
+            marks = await _search_batched(session, term, nice_classes, effective_offices, territories, crit, seen,
                                                max_pages=(1 if many_territories else MAX_PAGES_PER_TERM))
             all_marks.extend(marks)
             await asyncio.sleep(random.uniform(0.15, 0.4))
@@ -461,7 +459,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         for crit, term in extra_searches:
             if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                 break
-            marks = await _search_batched(session, term, nice_classes, offices, territories, crit, seen,
+            marks = await _search_batched(session, term, nice_classes, effective_offices, territories, crit, seen,
                                                max_pages=(1 if many_territories else MAX_PAGES_PER_TERM))
             all_marks.extend(marks)
             await asyncio.sleep(random.uniform(0.15, 0.4))
@@ -475,7 +473,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
             for term in phonetic_terms:
                 if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                     break
-                marks = await _search_term(session, term, nice_classes, offices, phon_ter, "C", seen,
+                marks = await _search_term(session, term, nice_classes, effective_offices, phon_ter, "C", seen,
                                            max_pages=2)
                 for m in marks:
                     m["_phonetic"] = True
@@ -489,7 +487,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
             for term in wildcard_patterns:
                 if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                     break
-                marks = await _search_term(session, term, nice_classes, offices, wildcard_ter, "C", seen,
+                marks = await _search_term(session, term, nice_classes, effective_offices, wildcard_ter, "C", seen,
                                            max_pages=2)
                 for m in marks:
                     m["_risk_high"] = True  # Marchez ca risc ridicat
