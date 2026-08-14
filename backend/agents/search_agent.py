@@ -390,7 +390,7 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
         if _cb_is_open():
             print("[CIRCUIT BREAKER] Request omis — circuit deschis.")
             break
-        if len(collected) >= MAX_TOTAL:
+        if len(collected) >= 100:  # MAX_TOTAL e local in _fetch_tmview
             break
         marks = await _search_term(session, term, nice_classes, offices, batch, crit, seen,
                                    max_pages=max_pages)
