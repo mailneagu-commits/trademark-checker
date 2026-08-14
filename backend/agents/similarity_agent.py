@@ -225,8 +225,12 @@ class SimilarityAgent:
         today = _date.today()
         conflicts          = []
         similar            = []
+        ended_marks        = []
+        terminated_marks   = []
         expired_conflicts  = []
         expired_similar    = []
+
+        _TERMINATED = {"cancelled", "refused", "withdrawn", "surrendered", "invalidated", "abandoned"}
 
         def _roots(w: str):
             roots = {w}
@@ -247,7 +251,7 @@ class SimilarityAgent:
             status_raw = (normalized.get("status") or "").lower()
             is_expired = any(w in status_raw for w in [
                 "expir", "lapsed", "cancelled", "refused",
-                "withdrawn", "surrendered", "invalidated", "abandoned",
+                "withdrawn", "surrendered", "invalidated", "abandoned", "ended",
             ])
             if not is_expired:
                 exp_str = normalized.get("expiryDate", "")
@@ -320,10 +324,15 @@ class SimilarityAgent:
                      "_exact_boost": _exact_boost}
 
             if is_expired:
-                if sc >= self.threshold_high:
-                    expired_conflicts.append(entry)
+                if "ended" in status_raw:
+                    ended_marks.append(entry)
+                elif any(w in status_raw for w in _TERMINATED):
+                    terminated_marks.append(entry)
                 else:
-                    expired_similar.append(entry)
+                    if sc >= self.threshold_high:
+                        expired_conflicts.append(entry)
+                    else:
+                        expired_similar.append(entry)
             else:
                 if sc >= self.threshold_high:
                     conflicts.append(entry)
@@ -346,12 +355,14 @@ class SimilarityAgent:
             exact_end = 1 if e.get("_exact_boost") else 0
             return (_risk_ord.get(e["risk_level"], 4), ter, exact_end, -e["similarity"]["combined_score"])
 
-        for lst in (conflicts, similar, expired_conflicts, expired_similar):
+        for lst in (conflicts, similar, ended_marks, terminated_marks, expired_conflicts, expired_similar):
             lst.sort(key=_sort_key)
 
         return {
             "conflicts":         conflicts,
             "similar":           similar,
+            "ended_marks":       ended_marks,
+            "terminated_marks":  terminated_marks,
             "expired_conflicts": expired_conflicts,
             "expired_similar":   expired_similar,
         }

@@ -33,7 +33,7 @@ def _is_expired_mark(mark: Dict) -> bool:
     status_raw = str(mark.get("status") or mark.get("tradeMarkStatus") or "").lower()
     if any(w in status_raw for w in (
         "expir", "lapsed", "cancelled", "refused", "withdrawn",
-        "surrendered", "invalidated", "abandoned",
+        "surrendered", "invalidated", "abandoned", "ended",
     )):
         return True
 
@@ -89,7 +89,7 @@ TMVIEW_HOME   = "https://www.tmdn.org/tmview/"
 FIELDS = [
     "ST13", "markImageURI", "tmName", "tmOffice",
     "applicationNumber", "registrationNumber", "applicationDate", "tradeMarkStatus",
-    "niceClass", "applicantName",
+    "markCurrentStatusCode", "niceClass", "applicantName",
 ]
 
 HEADERS = {
@@ -247,7 +247,14 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
             "viennaCodes":           [v.get("code", "") for v in data.get("viennaCodes", [])],
             "designatedCountries":   designated,
             "applicants_detail":     data.get("applicants", []),
-            "representatives":       data.get("representatives", []),
+            "representatives":       [
+                {
+                    "fullName":    r.get("fullName") or r.get("name") or r.get("organizationName") or "",
+                    "fullAddress": r.get("fullAddress") or r.get("address") or "",
+                    "country":     r.get("country", ""),
+                }
+                for r in (data.get("representatives") or tm.get("representatives") or [])
+            ],
             "officeUrl":             data.get("officeUrl", ""),
         }
     except Exception:

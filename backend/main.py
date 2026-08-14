@@ -175,6 +175,22 @@ async def debug_tm_detail(st13: str):
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+@app.get("/api/tm-detail")
+async def tm_detail(st13: str):
+    """Returnează detalii complete (reprezentant, mărfuri, date) pentru o marcă după ST13."""
+    from agents.search_agent import _fetch_detail, AsyncSession, TMVIEW_HOME, _PROXIES, _build_headers, HAS_CURL_CFFI
+    if not HAS_CURL_CFFI:
+        return {"error": "curl_cffi not available"}
+    if not st13 or st13.startswith("DEMO"):
+        return {}
+    try:
+        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
+            await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
+            return await _fetch_detail(session, st13)
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 @app.get("/api/session-status")
 async def session_status():
     return {"active": has_browser_session()}
@@ -385,6 +401,8 @@ async def check_trademark(request: SearchRequest):
         "similar_marks":     len(analysis["similar"]),
         "results":           analysis["conflicts"],
         "similar":           analysis["similar"],
+        "ended_marks":       analysis["ended_marks"],
+        "terminated_marks":  analysis["terminated_marks"],
         "expired_conflicts": analysis["expired_conflicts"],
         "expired_similar":   analysis["expired_similar"],
         "source":            source,

@@ -307,12 +307,18 @@
     .toggle-wrap input:checked + .toggle-track::after { transform:translateX(18px); }
     .toggle-label { font-size:.82rem; font-weight:600; color:#555; }
 
-    /* Expired section */
-    .tm-card.expired-card { opacity:.82; }
-    .tm-card.expired-card::before { background:#7d3c98 !important; }
+    /* Expired / Ended / Terminated sections */
+    .tm-card.expired-card  { opacity:.82; }
+    .tm-card.expired-card::before  { background:#7d3c98 !important; }
+    .tm-card.ended-card    { opacity:.85; }
+    .tm-card.ended-card::before    { background:#e67e22 !important; }
+    .tm-card.terminated-card { opacity:.82; }
+    .tm-card.terminated-card::before { background:#c0392b !important; }
     .expired-section-hdr { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
     .expired-section-hdr h2 { margin:0; font-size:.95rem; color:#6c3483; }
-    .badge-purple { background:#f5eef8; color:#6c3483; }
+    .badge-purple  { background:#f5eef8; color:#6c3483; }
+    .badge-orange  { background:#fef5e7; color:#e67e22; }
+    .badge-red     { background:#fdedec; color:#c0392b; }
 
     .info-box {
       background: #e8f0fb; border-left: 4px solid #0f3460; padding: 14px 18px;
@@ -586,15 +592,45 @@
       <div class="cards-grid" id="similarGrid"></div>
     </div>
 
+    <!-- Ended marks section -->
+    <div id="endedSection" style="display:none; margin-top:28px;">
+      <div style="border-top:2px dashed #f0b27a; padding-top:20px;">
+        <div class="expired-section-hdr">
+          <h2>⏹ Mărci cu statut Ended (perioadă încheiată)</h2>
+          <span id="endedCount" class="badge badge-orange"></span>
+        </div>
+        <p style="font-size:.8rem; color:#888; margin-bottom:14px;">
+          Mărci al căror termen de protecție s-a încheiat (statut <em>Ended</em>). Nu mai sunt active, dar pot fi relevante pentru analiza anteriorității.
+          <strong style="color:#e67e22;">Nu reprezintă un conflict activ.</strong>
+        </p>
+        <div class="cards-grid" id="endedGrid"></div>
+      </div>
+    </div>
+
+    <!-- Terminated marks section -->
+    <div id="terminatedSection" style="display:none; margin-top:28px;">
+      <div style="border-top:2px dashed #f1948a; padding-top:20px;">
+        <div class="expired-section-hdr">
+          <h2>❌ Mărci anulate / retrase / refuzate</h2>
+          <span id="terminatedCount" class="badge badge-red"></span>
+        </div>
+        <p style="font-size:.8rem; color:#888; margin-bottom:14px;">
+          Mărci retrase, anulate, abandonate sau refuzate (statut <em>Cancelled / Withdrawn / Refused / Surrendered</em>). Pot oferi indicii despre disponibilitatea denumirii.
+          <strong style="color:#c0392b;">Nu reprezintă un conflict activ.</strong>
+        </p>
+        <div class="cards-grid" id="terminatedGrid"></div>
+      </div>
+    </div>
+
     <!-- Expired marks section -->
     <div id="expiredSection" style="display:none; margin-top:28px;">
       <div style="border-top:2px dashed #d7bde2; padding-top:20px;">
         <div class="expired-section-hdr">
-          <h2>🪦 Mărci expirate / anulate / respinse similare</h2>
+          <h2>🪦 Mărci expirate similar</h2>
           <span id="expiredCount" class="badge badge-purple"></span>
         </div>
         <p style="font-size:.8rem; color:#888; margin-bottom:14px;">
-          Mărci inactive (expirate, anulate, abandonate sau respinse) cu denumiri similare. Pot fi relevante pentru analiza istoricului sau pentru revendicarea numelui.
+          Mărci inactive prin expirare (statut <em>Expired / Lapsed</em> sau dată expirată). Pot fi relevante pentru analiza istoricului sau pentru revendicarea numelui.
           <strong style="color:#6c3483;">Nu reprezintă un conflict activ.</strong>
         </p>
         <div class="cards-grid" id="expiredGrid"></div>
@@ -974,9 +1010,12 @@ function riskBadge(score) {
 function statusBadge(status) {
   if (!status) return "";
   const s = status.toLowerCase();
+  if (s.includes("ended") || s.includes("lapsed") || s.includes("expir") ||
+      s.includes("cancelled") || s.includes("withdrawn") || s.includes("surrendered") ||
+      s.includes("invalidated") || s.includes("abandoned") || s.includes("refused"))
+    return `<span class="status-badge status-exp">✖ Expirată/Încheiată</span>`;
   if (s.includes("registered")) return `<span class="status-badge status-reg">✔ Înregistrată</span>`;
   if (s.includes("filed") || s.includes("pending")) return `<span class="status-badge status-filed">⏳ Depusă</span>`;
-  if (s.includes("expir")) return `<span class="status-badge status-exp">✖ Expirată</span>`;
   return `<span class="status-badge status-other">${status}</span>`;
 }
 
@@ -990,9 +1029,12 @@ function wildcardRiskBadge(tm) {
 function getStatusKey(status) {
   if (!status) return "other";
   const s = status.toLowerCase();
+  if (s.includes("ended") || s.includes("lapsed") || s.includes("expir") ||
+      s.includes("cancelled") || s.includes("withdrawn") || s.includes("surrendered") ||
+      s.includes("invalidated") || s.includes("abandoned") || s.includes("refused"))
+    return "expired";
   if (s.includes("registered")) return "registered";
   if (s.includes("filed") || s.includes("pending")) return "filed";
-  if (s.includes("expir")) return "expired";
   return "other";
 }
 
@@ -1052,6 +1094,8 @@ async function doSearch() {
     renderVariants(data.variants);
     renderResults(data);
     renderSimilar(data.similar || []);
+    renderEnded(data.ended_marks || []);
+    renderTerminated(data.terminated_marks || []);
     renderExpired(
       (data.expired_conflicts || []).concat(data.expired_similar || [])
     );
@@ -1357,6 +1401,36 @@ function toggleExpiredSection() {
   setTimeout(() => { sec.style.display = cb.checked ? "block" : "none"; }, 0);
 }
 
+function renderEnded(results) {
+  const section = document.getElementById("endedSection");
+  const grid    = document.getElementById("endedGrid");
+  const count   = document.getElementById("endedCount");
+  if (!results.length) { section.style.display = "none"; return; }
+  count.textContent = results.length + " mărci";
+  grid.innerHTML = "";
+  results.forEach((tm, i) => {
+    _buildCard(tm, tm.similarity, `end${i}`, grid);
+    const card = document.getElementById(`card-end${i}`);
+    if (card) card.classList.add("ended-card");
+  });
+  section.style.display = "block";
+}
+
+function renderTerminated(results) {
+  const section = document.getElementById("terminatedSection");
+  const grid    = document.getElementById("terminatedGrid");
+  const count   = document.getElementById("terminatedCount");
+  if (!results.length) { section.style.display = "none"; return; }
+  count.textContent = results.length + " mărci";
+  grid.innerHTML = "";
+  results.forEach((tm, i) => {
+    _buildCard(tm, tm.similarity, `ter${i}`, grid);
+    const card = document.getElementById(`card-ter${i}`);
+    if (card) card.classList.add("terminated-card");
+  });
+  section.style.display = "block";
+}
+
 function renderExpired(results) {
   const section = document.getElementById("expiredSection");
   const grid    = document.getElementById("expiredGrid");
@@ -1427,6 +1501,7 @@ function _buildCard(tm, sim, idx, container) {
       </div>
       <div class="tm-rows">
         <div class="tm-row"><strong>Titular:</strong> ${applicant}${applicantCountry ? ' <span style="font-size:.7rem;color:#888;">('+applicantCountry+')</span>' : ''}</div>
+        <div class="tm-row" id="rep-row-${idx}" style="display:none"><strong>Reprezentant:</strong> <span id="rep-name-${idx}"></span></div>
         <div class="tm-row"><strong>Nr. marcă:</strong> ${tm.registrationNumber||"—"} &nbsp;|&nbsp; <strong>Nr. depozit:</strong> ${tm.applicationNumber||"—"}</div>
         <div class="tm-row"><strong>Depus:</strong> ${tm.applicationDate||"—"} &nbsp;|&nbsp; <strong>Înreg.:</strong> ${tm.registrationDate||"—"} &nbsp;|&nbsp; <strong>Expiră:</strong> <span style="color:${tm.expiryDate?"#c0392b":"#aaa"}">${tm.expiryDate||"—"}</span></div>
         ${(tm.office==="WO"||tm.tmOffice==="WO") && (tm.designatedCountries||[]).length ? `<div class="tm-row"><strong>Țări desemnate (Madrid):</strong> <span style="font-size:.73rem;color:#555;">${tm.designatedCountries.join(", ")}</span></div>` : ""}
@@ -1467,7 +1542,7 @@ function renderCards(results) {
   results.forEach((tm, i) => _buildCard(tm, tm.similarity, i, grid));
 }
 
-function toggleCard(idx, tm, sim) {
+async function toggleCard(idx, tm, sim) {
   const i = idx;
   const det = document.getElementById(`detail-${i}`);
   const card = det ? det.closest('.tm-card') : null;
@@ -1477,12 +1552,44 @@ function toggleCard(idx, tm, sim) {
   if (isOpen) {
     det.classList.remove("open");
     if (card) card.classList.remove("open");
-    const btn = det.previousElementSibling && det.previousElementSibling.querySelector('.tm-expand-btn');
     return;
   }
 
+  det.classList.add("open");
+  if (card) card.classList.add("open");
+
   // Build detail content if empty
   if (!det.innerHTML.trim()) {
+    // Show loading placeholder while fetching detail from TMview
+    det.innerHTML = `<div style="padding:20px;color:#aaa;text-align:center;font-size:.85rem;">Se încarcă detalii...</div>`;
+
+    // Fetch enriched detail (representatives, goods, dates) on demand
+    if (tm.ST13 && !tm.ST13.startsWith("DEMO")) {
+      try {
+        const resp = await fetch(`/api/tm-detail?st13=${encodeURIComponent(tm.ST13)}`);
+        if (resp.ok) {
+          const detail = await resp.json();
+          console.log('[tm-detail] response for', tm.ST13, detail);
+          if (detail && !detail.error) {
+            Object.assign(tm, detail);
+            if (detail.applicants_detail && detail.applicants_detail.length) {
+              tm.applicants = detail.applicants_detail;
+            }
+          }
+        }
+      } catch(e) { console.warn('[tm-detail] fetch error:', e); }
+    }
+
+    // Populate representative in card summary row
+    if (tm.representatives && tm.representatives.length) {
+      const repName = tm.representatives[0].fullName || tm.representatives[0].organizationName || '';
+      if (repName) {
+        const repRow = document.getElementById(`rep-row-${idx}`);
+        const repNameEl = document.getElementById(`rep-name-${idx}`);
+        if (repRow && repNameEl) { repNameEl.textContent = repName; repRow.style.display = ''; }
+      }
+    }
+
     const imgBig = tm.imageUrl
       ? `<img src="${tm.imageUrl}" style="max-width:100px;max-height:80px;object-fit:contain;border:1px solid #ddd;border-radius:7px;padding:4px;background:#fff;" onerror="this.style.display='none'">`
       : `<span style="display:inline-block;width:60px;height:50px;background:#f0f2f5;border-radius:7px;font-size:1.5rem;text-align:center;line-height:50px;">™</span>`;
@@ -1510,7 +1617,7 @@ function toggleCard(idx, tm, sim) {
 
     // (740) Reprezentant
     const repDetail = (tm.representatives||[]).map(r =>
-      `<div><strong>${r.fullName||r.organizationName||"—"}</strong>${r.fullAddress?'<br><span style="font-size:.73rem;color:#777;">'+r.fullAddress+'</span>':''}</div>`
+      `<div><strong>${r.fullName||r.name||r.organizationName||"—"}</strong>${(r.fullAddress||r.address)?'<br><span style="font-size:.73rem;color:#777;">'+(r.fullAddress||r.address)+'</span>':''}</div>`
     ).join("") || "—";
 
     // Țări desemnate (Madrid)
@@ -1579,9 +1686,6 @@ function toggleCard(idx, tm, sim) {
       </div>
     `;
   }
-
-  det.classList.add("open");
-  if (card) card.classList.add("open");
 }
 
 // ---- Variants panel ----
