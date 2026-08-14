@@ -86,60 +86,58 @@ async def debug_tmview():
     if not HAS_CURL_CFFI:
         return {"error": "curl_cffi not available"}
     results = {}
-    payload_ro = {"page": "1", "pageSize": "3", "criteria": "F",
-                  "basicSearch": "TEST", "newPage": True,
-                  "fields": ["ST13", "tmName"], "territories": ["RO"]}
-    payload_em = {"page": "1", "pageSize": "3", "criteria": "Z",
-                  "basicSearch": "APPLE", "newPage": True,
-                  "fields": ["ST13", "tmName"], "offices": ["EM"]}
-    payload_ter_em = {"page": "1", "pageSize": "5", "criteria": "Z",
-                      "basicSearch": "APPLE", "newPage": True,
-                      "fields": ["ST13", "tmName", "tmOffice"], "territories": ["EM"]}
-    payload_ter_27 = {"page": "1", "pageSize": "5", "criteria": "Z",
-                      "basicSearch": "APPLE", "newPage": True,
-                      "fields": ["ST13", "tmName", "tmOffice"],
-                      "territories": ["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR",
-                                      "DE","GR","HU","IE","IT","LV","LT","LU","MT","NL",
-                                      "PL","PT","RO","SK","SI","ES","SE"]}
+
+    def mk(territories=None, offices=None, term="APPLE", crit="Z", size=5):
+        p = {"page": "1", "pageSize": str(size), "criteria": crit,
+             "basicSearch": term, "newPage": True, "fields": ["ST13", "tmName", "tmOffice"]}
+        if territories: p["territories"] = territories
+        if offices:     p["offices"]     = offices
+        return p
+
+    tests = {
+        # CE STIM DEJA
+        "ro_single":      mk(territories=["RO"]),
+        "offices_em":     mk(offices=["EM"]),                        # stim 400
+        # BENELUX: BE vs BX
+        "ter_BE":         mk(territories=["BE"]),                    # BE valid?
+        "ter_BX":         mk(territories=["BX"]),                    # BX valid?
+        # BATCH 7 fara Benelux
+        "ter_7_nobenelux": mk(territories=["AT","DE","FR","IT","ES","PL","RO"]),
+        # BATCH 7 cu BX
+        "ter_7_withBX":   mk(territories=["BX","AT","DE","FR","IT","ES","PL"]),
+        # BATCH 7 cu BE (varianta actuala din cod)
+        "ter_7_withBE":   mk(territories=["BE","AT","DE","FR","IT","ES","PL"]),
+        # EM ca teritoriu
+        "ter_EM":         mk(territories=["EM"]),                    # stim 400
+        # 27 state (cu BE/NL/LU)
+        "ter_27_withBE":  mk(territories=["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR",
+                                          "DE","GR","HU","IE","IT","LV","LT","LU","MT","NL",
+                                          "PL","PT","RO","SK","SI","ES","SE"]),
+        # 25 state (BX inlocuieste BE/NL/LU)
+        "ter_25_withBX":  mk(territories=["AT","BX","BG","HR","CY","CZ","DK","EE","FI","FR",
+                                          "DE","GR","HU","IE","IT","LV","LT","MT",
+                                          "PL","PT","RO","SK","SI","ES","SE"]),
+    }
+
     try:
         async with AsyncSession(impersonate="chrome120", proxies=None, verify=True) as session:
             r = await session.get(TMVIEW_HOME, timeout=10)
             results["home_status"] = r.status_code
-            # Test cu territories RO
-            r2 = await session.post(TMVIEW_URL, json=payload_ro, headers=_build_headers(), timeout=12)
-            results["ro_status"] = r2.status_code
-            results["ro_ct"] = r2.headers.get("content-type", "")[:50]
-            results["ro_preview"] = r2.text[:200]
-            # Test cu offices EM (stim ca da 400)
-            r3 = await session.post(TMVIEW_URL, json=payload_em, headers=_build_headers(), timeout=12)
-            results["offices_em_status"] = r3.status_code
-            results["offices_em_preview"] = r3.text[:200]
-            # Test cu territories=["EM"] — daca TMview accepta EM ca teritoriu, reducem la 1 batch
-            r4 = await session.post(TMVIEW_URL, json=payload_ter_em, headers=_build_headers(), timeout=15)
-            results["territories_em_status"] = r4.status_code
-            results["territories_em_ct"] = r4.headers.get("content-type", "")[:50]
-            try:
-                d4 = r4.json()
-                results["territories_em_total"] = d4.get("total")
-                results["territories_em_marks"] = [
-                    {"ST13": m.get("ST13"), "tmName": m.get("tmName"), "tmOffice": m.get("tmOffice")}
-                    for m in d4.get("tradeMarks", [])[:5]
-                ]
-            except Exception:
-                results["territories_em_preview"] = r4.text[:300]
-            # Test cu territories=toate 27 state UE (varianta actuala) — primul batch
-            r5 = await session.post(TMVIEW_URL, json=payload_ter_27, headers=_build_headers(), timeout=15)
-            results["territories_27eu_status"] = r5.status_code
-            results["territories_27eu_ct"] = r5.headers.get("content-type", "")[:50]
-            try:
-                d5 = r5.json()
-                results["territories_27eu_total"] = d5.get("total")
-                results["territories_27eu_marks"] = [
-                    {"ST13": m.get("ST13"), "tmName": m.get("tmName"), "tmOffice": m.get("tmOffice")}
-                    for m in d5.get("tradeMarks", [])[:5]
-                ]
-            except Exception:
-                results["territories_27eu_preview"] = r5.text[:300]
+            import asyncio as _aio
+            await _aio.sleep(0.3)
+            for name, payload in tests.items():
+                try:
+                    rx = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=15)
+                    ct = rx.headers.get("content-type", "")
+                    if rx.status_code == 200 and "json" in ct:
+                        d = rx.json()
+                        results[name] = {"status": 200, "total": d.get("total"),
+                                         "offices": [m.get("tmOffice") for m in d.get("tradeMarks", [])[:3]]}
+                    else:
+                        results[name] = {"status": rx.status_code, "body": rx.text[:120]}
+                    await _aio.sleep(0.3)
+                except Exception as ex:
+                    results[name] = {"error": str(ex)[:100]}
     except Exception as e:
         results["error"] = f"{type(e).__name__}: {e}"
     return results
