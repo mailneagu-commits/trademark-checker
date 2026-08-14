@@ -64,27 +64,29 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 
+import os as _os
+_MYMEMORY_EMAIL = _os.getenv("MYMEMORY_EMAIL", "mailneagu@gmail.com")  # 10M chars/zi cu email
+
 def _translate_to_ro(text: str, _cache: dict = {}) -> str:
-    """Traduce text în română. Încearcă MyMemory (REST API oficial, funcționează pe servere),
-    apoi GoogleTranslator ca fallback, apoi returnează originalul."""
+    """Traduce text în română via MyMemory REST API.
+    GoogleTranslator NU e folosit — returnează pagina de eroare 500 ca text în loc de excepție.
+    Fallback: textul original (mai bine netradus decât mesaj de eroare în export)."""
     if not text or not text.strip():
         return text
     if text in _cache:
         return _cache[text]
     result = None
-    # MyMemory: REST API oficial, nu face scraping, merge pe IP-uri de server/cloud
     try:
         from deep_translator import MyMemoryTranslator
-        result = MyMemoryTranslator(source="en-US", target="ro-RO").translate(text[:4999])
+        r = MyMemoryTranslator(
+            source="en-US", target="ro-RO",
+            email=_MYMEMORY_EMAIL,
+        ).translate(text[:4999])
+        # MyMemory returnează avertisment text când depășim limita — nu salvăm asta
+        if r and "MYMEMORY WARNING" not in r and "QUERY LENGTH LIMIT" not in r:
+            result = r
     except Exception:
         pass
-    # Fallback: GoogleTranslator (poate fi blocat pe unele IP-uri cloud)
-    if not result:
-        try:
-            from deep_translator import GoogleTranslator
-            result = GoogleTranslator(source="auto", target="ro").translate(text[:4999])
-        except Exception:
-            pass
     _cache[text] = result or text
     return _cache[text]
 
