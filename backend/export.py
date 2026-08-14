@@ -515,14 +515,21 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
         rep_str = "; ".join(r.get("fullName") or r.get("name") or "" for r in reps if r.get("fullName") or r.get("name"))
         if rep_str:
             applicant = applicant + "\nRepr: " + rep_str
-        nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
+        _nd_sorted = sorted(
+            tm.get("niceDetailed") or [],
+            key=lambda x: int(str(x.get("class", 0))) if str(x.get("class","0")).isdigit() else 0
+        )
+        if _nd_sorted:
+            nice_nums = ", ".join(f"Cls {nd['class']} – {nd.get('short','')}" for nd in _nd_sorted)
+        else:
+            nice_nums = ", ".join(f"Cls {c}" for c in tm.get("niceClass") or [])
         if tm.get("goodAndServices"):
             nice_desc = "\n".join(
-                f"Cls {g['niceClass']}: {g['goodsAndServices']}"
+                f"Cls {g['niceClass']} – {g.get('niceShort','')}: {g['goodsAndServices']}"
                 for g in tm["goodAndServices"] if g.get("goodsAndServices")
             )
         else:
-            nice_desc = "; ".join(nd.get("short", "") for nd in tm.get("niceDetailed") or [])
+            nice_desc = "; ".join(nd.get("short", "") for nd in _nd_sorted)
 
         status = tm.get("status", "") or "—"
         exp_date = _xdate(tm.get("expiryDate", ""))
