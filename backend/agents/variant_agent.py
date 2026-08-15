@@ -191,6 +191,7 @@ def build_offices_and_territories(user_offices: List[str]):
             territories_set.add("EM")
         elif c in _EU_COUNTRY_SET:
             territories_set.add(c)
+            territories_set.add("EM")  # mărcile EUIPO sunt valabile în toate statele UE
             offices_set.add(c)
             offices_set.add("WO")
         else:
