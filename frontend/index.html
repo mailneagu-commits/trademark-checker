@@ -1062,6 +1062,7 @@ function segBar(sim) {
 
 // ---- Background prefetch representatives ----
 const _detailFetchedST13s = new Set();
+let _prefetchGen = 0;  // incrementat la fiecare căutare nouă — anulează prefetch-urile vechi
 
 function _applyRepToCard(tm, idx) {
   const rep0 = (tm.representatives || [])[0];
@@ -1072,7 +1073,7 @@ function _applyRepToCard(tm, idx) {
   if (el && span) { span.textContent = name; el.style.display = ''; }
 }
 
-async function _prefetchRepsFor(marksWithIdx, isLive) {
+async function _prefetchRepsFor(marksWithIdx, isLive, gen) {
   // Nu prefetch în demo mode — evită flood TMview și blocarea Imperva
   if (!isLive) return;
   // Conservativ: 1 request la un moment dat, 2s delay — suficient pt toate cardurile
@@ -1082,6 +1083,7 @@ async function _prefetchRepsFor(marksWithIdx, isLive) {
     .filter(({tm}) => tm.ST13 && !tm.ST13.startsWith("DEMO") && !_detailFetchedST13s.has(tm.ST13))
     .slice(0, MAX_PREFETCH);
   for (const {tm, idx} of queue) {
+    if (gen !== _prefetchGen) return;  // căutare nouă a început — oprim prefetch-ul vechi
     if (_detailFetchedST13s.has(tm.ST13)) { _applyRepToCard(tm, idx); continue; }
     _detailFetchedST13s.add(tm.ST13);
     try {
@@ -1097,6 +1099,7 @@ async function _prefetchRepsFor(marksWithIdx, isLive) {
         }
       }
     } catch(e) {}
+    if (gen !== _prefetchGen) return;  // verificăm din nou după await
     await new Promise(r => setTimeout(r, DELAY_MS));
   }
 }
@@ -1142,6 +1145,7 @@ async function doSearch() {
     );
     // Pre-fetch detalii (reprezentant) — doar în live mode, conservativ
     const _isLive = data.source && !data.source.startsWith("demo");
+    _prefetchGen++;                   // anulează orice prefetch anterior încă în rulare
     _detailFetchedST13s.clear();
     _prefetchRepsFor([
       ...(data.results || []).map((tm, i) => ({tm, idx: i})),
@@ -1149,7 +1153,7 @@ async function doSearch() {
       ...(data.ended_marks || []).map((tm, i) => ({tm, idx: `end${i}`})),
       ...(data.terminated_marks || []).map((tm, i) => ({tm, idx: `ter${i}`})),
       ...((data.expired_conflicts||[]).concat(data.expired_similar||[])).map((tm,i) => ({tm, idx:`exp${i}`})),
-    ], _isLive);
+    ], _isLive, _prefetchGen);
   } catch(e) {
     setExportControlsEnabled(false);
     showError("Nu s-a putut contacta serverul. Asigurați-vă că backend-ul rulează pe portul 8000.");
