@@ -475,10 +475,9 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     _phon_plain = [t for t in build_phonetic_variants(name) if not t.startswith("*") and len(t) >= 3]
 
     if many_territories:
-        # EU_FULL: E + F (fuzzy — găsește similare ca TOPIX pt TOPYX) + C wildcard
-        # + F pentru 1 variantă fonetică — esențial pentru mărci similare fonetic
-        main_searches = [("E", upper), ("F", upper), ("C", f"*{upper}*")]
-        for _pt in _phon_plain[:1]:
+        # EU_FULL: E + F + C + prefix + fonetic (2 variante) — acoperire comparabilă cu normal
+        main_searches = [("E", upper), ("F", upper), ("C", f"*{upper}*"), ("C", f"{upper}*")]
+        for _pt in _phon_plain[:2]:
             main_searches.append(("F", _pt))
             main_searches.append(("C", f"*{_pt}*"))
     elif use_proxy:
@@ -521,9 +520,9 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         all_marks: List[Dict] = []
 
         base_delay = 1.5 if use_proxy else 1.0
-        # Pentru many_territories (EU_FULL): delay mai mare între batch-uri și între căutări
-        inter_batch_delay  = 1.0 if many_territories else 0.2
-        inter_search_delay = (1.0, 1.5) if many_territories else (0.15, 0.4)
+        # EU_FULL: 0.5s batch delay (Imperva e cauzat de prefetch concurrent, nu de search sec.)
+        inter_batch_delay  = 0.5 if many_territories else 0.2
+        inter_search_delay = (0.5, 1.0) if many_territories else (0.15, 0.4)
 
         for crit, term in main_searches:
             if len(all_marks) >= MAX_TOTAL or _cb_is_open():
@@ -556,9 +555,20 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
                 all_marks.extend(marks)
             all_marks = all_marks[:MAX_TOTAL]
 
-        # Variante fonetice — sărite complet pentru many_territories (27 state);
-        # fiecare term folosea implicit MAX_PAGES_PER_TERM=5 pagini → depășea timeout-ul de 45s.
-        if not many_territories:
+        # Variante fonetice
+        if many_territories:
+            # EU_FULL: fonetic pe teritoriile cheie (EM + marile naționale) — 1 batch, 2 termeni
+            key_ter = [t for t in territories if t in {"EM", "BX", "DE", "FR", "IT", "ES", "PL"}][:TERRITORY_BATCH]
+            for term in phonetic_terms[:2]:
+                if len(all_marks) >= MAX_TOTAL or _cb_is_open():
+                    break
+                marks = await _search_term(session, term, nice_classes, [], key_ter, "C", seen, max_pages=2)
+                for m in marks:
+                    m["_phonetic"] = True
+                all_marks.extend(marks)
+                await asyncio.sleep(random.uniform(*inter_search_delay))
+            all_marks = all_marks[:MAX_TOTAL]
+        else:
             phon_ter = territories if not use_proxy else territories[:TERRITORY_BATCH]
             for term in phonetic_terms:
                 if len(all_marks) >= MAX_TOTAL or _cb_is_open():
@@ -725,12 +735,15 @@ class SearchAgent:
         # 2. Incearca TMview direct (fara proxy - ScraperAPI e blocat de TMview)
         _cb_reset()
         try:
+            # EU_FULL (many_territories) are nevoie de mai mult timp: 90s vs 60s normal
+            _, _ter_preview = build_offices_and_territories(offices)
+            _tmview_timeout = 90.0 if len(_ter_preview) > TERRITORY_BATCH else 60.0
             marks = await asyncio.wait_for(
                 _fetch_tmview(name, nice_classes, offices, proxy_url="",
                               include_expired=include_expired,
                               extra_terms=extra_terms,
                               wildcard_patterns=wildcard_patterns),
-                timeout=60.0
+                timeout=_tmview_timeout
             )
             if marks is not None and len(marks) > 0:
                 print(f"[TMVIEW] direct success: {len(marks)} marks")
