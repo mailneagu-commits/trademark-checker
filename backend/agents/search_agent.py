@@ -475,8 +475,12 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     _phon_plain = [t for t in build_phonetic_variants(name) if not t.startswith("*") and len(t) >= 3]
 
     if many_territories:
-        # Minimal — evităm Imperva: doar exact + wildcard, fără fonetic în main_searches
-        main_searches = [("E", upper), ("C", f"*{upper}*")]
+        # EU_FULL: E + F (fuzzy — găsește similare ca TOPIX pt TOPYX) + C wildcard
+        # + F pentru 1 variantă fonetică — esențial pentru mărci similare fonetic
+        main_searches = [("E", upper), ("F", upper), ("C", f"*{upper}*")]
+        for _pt in _phon_plain[:1]:
+            main_searches.append(("F", _pt))
+            main_searches.append(("C", f"*{_pt}*"))
     elif use_proxy:
         main_searches = [("E", upper), ("C", f"*{upper}*")]
         for _pt in _phon_plain[:1]:
