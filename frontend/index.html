@@ -1075,8 +1075,8 @@ function _applyRepToCard(tm, idx) {
 async function _prefetchRepsFor(marksWithIdx, isLive) {
   // Nu prefetch în demo mode — evită flood TMview și blocarea Imperva
   if (!isLive) return;
-  // Conservativ: 1 request la un moment dat, 2s delay, max 10 mărci
-  const MAX_PREFETCH = 10;
+  // Conservativ: 1 request la un moment dat, 2s delay — suficient pt toate cardurile
+  const MAX_PREFETCH = 50;
   const DELAY_MS = 2000;
   const queue = marksWithIdx
     .filter(({tm}) => tm.ST13 && !tm.ST13.startsWith("DEMO") && !_detailFetchedST13s.has(tm.ST13))
