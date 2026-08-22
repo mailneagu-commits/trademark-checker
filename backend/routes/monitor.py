@@ -260,6 +260,19 @@ def get_bulletin_marks(source: str, date: str):
     return {"source": source, "date": date, "total": len(marks), "marks": marks}
 
 
+@router.get("/bulletin-image")
+def get_bulletin_image(source: str, slug: str, app_num: str):
+    """Servește imaginea unei mărci figurative, extrasă din buletinul OSIM la parsare."""
+    if source != "osim":
+        raise HTTPException(400, "Imagini disponibile momentan doar pentru sursa 'osim'.")
+    from scrapers.osim_bulletin import get_bulletin_image_path
+    path = get_bulletin_image_path(slug, app_num)
+    if not path:
+        raise HTTPException(404, "Imaginea nu a fost găsită (posibil marcă doar textuală, sau buletinul nu a fost încă parsat).")
+    from fastapi.responses import FileResponse
+    return FileResponse(path, media_type="image/png")
+
+
 @router.post("/bulletin-fetch")
 async def trigger_bulletin_fetch(
     source: str = "both",          # "osim" | "euipo" | "both"

@@ -2130,7 +2130,11 @@ function renderBulletinMarks(source, data) {
       ? m.representative
       : (m.representatives || []).map(r => r.name).filter(Boolean).join(", ") || "—";
     const feature  = m.markFeature || "—";
+    const img      = m.markImageURI
+      ? `<img src="${m.markImageURI}" alt="" style="max-height:36px;max-width:70px;object-fit:contain;" loading="lazy" />`
+      : "—";
     return `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;text-align:center;">${img}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-weight:600;">${m.tmName || "—"}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${holder}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${m.applicationNumber || "—"}</td>
@@ -2152,6 +2156,7 @@ function renderBulletinMarks(source, data) {
       <table id="${tableId}" style="width:100%;border-collapse:collapse;font-size:.82rem;">
         <thead style="position:sticky;top:0;background:#f0f4fa;">
           <tr>
+            <th style="padding:7px 10px;text-align:center;color:#0f3460;font-size:.75rem;" title="Reproduction of the mark">(540) Imagine</th>
             <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Reproduction of the mark">(540) Denumire marcă</th>
             <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Name and address of the applicant">(731) Solicitant</th>
             <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Serial number of the application">(210) Nr. depozit</th>

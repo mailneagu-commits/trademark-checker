@@ -238,15 +238,32 @@ def _parse_detail_block(block: str) -> Optional[Dict]:
     }
 
 
+def _image_dir_for(path: str) -> str:
+    slug = os.path.splitext(os.path.basename(path))[0]
+    return os.path.join(CACHE_DIR, "images", slug)
+
+
+def get_bulletin_image_path(bulletin_slug: str, app_num: str) -> Optional[str]:
+    """Calea locală a imaginii mărcii (salvată la parsare), pentru servire via API."""
+    safe = re.sub(r'[^A-Za-z0-9_-]', '', app_num)
+    p = os.path.join(CACHE_DIR, "images", bulletin_slug, f"{safe}.png")
+    return p if os.path.exists(p) else None
+
+
 def _parse_detail_pages(path: str) -> Dict[str, Dict]:
     """Parsează capitolul detaliat BOPI (coduri INID (210)(151)(732)(740)(540)
     (531)(591)(511)) — pagină pe 2 coloane, watermark filtrat după font
-    (Arial-Black, distinct de textul real). Returnează dict cheiat pe nr. cerere."""
+    (Arial-Black, distinct de textul real). Returnează dict cheiat pe nr. cerere.
+
+    Asociază și imaginea mărcii (pentru mărci figurative), după poziția ei
+    verticală față de cel mai apropiat cod (210) aflat deasupra, în aceeași
+    coloană — PDF-ul nu leagă explicit imaginea de un anumit nr. de cerere."""
     try:
         import pdfplumber
     except ImportError:
         return {}
 
+    img_dir: Optional[str] = None
     detail: Dict[str, Dict] = {}
     try:
         with pdfplumber.open(path) as pdf:
@@ -255,13 +272,42 @@ def _parse_detail_pages(path: str) -> Dict[str, Dict]:
                 halves = [(0, 0, page.width / 2, page.height),
                           (page.width / 2, 0, page.width, page.height)]
                 for box in halves:
-                    text = clean.crop(box).extract_text() or ""
+                    col  = clean.crop(box)
+                    text = col.extract_text() or ""
                     for block in re.split(r'─{3,}', text):
                         if "(210)" not in block:
                             continue
                         parsed = _parse_detail_block(block)
                         if parsed:
                             detail[parsed["applicationNumber"]] = parsed
+
+                    if not col.images:
+                        continue
+                    matches = col.search(r'\(210\)\s*(M\s*\d{4}\s*\d+)', regex=True)
+                    matches.sort(key=lambda m: m["top"])
+                    for img in col.images:
+                        owner = None
+                        for m in matches:
+                            if m["top"] <= img["top"]:
+                                owner = m
+                            else:
+                                break
+                        if not owner:
+                            continue
+                        app_num = re.sub(r'\s+', '', owner["groups"][0]).upper()
+                        if app_num not in detail:
+                            continue
+                        try:
+                            if img_dir is None:
+                                img_dir = _image_dir_for(path)
+                                os.makedirs(img_dir, exist_ok=True)
+                            img_path = os.path.join(img_dir, f"{app_num}.png")
+                            if not os.path.exists(img_path):
+                                bbox = (img["x0"], img["top"], img["x1"], img["bottom"])
+                                page.crop(bbox).to_image(resolution=200).save(img_path)
+                            detail[app_num]["hasImage"] = True
+                        except Exception as e:
+                            print(f"[OSIM] Image save error for {app_num}: {e}")
     except Exception as e:
         print(f"[OSIM] Detail parse error: {e}")
 
@@ -277,12 +323,18 @@ def _parse_pdf(path: str) -> List[Dict]:
     întreruperi de pagină ale tabelului)."""
     marks  = _parse_index_table(path)
     detail = _parse_detail_pages(path)
+    slug   = os.path.splitext(os.path.basename(path))[0]
+
+    def _image_uri(app_num: str) -> Optional[str]:
+        return f"/api/monitor/bulletin-image?source=osim&slug={slug}&app_num={app_num}"
 
     seen = {m["applicationNumber"] for m in marks}
     for m in marks:
         d = detail.get(m["applicationNumber"])
         if not d:
             continue
+        if d.get("hasImage"):
+            m["markImageURI"] = _image_uri(m["applicationNumber"])
         if d["tmName"]:
             # numele din secțiunea detaliată e curățat de watermark (filtrat după
             # font); cel din indexul-tabel poate avea litere de watermark scăpate
@@ -321,7 +373,7 @@ def _parse_pdf(path: str) -> List[Dict]:
             "applicationNumber": app_num,
             "registrationDate":  None,
             "expiryDate":        None,
-            "markImageURI":      None,
+            "markImageURI":      _image_uri(app_num) if d.get("hasImage") else None,
             "goodAndServices":   [],
             "_source":           "osim_bopi_detail",
         })
