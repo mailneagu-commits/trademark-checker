@@ -715,8 +715,12 @@ class SearchAgent:
 
             return merged
 
-        # \u00cencearc\u0103 EUIPO API primul (rapid, f\u0103r\u0103 blocaje Imperva)
-        if euipo_available():
+        # \u00cencearc\u0103 EUIPO API primul (rapid, f\u0103r\u0103 blocaje Imperva) \u2014 DOAR c\u00e2nd teritoriile
+        # cerute sunt exclusiv EM/WO. EUIPO Search API con\u021bine doar m\u0103rci UE + Madrid;
+        # nu are date na\u021bionale (RO, DE, FR etc.) \u2014 dac\u0103 utilizatorul caut\u0103 un stat
+        # individual, EU_FULL sau alt teritoriu, trebuie neap\u0103rat TMview.
+        _euipo_only = bool(offices) and {o.upper() for o in offices} <= {"EM", "WO"}
+        if euipo_available() and _euipo_only:
             try:
                 loop = asyncio.get_event_loop()
                 euipo_marks = await asyncio.wait_for(
