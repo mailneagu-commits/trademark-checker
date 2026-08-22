@@ -71,6 +71,9 @@ def _to_internal(tm: dict) -> dict:
     applicants = tm.get("applicants") or []
     names      = [a.get("name", "") for a in applicants if a.get("name")]
     reps       = tm.get("representatives") or []
+    feature    = tm.get("markFeature") or ""
+    # Doar mărcile cu reprezentare grafică (nu WORD) au imagine reală la TMview.
+    has_image  = bool(app_num) and feature and feature != "WORD"
 
     def iso(d):
         return f"{d}T00:00:00.000Z" if d else None
@@ -86,13 +89,13 @@ def _to_internal(tm: dict) -> dict:
         "applicationNumber": app_num,
         "registrationDate": iso(tm.get("registrationDate")),
         "expiryDate":       iso(tm.get("expiryDate")),
-        "markImageURI":     f"https://www.tmdn.org/tmview/getTMImage?ST13=EM{app_num}" if app_num else None,
+        "markImageURI":     f"https://www.tmdn.org/tmview/api/trademark/thumbnail/EM{app_num}" if has_image else None,
         "goodAndServices":  [],
         "_source":          "euipo_api",
         # Câmpuri suplimentare, etichetate după codul INID (WIPO ST.60) corespunzător.
         "applicantReference": tm.get("applicantReference") or "",   # referință internă solicitant
         "markKind":            tm.get("markKind") or "",             # (551) individuală/colectivă/certificare
-        "markFeature":         tm.get("markFeature") or "",          # tip marcă: WORD/FIGURATIVE/3D/...
+        "markFeature":         feature,                               # tip marcă: WORD/FIGURATIVE/3D/...
         "representatives":     [{"name": r.get("name", ""), "office": r.get("office", "")} for r in reps],  # (740)
         "publications":        tm.get("publications") or [],
     }
