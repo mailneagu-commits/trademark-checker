@@ -274,7 +274,7 @@ def _fetch_via_api(target: date) -> List[Dict]:
     page = 0
 
     while True:
-        query = f"applicationDate=ge={date_from};applicationDate=le={date_to}"
+        query = f"applicationDate>={date_from};applicationDate<={date_to}"
         try:
             resp = requests.get(
                 EUIPO_SEARCH_URL,
