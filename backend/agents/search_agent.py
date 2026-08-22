@@ -745,7 +745,7 @@ class SearchAgent:
                               wildcard_patterns=wildcard_patterns),
                 timeout=_tmview_timeout
             )
-            if marks is not None and len(marks) > 0:
+            if marks is not None and not _cb_is_open():
                 print(f"[TMVIEW] direct success: {len(marks)} marks")
                 if not include_expired:
                     marks = [m for m in marks if not _is_expired_mark(m)]
