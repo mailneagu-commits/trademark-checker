@@ -298,6 +298,19 @@ async def debug_euipo():
         ("date range prod", {"query": "applicationDate>=2026-08-20;applicationDate<=2026-08-22", "size": 100, "page": 0, "sort": "applicationDate:desc"}),
     ]
 
+    # Test endpoint-uri de imagine EUIPO (autentificate, separate de TMview public)
+    for app_num in ["019412470", "000827824"]:
+        img_hdrs = {"Authorization": f"Bearer {token}", "X-IBM-Client-Id": EUIPO_CLIENT_ID}
+        try:
+            r = _req.get(f"{EUIPO_SEARCH_URL}/{app_num}/image/thumbnail", headers=img_hdrs, timeout=10)
+            result.setdefault("image_tests", []).append({
+                "app_num": app_num, "status": r.status_code,
+                "content_type": r.headers.get("content-type"), "size": len(r.content),
+                "body_preview": r.text[:200] if "json" in r.headers.get("content-type", "") else None,
+            })
+        except Exception as e:
+            result.setdefault("image_tests", []).append({"app_num": app_num, "error": str(e)[:150]})
+
     loop = asyncio.get_event_loop()
     results = []
     for label, params in queries:
