@@ -70,6 +70,7 @@ def _to_internal(tm: dict) -> dict:
     verbal     = (tm.get("wordMarkSpecification") or {}).get("verbalElement", "")
     applicants = tm.get("applicants") or []
     names      = [a.get("name", "") for a in applicants if a.get("name")]
+    reps       = tm.get("representatives") or []
 
     def iso(d):
         return f"{d}T00:00:00.000Z" if d else None
@@ -88,6 +89,12 @@ def _to_internal(tm: dict) -> dict:
         "markImageURI":     f"https://www.tmdn.org/tmview/getTMImage?ST13=EM{app_num}" if app_num else None,
         "goodAndServices":  [],
         "_source":          "euipo_api",
+        # Câmpuri suplimentare, etichetate după codul INID (WIPO ST.60) corespunzător.
+        "applicantReference": tm.get("applicantReference") or "",   # referință internă solicitant
+        "markKind":            tm.get("markKind") or "",             # (551) individuală/colectivă/certificare
+        "markFeature":         tm.get("markFeature") or "",          # tip marcă: WORD/FIGURATIVE/3D/...
+        "representatives":     [{"name": r.get("name", ""), "office": r.get("office", "")} for r in reps],  # (740)
+        "publications":        tm.get("publications") or [],
     }
 
 

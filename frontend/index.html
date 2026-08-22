@@ -2126,12 +2126,16 @@ function renderBulletinMarks(source, data) {
     const holder   = (m.applicantName || []).join(", ") || "—";
     const date     = (m.applicationDate || "").slice(0, 10);
     const classes  = (m.niceClass || []).join(", ") || "—";
+    const reps     = (m.representatives || []).map(r => r.name).filter(Boolean).join(", ") || "—";
+    const feature  = m.markFeature || "—";
     return `<tr>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-weight:600;">${m.tmName || "—"}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${holder}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${m.applicationNumber || "—"}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${date}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${classes}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${reps}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${feature}</td>
     </tr>`;
   }).join("");
 
@@ -2146,11 +2150,13 @@ function renderBulletinMarks(source, data) {
       <table id="${tableId}" style="width:100%;border-collapse:collapse;font-size:.82rem;">
         <thead style="position:sticky;top:0;background:#f0f4fa;">
           <tr>
-            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;">Denumire marcă</th>
-            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;">Titular</th>
-            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;">Nr. depozit</th>
-            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;">Dată depunere</th>
-            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;">Clase NICE</th>
+            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Reproduction of the mark">(540) Denumire marcă</th>
+            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Name and address of the applicant">(731) Solicitant</th>
+            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Serial number of the application">(210) Nr. depozit</th>
+            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Date of filing of the application">(220) Dată depunere</th>
+            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Nice Classification">(511) Clase Nice</th>
+            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Name and address of the representative">(740) Reprezentant</th>
+            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Mark feature (WORD/FIGURATIVE/3D/...)">Tip marcă</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
