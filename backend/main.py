@@ -298,6 +298,21 @@ async def debug_euipo():
         ("date range prod", {"query": "applicationDate>=2026-08-20;applicationDate<=2026-08-22", "size": 100, "page": 0, "sort": "applicationDate:desc"}),
     ]
 
+    # Test: descărcarea buletinului oficial COPLA cu Bearer token (nu doar Search API)
+    try:
+        r = _req.get(
+            "https://euipo.europa.eu/copla/bulletin/data/download/CTM/2026_158/EN",
+            headers={"Authorization": f"Bearer {token}", "X-IBM-Client-Id": EUIPO_CLIENT_ID,
+                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
+            timeout=15,
+        )
+        result["copla_download_test"] = {
+            "status": r.status_code, "content_type": r.headers.get("content-type"),
+            "size": len(r.content), "body_preview": r.text[:200],
+        }
+    except Exception as e:
+        result["copla_download_test"] = {"error": str(e)[:200]}
+
     loop = asyncio.get_event_loop()
     results = []
     for label, params in queries:
