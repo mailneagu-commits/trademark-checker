@@ -244,21 +244,21 @@ def _parse_bulletin_xml(path: str) -> List[Dict]:
 
 # ── EUIPO Search API fallback ─────────────────────────────────────────────────
 
-def _fetch_via_api(target: date) -> List[Dict]:
-    """Fallback: returnează mărci via EUIPO Search API cu filtru pe applicationDate."""
+def _fetch_via_api(target: date) -> Tuple[List[Dict], Optional[str]]:
+    """Fallback: returnează mărci via EUIPO Search API cu filtru pe applicationDate.
+    Returnează (marks, error) — error e None dacă totul a mers bine (chiar și cu 0 marks)."""
     try:
         from agents.euipo_agent import euipo_available, _get_access_token, EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, _to_internal
-    except ImportError:
-        return []
+    except ImportError as e:
+        return [], f"import_error: {e}"
 
     if not euipo_available():
-        return []
+        return [], "not_configured"
 
     try:
         token = _get_access_token()
     except Exception as e:
-        print(f"[EUIPO API] Token error: {e}")
-        return []
+        return [], f"token_error: {e}"
 
     date_from = (target - timedelta(days=1)).isoformat()
     date_to   = (target + timedelta(days=1)).isoformat()
@@ -283,8 +283,7 @@ def _fetch_via_api(target: date) -> List[Dict]:
                 timeout=REQUEST_TIMEOUT,
             )
             if resp.status_code != 200:
-                print(f"[EUIPO API] {resp.status_code}: {resp.text[:200]}")
-                break
+                return all_marks, f"http_{resp.status_code}: {resp.text[:200]}"
             batch = resp.json().get("trademarks") or []
             if not batch:
                 break
@@ -299,11 +298,10 @@ def _fetch_via_api(target: date) -> List[Dict]:
                 break
             page += 1
         except Exception as e:
-            print(f"[EUIPO API] Error: {e}")
-            break
+            return all_marks, f"request_error: {type(e).__name__}: {e}"
 
     print(f"[EUIPO API] {len(all_marks)} marks for {target.isoformat()}")
-    return all_marks
+    return all_marks, None
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -347,14 +345,20 @@ def fetch_euipo_for_date(target: date) -> Tuple[List[Dict], dict]:
         )
 
     # Fallback: EUIPO Search API
-    marks = _fetch_via_api(working)
+    marks, api_error = _fetch_via_api(working)
+    if api_error:
+        info["api_error"] = api_error
     if marks:
         info["status"] = "ok_api"
         info["source"] = "api"
     else:
         if "status" not in info:
-            info["status"] = "no_results"
-            info["error"]  = "Buletin EUIPO: descărcarea necesită autentificare în portalul EUIPO. Configurați EUIPO_CLIENT_ID/SECRET pentru acces API."
+            if api_error:
+                info["status"] = "api_error"
+                info["error"]  = f"Buletin EUIPO: eroare la EUIPO Search API — {api_error}"
+            else:
+                info["status"] = "no_results"
+                info["error"]  = "Buletin EUIPO: nicio marcă găsită pentru această dată."
         info["source"] = info.get("source", "none")
     info["marks"]  = len(marks)
     info["at"]     = datetime.utcnow().isoformat()
