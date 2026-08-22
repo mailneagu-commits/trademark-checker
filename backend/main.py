@@ -295,6 +295,7 @@ async def debug_euipo():
         ("no query",        {"size": 10}),
         ("name field",      {"query": "tradeMarkName==APPLE", "size": 10}),
         ("date range",      {"query": "applicationDate>=2026-08-19;applicationDate<=2026-08-21", "size": 10}),
+        ("date range prod", {"query": "applicationDate>=2026-08-20;applicationDate<=2026-08-22", "size": 100, "page": 0, "sort": "applicationDate,desc"}),
     ]
 
     loop = asyncio.get_event_loop()
