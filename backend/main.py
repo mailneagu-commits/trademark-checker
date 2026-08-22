@@ -292,8 +292,9 @@ async def debug_euipo():
         ("eq APPLE",        {"query": "wordMarkSpecification.verbalElement==APPLE", "size": 10}),
         ("like %APPLE%",    {"query": "wordMarkSpecification.verbalElement=like=%APPLE%", "size": 10}),
         ("ilike %APPLE%",   {"query": "wordMarkSpecification.verbalElement=ilike=%APPLE%", "size": 10}),
-        ("no query",        {"size": 3}),
+        ("no query",        {"size": 10}),
         ("name field",      {"query": "tradeMarkName==APPLE", "size": 10}),
+        ("date range",      {"query": "applicationDate>=2026-08-19;applicationDate<=2026-08-21", "size": 10}),
     ]
 
     loop = asyncio.get_event_loop()
