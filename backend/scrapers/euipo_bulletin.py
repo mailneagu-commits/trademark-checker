@@ -279,7 +279,7 @@ def _fetch_via_api(target: date) -> Tuple[List[Dict], Optional[str]]:
             resp = requests.get(
                 EUIPO_SEARCH_URL,
                 headers=headers,
-                params={"query": query, "size": 100, "page": page, "sort": "applicationDate,desc"},
+                params={"query": query, "size": 100, "page": page, "sort": "applicationDate:desc"},
                 timeout=REQUEST_TIMEOUT,
             )
             if resp.status_code != 200:
