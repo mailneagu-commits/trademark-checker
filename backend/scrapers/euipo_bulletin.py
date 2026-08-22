@@ -247,7 +247,7 @@ def _parse_bulletin_xml(path: str) -> List[Dict]:
 def _fetch_via_api(target: date) -> List[Dict]:
     """Fallback: returnează mărci via EUIPO Search API cu filtru pe applicationDate."""
     try:
-        from agents.euipo_agent import euipo_available, _get_token, EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, _to_internal
+        from agents.euipo_agent import euipo_available, _get_access_token, EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, _to_internal
     except ImportError:
         return []
 
@@ -255,7 +255,7 @@ def _fetch_via_api(target: date) -> List[Dict]:
         return []
 
     try:
-        token = _get_token()
+        token = _get_access_token()
     except Exception as e:
         print(f"[EUIPO API] Token error: {e}")
         return []
