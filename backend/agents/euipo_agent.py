@@ -6,7 +6,7 @@ from typing import List, Dict
 EUIPO_CLIENT_ID     = os.environ.get("EUIPO_CLIENT_ID", "").strip()
 EUIPO_CLIENT_SECRET = os.environ.get("EUIPO_CLIENT_SECRET", "").strip()
 EUIPO_SEARCH_URL    = "https://api.euipo.europa.eu/trademark-search/trademarks"
-EUIPO_TOKEN_URL     = "https://auth.euipo.europa.eu/oidc/accessToken"
+EUIPO_TOKEN_URL     = "https://euipo.europa.eu/cas-server-webapp/oidc/accessToken"
 
 if EUIPO_CLIENT_ID:
     print(f"[EUIPO] Configured: {EUIPO_CLIENT_ID[:8]}...")
