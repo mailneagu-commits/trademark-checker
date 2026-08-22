@@ -130,7 +130,8 @@ def _parse_index_table(path: str) -> List[Dict]:
     try:
         with pdfplumber.open(path) as pdf:
             for page in pdf.pages:
-                tables = page.extract_tables()
+                clean_page = page.filter(lambda o: o.get("fontname") != _WATERMARK_FONT)
+                tables = clean_page.extract_tables()
                 for table in tables:
                     if not table or len(table) < 2:
                         continue
@@ -282,6 +283,11 @@ def _parse_pdf(path: str) -> List[Dict]:
         d = detail.get(m["applicationNumber"])
         if not d:
             continue
+        if d["tmName"]:
+            # numele din secțiunea detaliată e curățat de watermark (filtrat după
+            # font); cel din indexul-tabel poate avea litere de watermark scăpate
+            # în mijlocul cuvântului, unde _clean_cell nu le poate elimina.
+            m["tmName"] = d["tmName"]
         if d["niceClass"]:
             m["niceClass"] = d["niceClass"]
         if d["holderAddress"]:
