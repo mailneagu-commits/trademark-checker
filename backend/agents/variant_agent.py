@@ -181,8 +181,12 @@ def build_offices_and_territories(user_offices: List[str]):
                     territories_set.add(eu_c)
             territories_set.add("EM")
             offices_set.add("WO")
-        elif c in _BENELUX:
+        elif c in _BENELUX or c == "BX":
+            # BE/NL/LU nu au oficii naționale proprii — un singur oficiu comun, BOIP (Benelux),
+            # codificat "BX" în TMview. Tratat la fel ca un stat UE individual (EM+WO incluse).
             territories_set.add("BX")
+            territories_set.add("EM")
+            offices_set.add("WO")
         elif c == "WO":
             offices_set.add("WO")
         elif c == "EM":
