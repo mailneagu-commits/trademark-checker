@@ -289,11 +289,11 @@ async def debug_euipo():
             return {"label": label, "error": str(e)[:100]}
 
     queries = [
-        ("eq APPLE",        {"query": "wordMarkSpecification.verbalElement==APPLE", "size": 3}),
-        ("like %APPLE%",    {"query": "wordMarkSpecification.verbalElement=like=%APPLE%", "size": 3}),
-        ("ilike %APPLE%",   {"query": "wordMarkSpecification.verbalElement=ilike=%APPLE%", "size": 3}),
+        ("eq APPLE",        {"query": "wordMarkSpecification.verbalElement==APPLE", "size": 10}),
+        ("like %APPLE%",    {"query": "wordMarkSpecification.verbalElement=like=%APPLE%", "size": 10}),
+        ("ilike %APPLE%",   {"query": "wordMarkSpecification.verbalElement=ilike=%APPLE%", "size": 10}),
         ("no query",        {"size": 3}),
-        ("name field",      {"query": "tradeMarkName==APPLE", "size": 3}),
+        ("name field",      {"query": "tradeMarkName==APPLE", "size": 10}),
     ]
 
     loop = asyncio.get_event_loop()
