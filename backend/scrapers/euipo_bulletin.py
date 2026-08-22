@@ -351,6 +351,7 @@ def fetch_euipo_for_date(target: date) -> Tuple[List[Dict], dict]:
     if marks:
         info["status"] = "ok_api"
         info["source"] = "api"
+        info.pop("error", None)
     else:
         if "status" not in info:
             if api_error:
