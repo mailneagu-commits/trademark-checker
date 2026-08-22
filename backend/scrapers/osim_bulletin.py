@@ -23,6 +23,22 @@ RE_APP_NUM = re.compile(r'\bM[\s\-]?(\d{4})[\s\-]?(\d{4,6})\b', re.IGNORECASE)
 RE_NICE    = re.compile(r'(?:Cl(?:ase?)?\.?\s*:?\s*)((?:\d{1,2}[,;\s]+)*\d{1,2})', re.IGNORECASE)
 RE_DATE    = re.compile(r'(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})')
 
+# ── Secțiunea detaliată (coduri INID, WIPO ST.60) ──────────────────────────────
+# BOPI publică, pe lângă indexul compact, un capitol cu fiecare marcă detaliat
+# (nume+adresă solicitant, reprezentant, clasificare Viena, culori, clase Nice).
+# Pagina e pe 2 coloane, cu un watermark suprapus (font Arial-Black, distinct
+# de textul real) — filtrat la extracție, nu prin regex post-hoc.
+_WATERMARK_FONT = "Arial-Black"
+RE_D_APPNUM = re.compile(r'\(210\)\s*(M\s*\d{4}\s*\d+)', re.IGNORECASE)
+RE_D_DATE   = re.compile(r'\(151\)\s*(\d{2})\.(\d{2})\.(\d{4})')
+RE_D_732    = re.compile(r'\(732\)\s*(.*?)(?=\(740\)|\(540\)|$)', re.DOTALL)
+RE_D_740    = re.compile(r'\(740\)\s*(.*?)(?=\(540\)|$)', re.DOTALL)
+RE_D_540    = re.compile(r'\(540\)\s*(.*?)(?=\(531\)|\(591\)|\(511\)|$)', re.DOTALL)
+RE_D_531    = re.compile(r'\(531\)\s*Clasificare Viena:\s*(.*?)(?=\(591\)|\(511\)|$)', re.DOTALL)
+RE_D_591    = re.compile(r'\(591\)\s*Culori revendicate:\s*(.*?)(?=\(511\)|$)', re.DOTALL)
+RE_D_511    = re.compile(r'\(511\)\s*(.*?)$', re.DOTALL)
+RE_D_CLASS  = re.compile(r'(?:^|\n)\s*(\d{1,2})\.\s')
+
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 
@@ -99,7 +115,9 @@ def _clean_cell(val: Optional[str]) -> str:
     return " ".join(l.strip() for l in lines if l.strip())
 
 
-def _parse_pdf(path: str) -> List[Dict]:
+def _parse_index_table(path: str) -> List[Dict]:
+    """Parsează indexul compact BOPI (Nr.Crt/Nr.Depozit/Data/Titular/Denumire) —
+    dă mereu rezultate de bază, chiar dacă secțiunea detaliată nu poate fi parsată."""
     try:
         import pdfplumber
     except ImportError:
@@ -167,7 +185,142 @@ def _parse_pdf(path: str) -> List[Dict]:
     except Exception as e:
         print(f"[OSIM] PDF parse error: {e}")
 
-    print(f"[OSIM] Extracted {len(marks)} marks from {os.path.basename(path)}")
+    print(f"[OSIM] Index: {len(marks)} marks from {os.path.basename(path)}")
+    return marks
+
+
+def _norm(s: Optional[str]) -> str:
+    return re.sub(r'\s*\n\s*', ' ', s).strip(' ,') if s else ""
+
+
+def _parse_detail_block(block: str) -> Optional[Dict]:
+    m_app = RE_D_APPNUM.search(block)
+    m_date = RE_D_DATE.search(block)
+    if not m_app or not m_date:
+        return None
+    app_num = re.sub(r'\s+', '', m_app.group(1)).upper()
+    y, mo, d = m_date.group(3), m_date.group(2), m_date.group(1)
+
+    m732 = RE_D_732.search(block)
+    holder_full = _norm(m732.group(1)) if m732 else ""
+    holder_name = holder_full.split(',')[0].strip() if holder_full else ""
+
+    m740 = RE_D_740.search(block)
+    rep_full = _norm(m740.group(1)) if m740 else ""
+    rep_name = rep_full.split(',')[0].strip() if rep_full else ""
+
+    m540 = RE_D_540.search(block)
+    tm_name = _norm(m540.group(1)) if m540 else ""
+
+    m531 = RE_D_531.search(block)
+    vienna = _norm(m531.group(1)) if m531 else ""
+
+    m591 = RE_D_591.search(block)
+    colors = _norm(m591.group(1)) if m591 else ""
+
+    m511 = RE_D_511.search(block)
+    classes: List[int] = []
+    if m511:
+        classes = sorted(set(int(c) for c in RE_D_CLASS.findall(m511.group(1))))
+
+    return {
+        "applicationNumber": app_num,
+        "applicationDate":   f"{y}-{mo}-{d}T00:00:00.000Z",
+        "holderName":        holder_name,
+        "holderAddress":     holder_full,
+        "representative":    rep_name,
+        "representativeAddress": rep_full,
+        "tmName":            tm_name,
+        "viennaClasses":     vienna,
+        "colorsClaimed":     colors,
+        "niceClass":         classes,
+    }
+
+
+def _parse_detail_pages(path: str) -> Dict[str, Dict]:
+    """Parsează capitolul detaliat BOPI (coduri INID (210)(151)(732)(740)(540)
+    (531)(591)(511)) — pagină pe 2 coloane, watermark filtrat după font
+    (Arial-Black, distinct de textul real). Returnează dict cheiat pe nr. cerere."""
+    try:
+        import pdfplumber
+    except ImportError:
+        return {}
+
+    detail: Dict[str, Dict] = {}
+    try:
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                clean = page.filter(lambda o: o.get("fontname") != _WATERMARK_FONT)
+                halves = [(0, 0, page.width / 2, page.height),
+                          (page.width / 2, 0, page.width, page.height)]
+                for box in halves:
+                    text = clean.crop(box).extract_text() or ""
+                    for block in re.split(r'─{3,}', text):
+                        if "(210)" not in block:
+                            continue
+                        parsed = _parse_detail_block(block)
+                        if parsed:
+                            detail[parsed["applicationNumber"]] = parsed
+    except Exception as e:
+        print(f"[OSIM] Detail parse error: {e}")
+
+    print(f"[OSIM] Detail: {len(detail)} marks from {os.path.basename(path)}")
+    return detail
+
+
+def _parse_pdf(path: str) -> List[Dict]:
+    """Combină indexul compact (întotdeauna disponibil) cu secțiunea detaliată
+    (clase Nice, adresă solicitant, reprezentant, Viena, culori) — îmbogățește
+    fiecare marcă din index cu datele detaliate găsite după nr. cerere, și
+    adaugă orice marcă găsită doar în detaliu (index-ul poate rata rânduri la
+    întreruperi de pagină ale tabelului)."""
+    marks  = _parse_index_table(path)
+    detail = _parse_detail_pages(path)
+
+    seen = {m["applicationNumber"] for m in marks}
+    for m in marks:
+        d = detail.get(m["applicationNumber"])
+        if not d:
+            continue
+        if d["niceClass"]:
+            m["niceClass"] = d["niceClass"]
+        if d["holderAddress"]:
+            m["applicantName"]    = [d["holderName"]] if d["holderName"] else m["applicantName"]
+            m["applicantAddress"] = d["holderAddress"]
+        if d["representative"]:
+            m["representative"]        = d["representative"]
+            m["representativeAddress"] = d["representativeAddress"]
+        if d["viennaClasses"]:
+            m["viennaClasses"] = d["viennaClasses"]
+        if d["colorsClaimed"]:
+            m["colorsClaimed"] = d["colorsClaimed"]
+
+    # Mărci găsite doar în secțiunea detaliată (index-ul le-a ratat)
+    for app_num, d in detail.items():
+        if app_num in seen:
+            continue
+        marks.append({
+            "ST13":              f"RO{app_num}",
+            "tmName":            d["tmName"],
+            "tmOffice":          "RO",
+            "tradeMarkStatus":   "Filed",
+            "niceClass":         d["niceClass"],
+            "applicantName":     [d["holderName"]] if d["holderName"] else [],
+            "applicantAddress":  d["holderAddress"],
+            "representative":    d["representative"],
+            "representativeAddress": d["representativeAddress"],
+            "viennaClasses":     d["viennaClasses"],
+            "colorsClaimed":     d["colorsClaimed"],
+            "applicationDate":   d["applicationDate"],
+            "applicationNumber": app_num,
+            "registrationDate":  None,
+            "expiryDate":        None,
+            "markImageURI":      None,
+            "goodAndServices":   [],
+            "_source":           "osim_bopi_detail",
+        })
+
+    print(f"[OSIM] Combined: {len(marks)} marks from {os.path.basename(path)}")
     return marks
 
 
