@@ -28,19 +28,35 @@ def _get_access_token(force_refresh: bool = False) -> str:
     if not force_refresh and _token_cache["access_token"] and now < _token_cache["expires_at"] - 60:
         return _token_cache["access_token"]
 
+    # cas-server-webapp (Apereo CAS) autentifică de obicei clientul confidențial
+    # via HTTP Basic Auth (RFC 6749 §2.3.1), nu prin client_id/secret în body.
+    # Încercăm Basic Auth întâi; dacă eșuează, revenim la varianta cu body.
     resp = requests.post(
         EUIPO_TOKEN_URL,
+        auth=(EUIPO_CLIENT_ID, EUIPO_CLIENT_SECRET),
         headers={"Content-Type": "application/x-www-form-urlencoded"},
-        data={
-            "client_id":     EUIPO_CLIENT_ID,
-            "client_secret": EUIPO_CLIENT_SECRET,
-            "grant_type":    "client_credentials",
-            "scope":         "uid",
-        },
+        data={"grant_type": "client_credentials", "scope": "uid"},
         timeout=15,
     )
     if resp.status_code != 200:
-        raise Exception(f"EUIPO OAuth token error {resp.status_code}: {resp.text[:200]}")
+        resp_body = requests.post(
+            EUIPO_TOKEN_URL,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            data={
+                "client_id":     EUIPO_CLIENT_ID,
+                "client_secret": EUIPO_CLIENT_SECRET,
+                "grant_type":    "client_credentials",
+                "scope":         "uid",
+            },
+            timeout=15,
+        )
+        if resp_body.status_code == 200:
+            resp = resp_body
+        else:
+            raise Exception(
+                f"EUIPO OAuth token error — basic_auth={resp.status_code}:{resp.text[:150]} "
+                f"| body_params={resp_body.status_code}:{resp_body.text[:150]}"
+            )
 
     data  = resp.json()
     token = data["access_token"]
