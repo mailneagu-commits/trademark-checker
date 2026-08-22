@@ -666,7 +666,7 @@
       </div>
 
       <!-- Date pickers row -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px;" class="bulletin-grid">
+      <div style="display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:12px;" class="bulletin-grid">
 
         <!-- OSIM -->
         <div style="background:#fff;border:1.5px solid #d0d9ee;border-radius:8px;padding:14px;">
@@ -2131,17 +2131,17 @@ function renderBulletinMarks(source, data) {
       : (m.representatives || []).map(r => r.name).filter(Boolean).join(", ") || "—";
     const feature  = m.markFeature || "—";
     const img      = m.markImageURI
-      ? `<img src="${m.markImageURI}" alt="" style="max-height:36px;max-width:70px;object-fit:contain;" loading="lazy" />`
+      ? `<img src="${m.markImageURI}" alt="" style="max-height:52px;max-width:110px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
       : "—";
     return `<tr>
-      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;text-align:center;">${img}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-weight:600;">${m.tmName || "—"}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${holder}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${m.applicationNumber || "—"}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${date}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${classes}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${reps}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${feature}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;text-align:center;">${img}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-weight:600;">${m.tmName || "—"}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${holder}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${m.applicationNumber || "—"}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${date}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${classes}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${reps}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${feature}</td>
     </tr>`;
   }).join("");
 
@@ -2152,7 +2152,7 @@ function renderBulletinMarks(source, data) {
         oninput="filterBulletinMarks('${source}')"
         style="flex:1;padding:5px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.8rem;max-width:280px;" />
     </div>
-    <div style="max-height:320px;overflow-y:auto;border:1px solid #eef1f6;border-radius:6px;">
+    <div style="max-height:520px;overflow-y:auto;overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;">
       <table id="${tableId}" style="width:100%;border-collapse:collapse;font-size:.82rem;">
         <thead style="position:sticky;top:0;background:#f0f4fa;">
           <tr>
