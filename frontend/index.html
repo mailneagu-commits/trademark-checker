@@ -2126,7 +2126,9 @@ function renderBulletinMarks(source, data) {
     const holder   = (m.applicantName || []).join(", ") || "—";
     const date     = (m.applicationDate || "").slice(0, 10);
     const classes  = (m.niceClass || []).join(", ") || "—";
-    const reps     = (m.representatives || []).map(r => r.name).filter(Boolean).join(", ") || "—";
+    const reps     = m.representative
+      ? m.representative
+      : (m.representatives || []).map(r => r.name).filter(Boolean).join(", ") || "—";
     const feature  = m.markFeature || "—";
     return `<tr>
       <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-weight:600;">${m.tmName || "—"}</td>
