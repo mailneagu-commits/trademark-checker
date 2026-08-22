@@ -261,16 +261,43 @@ def get_bulletin_marks(source: str, date: str):
 
 
 @router.get("/bulletin-image")
-def get_bulletin_image(source: str, slug: str, app_num: str):
-    """Servește imaginea unei mărci figurative, extrasă din buletinul OSIM la parsare."""
-    if source != "osim":
-        raise HTTPException(400, "Imagini disponibile momentan doar pentru sursa 'osim'.")
-    from scrapers.osim_bulletin import get_bulletin_image_path
-    path = get_bulletin_image_path(slug, app_num)
-    if not path:
-        raise HTTPException(404, "Imaginea nu a fost găsită (posibil marcă doar textuală, sau buletinul nu a fost încă parsat).")
-    from fastapi.responses import FileResponse
-    return FileResponse(path, media_type="image/png")
+def get_bulletin_image(source: str, app_num: str, slug: Optional[str] = None):
+    """Servește imaginea unei mărci figurative.
+    - osim: extrasă local din PDF-ul buletinului la parsare (necesită slug).
+    - euipo: preluată live prin API-ul EUIPO autentificat (Bearer + X-IBM-Client-Id) —
+      NU prin URL-ul public TMview, care nu are încă imaginea pentru mărci proaspăt
+      depuse (întoarce un placeholder identic pentru toate, 1458 bytes)."""
+    from fastapi.responses import FileResponse, Response
+
+    if source == "osim":
+        if not slug:
+            raise HTTPException(400, "Parametrul 'slug' e obligatoriu pentru sursa 'osim'.")
+        from scrapers.osim_bulletin import get_bulletin_image_path
+        path = get_bulletin_image_path(slug, app_num)
+        if not path:
+            raise HTTPException(404, "Imaginea nu a fost găsită (posibil marcă doar textuală, sau buletinul nu a fost încă parsat).")
+        return FileResponse(path, media_type="image/png")
+
+    if source == "euipo":
+        import requests
+        from agents.euipo_agent import EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, euipo_available, _get_access_token
+        if not euipo_available():
+            raise HTTPException(503, "EUIPO API neconfigurat.")
+        try:
+            token = _get_access_token()
+            r = requests.get(
+                f"{EUIPO_SEARCH_URL}/{app_num}/image/thumbnail",
+                headers={"Authorization": f"Bearer {token}", "X-IBM-Client-Id": EUIPO_CLIENT_ID},
+                timeout=15,
+            )
+        except Exception as e:
+            raise HTTPException(502, f"Eroare la preluarea imaginii EUIPO: {e}")
+        if r.status_code != 200:
+            raise HTTPException(404 if r.status_code == 404 else 502,
+                                 f"EUIPO nu a returnat imaginea (status {r.status_code}).")
+        return Response(content=r.content, media_type=r.headers.get("content-type", "image/jpeg"))
+
+    raise HTTPException(400, "source trebuie să fie 'osim' sau 'euipo'")
 
 
 @router.post("/bulletin-fetch")

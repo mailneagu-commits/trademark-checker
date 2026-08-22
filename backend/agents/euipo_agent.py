@@ -89,7 +89,10 @@ def _to_internal(tm: dict) -> dict:
         "applicationNumber": app_num,
         "registrationDate": iso(tm.get("registrationDate")),
         "expiryDate":       iso(tm.get("expiryDate")),
-        "markImageURI":     f"https://www.tmdn.org/tmview/api/trademark/thumbnail/EM{app_num}" if has_image else None,
+        # Proxy prin API-ul EUIPO autentificat (/api/monitor/bulletin-image), nu URL-ul
+        # public TMview — acela întoarce un placeholder pentru mărci proaspăt depuse,
+        # a căror imagine nu a fost încă procesată/publicată în sistemul TMview.
+        "markImageURI":     f"/api/monitor/bulletin-image?source=euipo&app_num={app_num}" if has_image else None,
         "goodAndServices":  [],
         "_source":          "euipo_api",
         # Câmpuri suplimentare, etichetate după codul INID (WIPO ST.60) corespunzător.
