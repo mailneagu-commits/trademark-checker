@@ -515,7 +515,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
                 print(f"[TMVIEW] warmup GET error: {type(e).__name__}: {e}")
             await asyncio.sleep(0.5)
 
-        MAX_TOTAL = 100
+        MAX_TOTAL = 200
         seen: set = set()
         all_marks: List[Dict] = []
 
