@@ -259,7 +259,8 @@ async def reset_circuit_breaker():
 async def debug_euipo():
     """Testează diferite query-uri EUIPO API."""
     import asyncio, requests as _req
-    from agents.euipo_agent import EUIPO_CLIENT_ID, EUIPO_CLIENT_SECRET, EUIPO_SEARCH_URL, euipo_available
+    from agents.euipo_agent import (EUIPO_CLIENT_ID, EUIPO_SEARCH_URL, EUIPO_TOKEN_URL,
+                                     euipo_available, _get_access_token)
     result = {
         "configured": euipo_available(),
         "client_id_prefix": EUIPO_CLIENT_ID[:8] if EUIPO_CLIENT_ID else None,
@@ -267,9 +268,16 @@ async def debug_euipo():
     if not euipo_available():
         return result
 
+    try:
+        token = _get_access_token(force_refresh=True)
+        result["oauth_token"] = "obtained (" + token[:10] + "...)"
+    except Exception as e:
+        result["oauth_token_error"] = f"{EUIPO_TOKEN_URL} -> {str(e)[:300]}"
+        return result
+
     hdrs = {
-        "X-IBM-Client-Id":     EUIPO_CLIENT_ID,
-        "X-IBM-Client-Secret": EUIPO_CLIENT_SECRET,
+        "Authorization":   f"Bearer {token}",
+        "X-IBM-Client-Id": EUIPO_CLIENT_ID,
         "Accept": "application/json",
     }
 

@@ -1,10 +1,12 @@
 import os
+import time
 import requests
 from typing import List, Dict
 
 EUIPO_CLIENT_ID     = os.environ.get("EUIPO_CLIENT_ID", "").strip()
 EUIPO_CLIENT_SECRET = os.environ.get("EUIPO_CLIENT_SECRET", "").strip()
 EUIPO_SEARCH_URL    = "https://api.euipo.europa.eu/trademark-search/trademarks"
+EUIPO_TOKEN_URL     = "https://auth.euipo.europa.eu/oidc/accessToken"
 
 if EUIPO_CLIENT_ID:
     print(f"[EUIPO] Configured: {EUIPO_CLIENT_ID[:8]}...")
@@ -14,6 +16,37 @@ else:
 
 def euipo_available() -> bool:
     return bool(EUIPO_CLIENT_ID and EUIPO_CLIENT_SECRET)
+
+
+# API-ul EUIPO cere OAuth2 (client_credentials) pe lângă client id/secret —
+# fără Bearer token, gateway-ul respinge cu 401 "cannot pass security checks".
+_token_cache = {"access_token": None, "expires_at": 0.0}
+
+
+def _get_access_token(force_refresh: bool = False) -> str:
+    now = time.time()
+    if not force_refresh and _token_cache["access_token"] and now < _token_cache["expires_at"] - 60:
+        return _token_cache["access_token"]
+
+    resp = requests.post(
+        EUIPO_TOKEN_URL,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data={
+            "client_id":     EUIPO_CLIENT_ID,
+            "client_secret": EUIPO_CLIENT_SECRET,
+            "grant_type":    "client_credentials",
+            "scope":         "uid",
+        },
+        timeout=15,
+    )
+    if resp.status_code != 200:
+        raise Exception(f"EUIPO OAuth token error {resp.status_code}: {resp.text[:200]}")
+
+    data  = resp.json()
+    token = data["access_token"]
+    _token_cache["access_token"] = token
+    _token_cache["expires_at"]   = now + data.get("expires_in", 28800)
+    return token
 
 
 def _to_internal(tm: dict) -> dict:
@@ -46,11 +79,12 @@ def search_euipo(name: str, nice_classes: List[str]) -> List[Dict]:
     if not euipo_available():
         return []
 
-    headers = {
-        "X-IBM-Client-Id":     EUIPO_CLIENT_ID,
-        "X-IBM-Client-Secret": EUIPO_CLIENT_SECRET,
-        "Accept": "application/json",
-    }
+    def _headers(token: str) -> dict:
+        return {
+            "Authorization":   f"Bearer {token}",
+            "X-IBM-Client-Id": EUIPO_CLIENT_ID,
+            "Accept": "application/json",
+        }
 
     nc_ints = [str(int(c)) for c in nice_classes if c.isdigit()]
     nc_filter = f";niceClasses=in=({','.join(nc_ints)})" if nc_ints else ""
@@ -63,14 +97,16 @@ def search_euipo(name: str, nice_classes: List[str]) -> List[Dict]:
 
     seen: set = set()
     all_marks: List[Dict] = []
+    token = _get_access_token()
 
     for q in queries:
-        resp = requests.get(
-            EUIPO_SEARCH_URL,
-            headers=headers,
-            params={"query": q + nc_filter, "size": 100, "page": 0},
-            timeout=15,
-        )
+        params = {"query": q + nc_filter, "size": 100, "page": 0}
+        resp = requests.get(EUIPO_SEARCH_URL, headers=_headers(token), params=params, timeout=15)
+        if resp.status_code == 401:
+            # Token expirat/invalid — reîmprospătăm o dată și reîncercăm.
+            token = _get_access_token(force_refresh=True)
+            resp = requests.get(EUIPO_SEARCH_URL, headers=_headers(token), params=params, timeout=15)
+
         if resp.status_code == 200:
             data = resp.json()
             items = (data.get("trademarks") or data.get("items") or
