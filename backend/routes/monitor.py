@@ -239,14 +239,20 @@ def get_bulletin_marks(source: str, date: str):
         marks = _parse_pdf(pdf)
 
     elif source == "euipo":
-        from scrapers.euipo_bulletin import _prev_working_day, _date_slug, _parse_bulletin_xml, CACHE_DIR
+        from scrapers.euipo_bulletin import _prev_working_day, _date_slug, _parse_bulletin_xml, CACHE_DIR, fetch_euipo_for_date
         import os
         working = _prev_working_day(td)
         slug    = _date_slug(working)
         xml     = os.path.join(CACHE_DIR, f"{slug}.xml")
-        if not os.path.exists(xml):
-            raise HTTPException(404, "Buletinul EUIPO pentru această dată nu a fost descărcat încă.")
-        marks = _parse_bulletin_xml(xml)
+        if os.path.exists(xml):
+            marks = _parse_bulletin_xml(xml)
+        else:
+            # Buletinul oficial (XML) necesită autentificare portal — indisponibil.
+            # Aceleași mărci pe care le-a raportat fetch-ul inițial vin prin API,
+            # nu sunt salvate în cache local — le luăm din nou de acolo.
+            marks, info = fetch_euipo_for_date(working)
+            if not marks and info.get("status") not in ("ok_api",):
+                raise HTTPException(404, info.get("error") or "Buletinul EUIPO pentru această dată nu a fost descărcat încă.")
 
     else:
         raise HTTPException(400, "source trebuie să fie 'osim' sau 'euipo'")
