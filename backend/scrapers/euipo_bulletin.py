@@ -286,12 +286,24 @@ def _parse_bulletin_pdf(path: str) -> List[Dict]:
 
     marks: List[Dict] = []
     seen: set = set()
+    skipped_stubs = 0
     for i, pos in enumerate(starts):
         end = starts[i + 1] if i + 1 < len(starts) else len(combined)
         entry = _parse_euipo_entry(combined[pos:end])
-        if entry and entry["applicationNumber"] not in seen:
-            seen.add(entry["applicationNumber"])
-            marks.append(entry)
+        if not entry or entry["applicationNumber"] in seen:
+            continue
+        # Intrări "Part A.2" — corecturi/trimiteri către o publicare anterioară
+        # (cod 400, ex. "11/11/2024 - 2024/216 - A.1"), fără (541)/(731) proprii,
+        # deci fără nume de marcă și fără solicitant. Nu sunt cereri noi publicate
+        # aici — datele reale au apărut deja în buletinul referit. Fără nume,
+        # nu pot fi comparate prin similaritate, deci nu au valoare de monitorizare.
+        if not entry["tmName"] and not entry["applicantName"]:
+            skipped_stubs += 1
+            continue
+        seen.add(entry["applicationNumber"])
+        marks.append(entry)
+    if skipped_stubs:
+        print(f"[EUIPO Bulletin] Skipped {skipped_stubs} correction-reference stubs (Part A.2, no name/applicant)")
 
     print(f"[EUIPO Bulletin] Extracted {len(marks)} marks from PDF ({len(pages_text)} pages)")
     return marks
