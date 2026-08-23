@@ -136,9 +136,9 @@ def _find_bulletin_for_date(target: date) -> Optional[Dict]:
 
 # ── Bulletin download + parse ─────────────────────────────────────────────────
 
-def _download_bulletin(value: str, slug: str, lang: str = "EN") -> Optional[str]:
+def _download_bulletin(value: str, slug: str, lang: str = "EN") -> Tuple[Optional[str], Optional[str]]:
     """
-    Descarcă buletinul oficial (PDF) și returnează calea locală.
+    Descarcă buletinul oficial (PDF) și returnează (cale_locală, eroare).
     URL: /copla/bulletin/data/download/ctm/{value}/{lang} — public, fără autentificare
     (verificat manual: minuscule "ctm", nu "CTM" — cu majuscule dă 404 și părea o
     problemă de SSO, dar era doar case-sensitivity în URL).
@@ -146,27 +146,30 @@ def _download_bulletin(value: str, slug: str, lang: str = "EN") -> Optional[str]
     local = os.path.join(CACHE_DIR, f"{slug}.pdf")
     if os.path.exists(local):
         print(f"[EUIPO Bulletin] Using cached {local}")
-        return local
+        return local, None
 
     url = f"{BULLETIN_DL_URL}/{value}/{lang}"
     print(f"[EUIPO Bulletin] Downloading {url}")
     try:
         r = requests.get(url, headers=_HEADERS, timeout=REQUEST_TIMEOUT, stream=True)
         if r.status_code != 200:
+            err = f"http_{r.status_code}"
             print(f"[EUIPO Bulletin] Download {url} → {r.status_code}")
-            return None
+            return None, err
         content = r.content
         if not content or content[:5] != b"%PDF-":
+            err = f"not_pdf: {content[:80]!r}"
             print(f"[EUIPO Bulletin] Răspuns neașteptat (nu PDF): {content[:80]}")
-            return None
+            return None, err
         with open(local, "wb") as f:
             f.write(content)
         size_kb = len(content) // 1024
         print(f"[EUIPO Bulletin] Saved {local} ({size_kb} KB)")
-        return local
+        return local, None
     except Exception as e:
+        err = f"{type(e).__name__}: {e}"
         print(f"[EUIPO Bulletin] Download error: {e}")
-        return None
+        return None, err
 
 
 _RE_EUIPO_210   = re.compile(r'\b210\s+(\d{8,9})\b')
@@ -364,7 +367,7 @@ def fetch_euipo_for_date(target: date) -> Tuple[List[Dict], dict]:
     if bulletin:
         info["bulletin_id"]   = bulletin["id"]
         info["bulletin_date"] = bulletin["date"].isoformat()
-        local = _download_bulletin(bulletin["value"], slug)
+        local, dl_error = _download_bulletin(bulletin["value"], slug)
         if local:
             marks = _parse_bulletin_pdf(local)
             if marks:
@@ -377,7 +380,7 @@ def fetch_euipo_for_date(target: date) -> Tuple[List[Dict], dict]:
                 return marks, info
             info["pdf_attempt"] = "parse_error: 0 marks extracted from downloaded PDF"
         else:
-            info["pdf_attempt"] = "download_failed (see server logs for exact HTTP status/error)"
+            info["pdf_attempt"] = f"download_failed: {dl_error}"
 
     # Fallback: EUIPO Search API
     marks, api_error = _fetch_via_api(working)
