@@ -381,10 +381,35 @@ def is_fetch_in_progress(target: date) -> bool:
     return _date_slug(working) in _in_progress
 
 
-def fetch_euipo_for_date(target: date) -> Tuple[List[Dict], dict]:
+def should_run_sync(target: date, cooldown_seconds: int = 300) -> bool:
+    """True dacă fetch_euipo_for_date() poate rula sincron (rapid) — fie PDF-ul
+    e deja în cache, fie am mai încercat recent și avem deja un rezultat (chiar
+    via fallback API) în processed.json. Fără asta, fiecare cerere după un
+    fallback API reușit ar porni din nou un job de fundal pentru PDF, la
+    infinit, pentru că is_bulletin_cached() singur nu vede fallback-ul API."""
+    if is_bulletin_cached(target):
+        return True
+    working = _prev_working_day(target)
+    slug    = _date_slug(working)
+    entry   = _load_processed().get(slug)
+    if not entry or "at" not in entry:
+        return False
+    try:
+        age = (datetime.utcnow() - datetime.fromisoformat(entry["at"])).total_seconds()
+    except ValueError:
+        return False
+    return age < cooldown_seconds
+
+
+def fetch_euipo_for_date(target: date, skip_pdf_download: bool = False) -> Tuple[List[Dict], dict]:
     """
     Returnează mărcile EUIPO din buletinul pentru data specificată.
     Încearcă mai întâi COPLA bulletin API; fallback pe EUIPO Search API.
+
+    skip_pdf_download: sare peste încercarea de descărcare PDF (lentă, 15-30 MB,
+    conexiune instabilă) dacă PDF-ul nu e deja în cache — direct la API, rapid.
+    Folosit când tocmai am încercat descărcarea recent (vezi should_run_sync) și
+    nu vrem să repetăm cele 5 încercări la fiecare cerere sincronă.
     """
     processed = _load_processed()
     working   = _prev_working_day(target)
@@ -396,9 +421,9 @@ def fetch_euipo_for_date(target: date) -> Tuple[List[Dict], dict]:
         "working_day": working.isoformat(),
     }
 
-    # Încearcă COPLA bulletin
+    # Încearcă COPLA bulletin (sau folosește direct PDF-ul deja în cache)
     bulletin = _find_bulletin_for_date(working)
-    if bulletin:
+    if bulletin and (not skip_pdf_download or is_bulletin_cached(target)):
         info["bulletin_id"]   = bulletin["id"]
         info["bulletin_date"] = bulletin["date"].isoformat()
         local, dl_error = _download_bulletin(bulletin["value"], slug)

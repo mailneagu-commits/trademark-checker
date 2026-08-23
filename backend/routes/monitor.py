@@ -365,10 +365,11 @@ async def trigger_bulletin_fetch(
 
     if source in ("euipo", "both"):
         from datetime import date as _date_type
-        from scrapers.euipo_bulletin import is_bulletin_cached, is_fetch_in_progress, _in_progress, _date_slug, _prev_working_day
+        from scrapers.euipo_bulletin import should_run_sync, is_bulletin_cached, is_fetch_in_progress, _in_progress, _date_slug, _prev_working_day
         target_for_check = td or _date_type.today()
+        run_sync = should_run_sync(target_for_check) if td else True
 
-        if td and not is_bulletin_cached(target_for_check):
+        if td and not run_sync:
             # Nu e în cache — descărcarea (15-30 MB, conexiune instabilă) poate
             # depăși limita de 300s a gateway-ului Railway dacă așteptăm sincron.
             # O pornim în fundal și răspundem imediat; clientul verifică progresul
@@ -393,7 +394,10 @@ async def trigger_bulletin_fetch(
                                     "message": "Descărcare pornită în fundal — poate dura 1-3 minute. Verificați din nou peste ~30s."}
         else:
             if td:
-                marks, info = await loop.run_in_executor(None, fetch_euipo_for_date, td)
+                # dacă am rulat sincron doar pe motiv de cooldown (nu PDF cache real),
+                # sărim peste încercarea de descărcare — mergem direct la API, rapid.
+                skip_pdf = not is_bulletin_cached(target_for_check)
+                marks, info = await loop.run_in_executor(None, fetch_euipo_for_date, td, skip_pdf)
             else:
                 marks = await loop.run_in_executor(None, fetch_latest_euipo)
                 info  = {}
