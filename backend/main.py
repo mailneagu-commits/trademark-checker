@@ -281,22 +281,6 @@ async def debug_euipo():
         "Accept": "application/json",
     }
 
-    # Test: solicitant pe marcă RECEIVED, via detail endpoint și via search cu fields explicit
-    test_app = "019412470"
-    try:
-        r = _req.get(f"{EUIPO_SEARCH_URL}/{test_app}", headers=hdrs, timeout=10)
-        result["detail_test"] = {"status": r.status_code, "body": r.text[:800]}
-    except Exception as e:
-        result["detail_test"] = {"error": str(e)[:200]}
-    try:
-        r = _req.get(EUIPO_SEARCH_URL, headers=hdrs, params={
-            "query": f"applicationNumber=={test_app}",
-            "fields": "trademarks(applicationNumber,status,applicants(identifier,office,name))",
-        }, timeout=10)
-        result["search_fields_test"] = {"status": r.status_code, "body": r.text[:800]}
-    except Exception as e:
-        result["search_fields_test"] = {"error": str(e)[:200]}
-
     def _try(label, params):
         try:
             r = _req.get(EUIPO_SEARCH_URL, headers=hdrs, params=params, timeout=10)
