@@ -2,6 +2,7 @@
 Monitoring router — watch item CRUD, Excel import/template, manual run, history.
 """
 import io
+import os
 import re
 from datetime import datetime
 from typing import List, Optional
@@ -36,6 +37,7 @@ class WatchItemOut(BaseModel):
     offices:            List[str]
     notification_email: str
     frequency:          str
+    reference_image:    Optional[str] = None
     active:             bool
     created_at:         datetime
     last_checked_at:    Optional[datetime]
@@ -136,11 +138,13 @@ def download_template():
     ws.title = "Mărci de monitorizat"
 
     # Ordinea coloanelor urmează codul INID (WIPO ST.60) numeric ascendent, pentru
-    # câmpurile care au un cod corespunzător: (511) Clase NICE, (540) Denumire Marcă,
-    # (731) Titular — apoi câmpurile specifice aplicației, fără cod INID.
+    # câmpurile care au un cod corespunzător: (511) Clase NICE, (540) Denumire Marcă
+    # + Imagine (aceeași reprezentare a mărcii, text și grafic), (731) Titular —
+    # apoi câmpurile specifice aplicației, fără cod INID.
     headers = [
         "(511) Clase NICE (separate prin virgulă)*",
         "(540) Denumire Marcă*",
+        "(540) Imagine (opțional — logo de referință)",
         "(731) Titular",
         "Teritorii (separate prin virgulă)*",
         "Email notificare*",
@@ -153,7 +157,7 @@ def download_template():
         left=Side(style="thin"), right=Side(style="thin"),
         top=Side(style="thin"), bottom=Side(style="thin"),
     )
-    col_widths = [35, 30, 30, 30, 35, 30]
+    col_widths = [35, 30, 30, 30, 30, 35, 30]
 
     for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
         cell            = ws.cell(row=1, column=col_idx, value=header)
@@ -164,9 +168,10 @@ def download_template():
         ws.column_dimensions[cell.column_letter].width = width
 
     ws.row_dimensions[1].height = 36
+    ws.row_dimensions[2].height = 60   # loc pentru o imagine mică în celula exemplu
 
     # Example row
-    example = ["35, 42", "ACME", "ACME România SRL", "RO, EM", "office@firma.ro", "weekly"]
+    example = ["35, 42", "ACME", "", "ACME România SRL", "RO, EM", "office@firma.ro", "weekly"]
     example_fill = PatternFill("solid", fgColor="EBF5FB")
     for col_idx, val in enumerate(example, start=1):
         cell           = ws.cell(row=2, column=col_idx, value=val)
@@ -179,7 +184,11 @@ def download_template():
     ws.cell(row=3, column=1).font = Font(italic=True, color="888888")
     ws.cell(row=4, column=1, value="Teritorii acceptate: RO, EM, EU, DE, FR, IT, ES, UK, US, WO (sau orice cod de țară din TMview)")
     ws.cell(row=4, column=1).font = Font(italic=True, color="888888")
-    ws.merge_cells("A4:F4")
+    ws.merge_cells("A4:G4")
+    ws.cell(row=5, column=1,
+            value='Imagine: inserați logo-ul direct în celulă (Excel: Insert → Pictures → Place in Cell), în dreptul mărcii — folosit pentru comparație vizuală cu mărcile din buletine.')
+    ws.cell(row=5, column=1).font = Font(italic=True, color="888888")
+    ws.merge_cells("A5:G5")
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -258,6 +267,17 @@ def get_bulletin_marks(source: str, date: str):
         raise HTTPException(400, "source trebuie să fie 'osim' sau 'euipo'")
 
     return {"source": source, "date": date, "total": len(marks), "marks": marks}
+
+
+@router.get("/watch-image/{filename}")
+def get_watch_image(filename: str):
+    """Servește logo-ul de referință al unui watch item, inserat la import Excel."""
+    from fastapi.responses import FileResponse
+    safe = re.sub(r'[^a-fA-F0-9]', '', filename.rsplit(".", 1)[0]) + ".png"
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "watch_images", safe)
+    if not os.path.exists(path):
+        raise HTTPException(404, "Imaginea nu a fost găsită.")
+    return FileResponse(path, media_type="image/png")
 
 
 @router.get("/bulletin-image")
@@ -413,12 +433,16 @@ async def trigger_bulletin_fetch(
     return result
 
 
+WATCH_IMAGE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "watch_images")
+
+
 @router.post("/import")
 def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Fișierul trebuie să fie .xlsx sau .xls")
 
     from openpyxl import load_workbook
+    import uuid
 
     content = file.file.read()
     try:
@@ -431,23 +455,37 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
     skipped   = []
     errors    = []
 
+    # Imaginile inserate direct în celule (logo de referință, coloana (540) Imagine) —
+    # cheiate pe rândul (1-indexat) în care sunt ancorate, ca să le potrivim cu rândul
+    # de date corespunzător.
+    images_by_row: dict = {}
+    for img in getattr(ws, "_images", []):
+        try:
+            row_num = img.anchor._from.row + 1
+            data    = img.ref.getvalue() if hasattr(img.ref, "getvalue") else None
+            if data:
+                images_by_row[row_num] = data
+        except Exception:
+            continue
+
     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        if not row or all(v is None for v in row):
+        has_image = row_idx in images_by_row
+        if (not row or all(v is None for v in row)) and not has_image:
             continue
 
         # Skip note rows (first cell starts with "*" or is italic note)
         first = str(row[0] or "").strip()
-        if first.startswith("*") or first.startswith("Teritorii") or first.startswith("câmp"):
+        if first.startswith("*") or first.startswith("Teritorii") or first.startswith("Imagine:") or first.startswith("câmp"):
             continue
 
         # Ordinea coincide cu antetul: (511) Clase NICE, (540) Denumire Marcă,
-        # (731) Titular, apoi câmpurile fără cod INID.
+        # (540) Imagine, (731) Titular, apoi câmpurile fără cod INID.
         nice_classes_raw   = str(row[0] or "").strip() if len(row) > 0 else ""
         trademark_name     = str(row[1] or "").strip() if len(row) > 1 else ""
-        holder_name        = str(row[2] or "").strip() if len(row) > 2 else ""
-        offices_raw        = str(row[3] or "").strip() if len(row) > 3 else ""
-        notification_email = str(row[4] or "").strip() if len(row) > 4 else ""
-        frequency_raw      = str(row[5] or "").strip() if len(row) > 5 else "weekly"
+        holder_name        = str(row[3] or "").strip() if len(row) > 3 else ""
+        offices_raw        = str(row[4] or "").strip() if len(row) > 4 else ""
+        notification_email = str(row[5] or "").strip() if len(row) > 5 else ""
+        frequency_raw      = str(row[6] or "").strip() if len(row) > 6 else "weekly"
 
         if not trademark_name:
             skipped.append({"row": row_idx, "reason": "Denumire marcă lipsă"})
@@ -464,6 +502,14 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
         offices   = _parse_offices(offices_raw) or ["RO", "EM"]
         frequency = _parse_frequency(frequency_raw)
 
+        reference_image = None
+        if has_image:
+            os.makedirs(WATCH_IMAGE_DIR, exist_ok=True)
+            filename = f"{uuid.uuid4().hex}.png"
+            with open(os.path.join(WATCH_IMAGE_DIR, filename), "wb") as f:
+                f.write(images_by_row[row_idx])
+            reference_image = filename
+
         item = WatchItem(
             trademark_name     = trademark_name,
             holder_name        = holder_name,
@@ -471,6 +517,7 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
             offices            = offices,
             notification_email = notification_email,
             frequency          = frequency,
+            reference_image    = reference_image,
         )
         db.add(item)
         imported.append({"row": row_idx, "trademark": trademark_name, "email": notification_email})

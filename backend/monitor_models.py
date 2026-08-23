@@ -13,6 +13,7 @@ class WatchItem(Base):
     offices            = Column(JSON, default=list)   # ["RO","EM"]
     notification_email = Column(String, nullable=False)
     frequency          = Column(String, default="weekly")  # daily / weekly / monthly
+    reference_image    = Column(String, nullable=True)  # nume fișier logo de referință (import Excel), pentru comparație vizuală
     active             = Column(Boolean, default=True)
     created_at         = Column(DateTime, default=datetime.utcnow)
     last_checked_at    = Column(DateTime, nullable=True)
