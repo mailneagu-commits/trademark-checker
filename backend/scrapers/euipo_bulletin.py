@@ -149,9 +149,14 @@ def _download_bulletin(value: str, slug: str, lang: str = "EN") -> Tuple[Optiona
         return local, None
 
     url = f"{BULLETIN_DL_URL}/{value}/{lang}"
+    # Transferul mare (15-20 MB) se întrerupe intermitent la conexiune (verificat: ~40-50%
+    # rată de succes per încercare, chiar și local — nu e blocaj, doar instabilitate de
+    # rețea pe fișiere mari). Compensăm cu mai multe încercări + validare reală de PDF
+    # complet (marker %%EOF), nu doar primii octeți.
+    max_attempts = 5
     last_err: Optional[str] = None
-    for attempt in range(1, 4):
-        print(f"[EUIPO Bulletin] Downloading {url} (attempt {attempt}/3)")
+    for attempt in range(1, max_attempts + 1):
+        print(f"[EUIPO Bulletin] Downloading {url} (attempt {attempt}/{max_attempts})")
         try:
             r = requests.get(url, headers=_HEADERS, timeout=REQUEST_TIMEOUT, stream=True)
             if r.status_code != 200:
@@ -165,6 +170,10 @@ def _download_bulletin(value: str, slug: str, lang: str = "EN") -> Tuple[Optiona
             if not content or content[:5] != b"%PDF-":
                 last_err = f"not_pdf: {content[:80]!r}"
                 print(f"[EUIPO Bulletin] Răspuns neașteptat (nu PDF): {content[:80]}")
+                continue
+            if b"%%EOF" not in content[-2048:]:
+                last_err = f"truncated: {len(content)} bytes, no %%EOF trailer"
+                print(f"[EUIPO Bulletin] PDF trunchiat (attempt {attempt}): {len(content)} bytes, fără %%EOF")
                 continue
             with open(local, "wb") as f:
                 f.write(content)
