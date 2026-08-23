@@ -293,6 +293,42 @@ def get_bulletin_image(source: str, app_num: str, slug: Optional[str] = None):
     raise HTTPException(400, "source trebuie să fie 'osim' sau 'euipo'")
 
 
+@router.post("/bulletin-upload")
+async def upload_bulletin_pdf(bulletin_id: str, file: UploadFile = File(...)):
+    """
+    Încarcă manual un PDF de buletin EUIPO deja descărcat (ex. prin browser, când
+    descărcarea directă de pe server eșuează din cauza instabilității conexiunii pe
+    fișiere mari). bulletin_id: formatul "YYYY/NNN" (ex. "2026/158").
+    Salvează în cache-ul local, exact unde l-ar fi pus fetch_euipo_for_date() —
+    următoarea cerere pentru acea dată îl folosește direct, fără să mai descarce.
+    """
+    import os
+    from scrapers.euipo_bulletin import CACHE_DIR, _fetch_bulletin_list, _date_slug
+
+    m = re.match(r'^(\d{4})/(\d+)$', bulletin_id.strip())
+    if not m:
+        raise HTTPException(400, 'bulletin_id trebuie în formatul "YYYY/NNN", ex. "2026/158"')
+    year = int(m.group(1))
+
+    bulletins = _fetch_bulletin_list(year)
+    match = next((b for b in bulletins if b["id"] == bulletin_id), None)
+    if not match:
+        raise HTTPException(404, f"Buletinul {bulletin_id} nu a fost găsit în lista oficială EUIPO pentru {year}.")
+
+    content = await file.read()
+    if not content or content[:5] != b"%PDF-" or b"%%EOF" not in content[-2048:]:
+        raise HTTPException(400, "Fișierul nu pare un PDF complet și valid (lipsește marcajul %%EOF).")
+
+    slug  = _date_slug(match["date"])
+    local = os.path.join(CACHE_DIR, f"{slug}.pdf")
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    with open(local, "wb") as f:
+        f.write(content)
+
+    return {"status": "saved", "bulletin_id": bulletin_id, "bulletin_date": match["date"].isoformat(),
+            "slug": slug, "size_kb": len(content) // 1024}
+
+
 @router.post("/bulletin-fetch")
 async def trigger_bulletin_fetch(
     source: str = "both",          # "osim" | "euipo" | "both"
