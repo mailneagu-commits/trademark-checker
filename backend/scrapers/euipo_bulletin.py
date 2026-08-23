@@ -149,27 +149,32 @@ def _download_bulletin(value: str, slug: str, lang: str = "EN") -> Tuple[Optiona
         return local, None
 
     url = f"{BULLETIN_DL_URL}/{value}/{lang}"
-    print(f"[EUIPO Bulletin] Downloading {url}")
-    try:
-        r = requests.get(url, headers=_HEADERS, timeout=REQUEST_TIMEOUT, stream=True)
-        if r.status_code != 200:
-            err = f"http_{r.status_code}"
-            print(f"[EUIPO Bulletin] Download {url} → {r.status_code}")
-            return None, err
-        content = r.content
-        if not content or content[:5] != b"%PDF-":
-            err = f"not_pdf: {content[:80]!r}"
-            print(f"[EUIPO Bulletin] Răspuns neașteptat (nu PDF): {content[:80]}")
-            return None, err
-        with open(local, "wb") as f:
-            f.write(content)
-        size_kb = len(content) // 1024
-        print(f"[EUIPO Bulletin] Saved {local} ({size_kb} KB)")
-        return local, None
-    except Exception as e:
-        err = f"{type(e).__name__}: {e}"
-        print(f"[EUIPO Bulletin] Download error: {e}")
-        return None, err
+    last_err: Optional[str] = None
+    for attempt in range(1, 4):
+        print(f"[EUIPO Bulletin] Downloading {url} (attempt {attempt}/3)")
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=REQUEST_TIMEOUT, stream=True)
+            if r.status_code != 200:
+                last_err = f"http_{r.status_code}"
+                print(f"[EUIPO Bulletin] Download {url} → {r.status_code}")
+                continue
+            chunks = bytearray()
+            for chunk in r.iter_content(chunk_size=1024 * 256):
+                chunks.extend(chunk)
+            content = bytes(chunks)
+            if not content or content[:5] != b"%PDF-":
+                last_err = f"not_pdf: {content[:80]!r}"
+                print(f"[EUIPO Bulletin] Răspuns neașteptat (nu PDF): {content[:80]}")
+                continue
+            with open(local, "wb") as f:
+                f.write(content)
+            size_kb = len(content) // 1024
+            print(f"[EUIPO Bulletin] Saved {local} ({size_kb} KB, attempt {attempt})")
+            return local, None
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            print(f"[EUIPO Bulletin] Download error (attempt {attempt}): {e}")
+    return None, last_err
 
 
 _RE_EUIPO_210   = re.compile(r'\b210\s+(\d{8,9})\b')
