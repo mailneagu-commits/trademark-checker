@@ -239,11 +239,15 @@ def get_bulletin_marks(source: str, date: str):
         marks = _parse_pdf(pdf)
 
     elif source == "euipo":
-        from scrapers.euipo_bulletin import _prev_working_day, fetch_euipo_for_date
-        working = _prev_working_day(td)
-        # fetch_euipo_for_date verifică singur cache-ul local (PDF deja descărcat) —
-        # dacă lipsește, îl descarcă acum (fără autentificare, cerere publică).
-        marks, info = fetch_euipo_for_date(working)
+        from scrapers.euipo_bulletin import is_bulletin_cached, should_run_sync, fetch_euipo_for_date
+        # Nu descărcăm niciodată aici — un PDF nedescărcat poate lua minute și
+        # bloca acest request. Cere apelantului să pornească /bulletin-fetch
+        # întâi (are logica async + cooldown); aici doar citim ce e deja gata.
+        if not should_run_sync(td):
+            raise HTTPException(425, "Buletinul EUIPO încă nu e disponibil pentru această dată — "
+                                      "porniți întâi POST /api/monitor/bulletin-fetch și așteptați finalizarea.")
+        skip_pdf = not is_bulletin_cached(td)
+        marks, info = fetch_euipo_for_date(td, skip_pdf)
         if not marks and info.get("status") not in ("ok_api", "ok_bulletin"):
             raise HTTPException(404, info.get("error") or "Buletinul EUIPO pentru această dată nu a fost descărcat încă.")
 
