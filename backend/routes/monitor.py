@@ -135,10 +135,13 @@ def download_template():
     ws = wb.active
     ws.title = "Mărci de monitorizat"
 
+    # Ordinea coloanelor urmează codul INID (WIPO ST.60) numeric ascendent, pentru
+    # câmpurile care au un cod corespunzător: (511) Clase NICE, (540) Denumire Marcă,
+    # (731) Titular — apoi câmpurile specifice aplicației, fără cod INID.
     headers = [
-        "Denumire Marcă*",
-        "Titular",
-        "Clase NICE (separate prin virgulă)*",
+        "(511) Clase NICE (separate prin virgulă)*",
+        "(540) Denumire Marcă*",
+        "(731) Titular",
         "Teritorii (separate prin virgulă)*",
         "Email notificare*",
         "Frecvență (daily/weekly/monthly)",
@@ -150,7 +153,7 @@ def download_template():
         left=Side(style="thin"), right=Side(style="thin"),
         top=Side(style="thin"), bottom=Side(style="thin"),
     )
-    col_widths = [30, 30, 35, 30, 35, 30]
+    col_widths = [35, 30, 30, 30, 35, 30]
 
     for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
         cell            = ws.cell(row=1, column=col_idx, value=header)
@@ -163,7 +166,7 @@ def download_template():
     ws.row_dimensions[1].height = 36
 
     # Example row
-    example = ["ACME", "ACME România SRL", "35, 42", "RO, EM", "office@firma.ro", "weekly"]
+    example = ["35, 42", "ACME", "ACME România SRL", "RO, EM", "office@firma.ro", "weekly"]
     example_fill = PatternFill("solid", fgColor="EBF5FB")
     for col_idx, val in enumerate(example, start=1):
         cell           = ws.cell(row=2, column=col_idx, value=val)
@@ -437,9 +440,11 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
         if first.startswith("*") or first.startswith("Teritorii") or first.startswith("câmp"):
             continue
 
-        trademark_name     = str(row[0] or "").strip() if len(row) > 0 else ""
-        holder_name        = str(row[1] or "").strip() if len(row) > 1 else ""
-        nice_classes_raw   = str(row[2] or "").strip() if len(row) > 2 else ""
+        # Ordinea coincide cu antetul: (511) Clase NICE, (540) Denumire Marcă,
+        # (731) Titular, apoi câmpurile fără cod INID.
+        nice_classes_raw   = str(row[0] or "").strip() if len(row) > 0 else ""
+        trademark_name     = str(row[1] or "").strip() if len(row) > 1 else ""
+        holder_name        = str(row[2] or "").strip() if len(row) > 2 else ""
         offices_raw        = str(row[3] or "").strip() if len(row) > 3 else ""
         notification_email = str(row[4] or "").strip() if len(row) > 4 else ""
         frequency_raw      = str(row[5] or "").strip() if len(row) > 5 else "weekly"
