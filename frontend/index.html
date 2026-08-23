@@ -715,6 +715,13 @@
         <span style="font-size:.8rem;color:#888;">Descarcă ambele surse pentru data de mai sus</span>
         <button class="btn-sm" onclick="fetchBulletin('both')" id="bothFetchBtn">🔄 Descarcă ambele</button>
       </div>
+
+      <!-- Monitorizare listă folosind buletinele/sursele deja descărcate -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px dashed #d8e0ee;">
+        <span style="font-size:.8rem;color:#888;">Compară mărcile de mai sus cu lista de monitorizare</span>
+        <button class="btn-primary" style="padding:7px 14px;font-size:.82rem;white-space:nowrap;" onclick="runAllWatches()" id="runAllBtn">🔍 Monitorizează acum toate mărcile</button>
+        <span id="runAllResult" style="font-size:.82rem;"></span>
+      </div>
     </div>
 
     <!-- Bulletin history table (collapsed by default) -->
@@ -2089,6 +2096,70 @@ async function _pollEuipoBulletin(targetDate, attempt) {
       _setBulletinResult("euipo", `<span style="color:#c0392b;">❌ ${e.message}</span>`);
     }
   }, 10000);
+}
+
+// ── Monitorizare listă (toate mărcile active) ──────────────────────────────
+
+async function runAllWatches() {
+  const btn = document.getElementById("runAllBtn");
+  const out = document.getElementById("runAllResult");
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = "⏳...";
+  out.innerHTML = "";
+
+  try {
+    const r    = await fetch("/api/monitor/run-all", { method: "POST" });
+    const data = await r.json();
+
+    if (data.status === "no_items") {
+      out.innerHTML = `<span style="color:#888;">${data.message}</span>`;
+      btn.disabled = false; btn.textContent = origText;
+      return;
+    }
+    if (!r.ok) {
+      out.innerHTML = `<span style="color:#c0392b;">❌ ${data.detail || "Eroare"}</span>`;
+      btn.disabled = false; btn.textContent = origText;
+      return;
+    }
+    // status === "started" sau "already_running" — în ambele cazuri urmărim progresul
+    out.innerHTML = `<span style="color:#2471a3;">⏳ Verificare pornită (0/${data.total || "?"})...</span>`;
+    _pollRunAll();
+  } catch (e) {
+    out.innerHTML = `<span style="color:#c0392b;">❌ ${e.message}</span>`;
+    btn.disabled = false; btn.textContent = origText;
+  }
+}
+
+async function _pollRunAll() {
+  const btn = document.getElementById("runAllBtn");
+  const out = document.getElementById("runAllResult");
+  try {
+    const r    = await fetch("/api/monitor/run-all-status");
+    const data = await r.json();
+
+    if (data.running) {
+      out.innerHTML = `<span style="color:#2471a3;">⏳ Verificare în curs (${data.done}/${data.total})...</span>`;
+      setTimeout(_pollRunAll, 4000);
+      return;
+    }
+
+    const results   = data.results || [];
+    const totalNew  = results.reduce((s, r) => s + (r.new_conflicts || 0) + (r.new_similar || 0), 0);
+    const errors    = results.filter(r => r.error).length;
+    out.innerHTML = totalNew > 0
+      ? `<span style="color:#c0392b;font-weight:600;">✅ Verificare completă — ${totalNew} marcă/mărci noi găsite în ${results.length} mărci verificate!</span>`
+      : `<span style="color:#1e8449;">✅ Verificare completă — ${results.length} mărci verificate, nicio noutate.</span>`;
+    if (errors) out.innerHTML += ` <span style="color:#e67e22;">(${errors} erori — vezi consola serverului)</span>`;
+
+    btn.disabled = false;
+    btn.textContent = "🔍 Monitorizează acum toate mărcile";
+    if (typeof loadWatches === "function") loadWatches();
+  } catch (e) {
+    out.innerHTML = `<span style="color:#c0392b;">❌ ${e.message}</span>`;
+    btn.disabled = false;
+    btn.textContent = "🔍 Monitorizează acum toate mărcile";
+  }
 }
 
 function _setBulletinResult(source, html) {

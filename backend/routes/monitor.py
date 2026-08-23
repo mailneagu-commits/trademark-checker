@@ -126,6 +126,68 @@ async def manual_run(item_id: int, db: Session = Depends(get_db)):
     return result
 
 
+# ── Rulare monitorizare pentru toată lista (ex: după descărcarea buletinelor) ──
+
+_run_all_progress: dict = {
+    "running": False, "done": 0, "total": 0,
+    "results": [], "started_at": None, "finished_at": None,
+}
+
+
+@router.post("/run-all")
+async def run_all_watches():
+    """Pornește în fundal verificarea tuturor mărcilor active din listă,
+    folosind sursele deja disponibile (TMview/EUIPO API + buletinele OSIM/EUIPO
+    deja descărcate în cache — dacă au fost descărcate recent, nu se redescarcă)."""
+    import asyncio
+    from db import SessionLocal
+
+    if _run_all_progress["running"]:
+        return {"status": "already_running", **_run_all_progress}
+
+    db = SessionLocal()
+    try:
+        items = db.query(WatchItem).filter(WatchItem.active == True).all()  # noqa: E712
+        item_ids = [i.id for i in items]
+    finally:
+        db.close()
+
+    if not item_ids:
+        return {"status": "no_items", "message": "Nu există mărci active în listă."}
+
+    _run_all_progress.update({
+        "running": True, "done": 0, "total": len(item_ids), "results": [],
+        "started_at": datetime.utcnow().isoformat(), "finished_at": None,
+    })
+
+    async def _bg_run_all(ids=item_ids):
+        for wid in ids:
+            bg_db = SessionLocal()
+            try:
+                item = bg_db.get(WatchItem, wid)
+                if item and item.active:
+                    try:
+                        result = await run_watch_item(item, bg_db)
+                        _run_all_progress["results"].append(result)
+                    except Exception as e:
+                        _run_all_progress["results"].append({
+                            "watch_item_id": wid, "error": str(e),
+                        })
+            finally:
+                bg_db.close()
+                _run_all_progress["done"] += 1
+        _run_all_progress["running"] = False
+        _run_all_progress["finished_at"] = datetime.utcnow().isoformat()
+
+    asyncio.ensure_future(_bg_run_all())
+    return {"status": "started", "total": len(item_ids)}
+
+
+@router.get("/run-all-status")
+def run_all_status():
+    return _run_all_progress
+
+
 # ── Excel template ────────────────────────────────────────────────────────────
 
 @router.get("/template")
