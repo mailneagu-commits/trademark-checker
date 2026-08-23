@@ -2027,22 +2027,13 @@ async function fetchBulletin(source) {
       const info = data.euipo;
       const ok   = info.status === "ok" || info.status === "ok_api" || info.status === "ok_xml" || info.status === "ok_bulletin";
       const day  = info.bulletin_date || info.working_day || targetDate;
-      const src  = info.source === "copla_bulletin" ? "buletin XML" : "API";
+      const src  = info.source === "copla_bulletin" ? "buletin oficial PDF" : "API";
       if (ok) {
         _setBulletinResult("euipo",
           `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>
            <button onclick="toggleBulletinMarks('euipo','${day}')"
              style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
              id="euipoToggleBtn">▼ Vezi mărci</button>`
-        );
-      } else if (info.status === "auth_required") {
-        _setBulletinResult("euipo",
-          `<span style="color:#2471a3;">ℹ️ Buletin ${info.bulletin_id||''} identificat (${info.bulletin_date||day})</span>
-           <div style="margin-top:4px;font-size:.74rem;color:#555;line-height:1.4;">
-             Descărcarea directă necesită autentificare în portalul EUIPO (OIDC/CAS) — nu este disponibilă fără cont.<br>
-             <strong>Monitorizarea automată</strong> folosește căutarea TMview (fără autentificare).
-             Configurați <code>EUIPO_CLIENT_ID</code> + <code>EUIPO_CLIENT_SECRET</code> pentru acces API complet.
-           </div>`
         );
       } else {
         _setBulletinResult("euipo",

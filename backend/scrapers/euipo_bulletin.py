@@ -33,11 +33,11 @@ EUIPO_COPLA_BASE   = "https://euipo.europa.eu/copla"
 BULLETIN_LIST_URL  = f"{EUIPO_COPLA_BASE}/bulletin/data/list/CTM"        # /{year}
 # Download: /copla/bulletin/data/download/CTM/{value}/{lang}
 # NOTE: requires EUIPO SSO browser session — returns 404 without it
-BULLETIN_DL_URL    = f"{EUIPO_COPLA_BASE}/bulletin/data/download/CTM"   # /{value}/{lang}
+BULLETIN_DL_URL    = f"{EUIPO_COPLA_BASE}/bulletin/data/download/ctm"   # /{value}/{lang} — minuscule; "CTM" (majuscule) dă 404, nu e o problemă de autentificare
 
 CACHE_DIR      = os.path.join(os.path.dirname(__file__), "..", "..", "data", "bulletins", "euipo")
 PROCESSED_FILE = os.path.join(CACHE_DIR, "_processed.json")
-REQUEST_TIMEOUT = 60
+REQUEST_TIMEOUT = 90   # buletinul PDF poate avea 15-20 MB
 
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -138,11 +138,12 @@ def _find_bulletin_for_date(target: date) -> Optional[Dict]:
 
 def _download_bulletin(value: str, slug: str, lang: str = "EN") -> Optional[str]:
     """
-    Descarcă buletinul și returnează calea locală.
-    URL: /copla/bulletin/data/download/CTM/{value}/{lang}
-    Notă: EUIPO necesită sesiune SSO — va da 404 fără browser autentificat.
+    Descarcă buletinul oficial (PDF) și returnează calea locală.
+    URL: /copla/bulletin/data/download/ctm/{value}/{lang} — public, fără autentificare
+    (verificat manual: minuscule "ctm", nu "CTM" — cu majuscule dă 404 și părea o
+    problemă de SSO, dar era doar case-sensitivity în URL).
     """
-    local = os.path.join(CACHE_DIR, f"{slug}.xml")
+    local = os.path.join(CACHE_DIR, f"{slug}.pdf")
     if os.path.exists(local):
         print(f"[EUIPO Bulletin] Using cached {local}")
         return local
@@ -152,11 +153,11 @@ def _download_bulletin(value: str, slug: str, lang: str = "EN") -> Optional[str]
     try:
         r = requests.get(url, headers=_HEADERS, timeout=REQUEST_TIMEOUT, stream=True)
         if r.status_code != 200:
-            print(f"[EUIPO Bulletin] Download {url} → {r.status_code} (sesiune SSO necesară)")
+            print(f"[EUIPO Bulletin] Download {url} → {r.status_code}")
             return None
         content = r.content
-        if not content or content[:5] not in (b"<?xml", b"<bull"):
-            print(f"[EUIPO Bulletin] Răspuns neașteptat (nu XML): {content[:80]}")
+        if not content or content[:5] != b"%PDF-":
+            print(f"[EUIPO Bulletin] Răspuns neașteptat (nu PDF): {content[:80]}")
             return None
         with open(local, "wb") as f:
             f.write(content)
@@ -168,77 +169,114 @@ def _download_bulletin(value: str, slug: str, lang: str = "EN") -> Optional[str]
         return None
 
 
-def _parse_bulletin_xml(path: str) -> List[Dict]:
-    """Parsează XML ST.96 al buletinului EUIPO și extrage mărcile."""
-    marks: List[Dict] = []
+_RE_EUIPO_210   = re.compile(r'\b210\s+(\d{8,9})\b')
+_RE_EUIPO_220   = re.compile(r'\b220\s+(\d{2})/(\d{2})/(\d{4})')
+_RE_EUIPO_541   = re.compile(r'\b541\s+(.*?)(?=\n\d{3}\s|\Z)', re.DOTALL)
+_RE_EUIPO_731   = re.compile(r'\b731\s+(.*?)(?=\n740\s|\n270\s|\n511\s|\n\d{3}\s|\Z)', re.DOTALL)
+_RE_EUIPO_740   = re.compile(r'\b740\s+(.*?)(?=\n270\s|\n511\s|\n\d{3}\s|\Z)', re.DOTALL)
+_RE_EUIPO_511   = re.compile(r'\b511\s+(.*)\Z', re.DOTALL)
+_RE_EUIPO_CLASS = re.compile(r'(?:^|\n)\s*(\d{1,2})\s*-\s')
+_RE_FOOTER      = re.compile(r'\n\s*\d{4}/\d{2,4}\s*(?=\n|\Z)')   # "2026/158" (nr. buletin, subsol pagină)
+
+
+def _euipo_page_text(page) -> str:
+    """Text în ordinea de citire (coloana stângă completă, apoi dreapta) —
+    un rând al buletinului poate continua pe coloana următoare/pagina următoare."""
+    left  = page.crop((0, 0, page.width / 2, page.height)).extract_text() or ""
+    right = page.crop((page.width / 2, 0, page.width, page.height)).extract_text() or ""
+    return _RE_FOOTER.sub("", left + "\n" + right)
+
+
+def _norm_field(s: str) -> str:
+    return re.sub(r'\s*\n\s*', ', ', s.strip()) if s else ""
+
+
+def _parse_euipo_entry(block: str) -> Optional[Dict]:
+    m210 = _RE_EUIPO_210.search(block)
+    if not m210:
+        return None
+    app_num = m210.group(1)
+
+    m220 = _RE_EUIPO_220.search(block)
+    app_date = None
+    if m220:
+        d, mo, y = m220.group(1), m220.group(2), m220.group(3)
+        app_date = f"{y}-{mo}-{d}T00:00:00.000Z"
+
+    m541 = _RE_EUIPO_541.search(block)
+    tm_name = _norm_field(m541.group(1)).rstrip(", ") if m541 else ""
+
+    m731 = _RE_EUIPO_731.search(block)
+    applicant_full = _norm_field(m731.group(1)) if m731 else ""
+    applicant_name = applicant_full.split(",")[0].strip() if applicant_full else ""
+
+    m740 = _RE_EUIPO_740.search(block)
+    rep_full = _norm_field(m740.group(1)) if m740 else ""
+    rep_name = rep_full.split(",")[0].strip() if rep_full else ""
+
+    m511 = _RE_EUIPO_511.search(block)
+    classes: List[int] = []
+    if m511:
+        classes = sorted(set(int(c) for c in _RE_EUIPO_CLASS.findall(m511.group(1))))
+
+    return {
+        "ST13":              f"EM{app_num}",
+        "tmName":            tm_name,
+        "tmOffice":          "EM",
+        "tradeMarkStatus":   "APPLICATION_PUBLISHED",
+        "niceClass":         classes,
+        "applicantName":     [applicant_name] if applicant_name else [],
+        "applicantAddress":  applicant_full,
+        "representative":    rep_name,
+        "representativeAddress": rep_full,
+        "applicationDate":   app_date,
+        "applicationNumber": app_num,
+        "registrationDate":  None,
+        "expiryDate":        None,
+        "markImageURI":      f"/api/monitor/bulletin-image?source=euipo&app_num={app_num}",
+        "goodAndServices":   [],
+        "_source":           "euipo_bulletin_pdf",
+    }
+
+
+def _parse_bulletin_pdf(path: str) -> List[Dict]:
+    """Parsează buletinul oficial PDF (Part A — cereri publicate), cod cu cod INID
+    (WIPO ST.60): (210) nr. cerere, (220) dată depunere, (541) element verbal,
+    (731) solicitant, (740) reprezentant, (511) clase Nice + produse/servicii.
+    Pagină pe 2 coloane, fără watermark (spre deosebire de OSIM)."""
     try:
-        tree = ET.parse(path)
-        root = tree.getroot()
-    except ET.ParseError as e:
-        print(f"[EUIPO Bulletin] XML parse error: {e}")
+        import pdfplumber
+    except ImportError:
+        print("[EUIPO Bulletin] pdfplumber not installed")
         return []
 
-    NS_TM = "{http://www.wipo.int/standards/XMLSchema/ST96/Trademark}"
-    NS_CM = "{http://www.wipo.int/standards/XMLSchema/ST96/Common}"
+    pages_text: List[str] = []
+    try:
+        with pdfplumber.open(path) as pdf:
+            for i, page in enumerate(pdf.pages):
+                txt = _euipo_page_text(page)
+                # Part A (cereri publicate) e prima secțiune; ne oprim la Part B.
+                if i > 3 and re.search(r'\bPART\s+B\b', txt.upper()):
+                    print(f"[EUIPO Bulletin] Stopped at page {i} (Part B reached)")
+                    break
+                pages_text.append(txt)
+    except Exception as e:
+        print(f"[EUIPO Bulletin] PDF parse error: {e}")
+        return []
 
-    def _text(el, *tags) -> str:
-        for tag in tags:
-            for ns in ("", NS_TM, NS_CM):
-                found = el.find(f".//{ns}{tag}")
-                if found is not None and found.text:
-                    return found.text.strip()
-        return ""
+    combined = "\n".join(pages_text)
+    starts = [m.start() for m in re.finditer(r'\n?210\s+\d{8,9}\b', combined)]
 
-    def _all(el, tag) -> list:
-        result = []
-        for ns in ("", NS_TM, NS_CM):
-            result.extend(el.findall(f".//{ns}{tag}"))
-        return result
+    marks: List[Dict] = []
+    seen: set = set()
+    for i, pos in enumerate(starts):
+        end = starts[i + 1] if i + 1 < len(starts) else len(combined)
+        entry = _parse_euipo_entry(combined[pos:end])
+        if entry and entry["applicationNumber"] not in seen:
+            seen.add(entry["applicationNumber"])
+            marks.append(entry)
 
-    def _iter_trademarks(node):
-        local = node.tag.split("}")[-1] if "}" in node.tag else node.tag
-        if local in ("TradeMark", "TrademarkDetail", "trademark"):
-            yield node
-        for child in node:
-            yield from _iter_trademarks(child)
-
-    for tm in _iter_trademarks(root):
-        app_num      = _text(tm, "ApplicationNumber", "applicationNumber")
-        verbal       = _text(tm, "VerbalElement", "WordMark", "MarkText")
-        app_date_raw = _text(tm, "ApplicationDate", "FilingDate")
-        status       = _text(tm, "MarkCurrentStatusCode", "Status", "TradeMarkStatus")
-        nc_raw       = _text(tm, "NiceClassification", "NiceClass")
-        nice         = [c.strip() for c in re.split(r'[\s,;]+', nc_raw) if c.strip().isdigit()]
-        applicants   = [el.text.strip() for el in _all(tm, "ApplicantName")
-                        if el.text and el.text.strip()]
-
-        if not app_num and not verbal:
-            continue
-
-        app_date = None
-        if app_date_raw:
-            try:
-                app_date = datetime.fromisoformat(app_date_raw[:10]).strftime("%Y-%m-%dT00:00:00.000Z")
-            except ValueError:
-                pass
-
-        marks.append({
-            "ST13":              f"EM{app_num}" if app_num else "",
-            "tmName":            verbal,
-            "tmOffice":          "EM",
-            "tradeMarkStatus":   status or "Filed",
-            "niceClass":         [int(c) for c in nice if c.isdigit()],
-            "applicantName":     applicants,
-            "applicationDate":   app_date,
-            "applicationNumber": app_num,
-            "registrationDate":  None,
-            "expiryDate":        None,
-            "markImageURI":      None,
-            "goodAndServices":   [],
-            "_source":           "euipo_bulletin_xml",
-        })
-
-    print(f"[EUIPO Bulletin] Extracted {len(marks)} marks from XML")
+    print(f"[EUIPO Bulletin] Extracted {len(marks)} marks from PDF ({len(pages_text)} pages)")
     return marks
 
 
@@ -328,21 +366,20 @@ def fetch_euipo_for_date(target: date) -> Tuple[List[Dict], dict]:
         info["bulletin_date"] = bulletin["date"].isoformat()
         local = _download_bulletin(bulletin["value"], slug)
         if local:
-            marks = _parse_bulletin_xml(local)
-            info["status"] = "ok_bulletin"
-            info["source"] = "copla_bulletin"
-            info["marks"]  = len(marks)
-            info["at"]     = datetime.utcnow().isoformat()
-            processed[slug] = info
-            _save_processed(processed)
-            return marks, info
-        # Bulletin found but download requires EUIPO portal authentication
-        info["status"] = "auth_required"
-        info["error"]  = (
-            f"Buletinul EUIPO {bulletin['id']} ({bulletin['date'].isoformat()}) a fost identificat, "
-            "dar descărcarea necesită sesiune autentificată în portalul EUIPO (OIDC/CAS). "
-            "Monitorizarea continuă prin căutare TMview."
-        )
+            marks = _parse_bulletin_pdf(local)
+            if marks:
+                info["status"] = "ok_bulletin"
+                info["source"] = "copla_bulletin"
+                info["marks"]  = len(marks)
+                info["at"]     = datetime.utcnow().isoformat()
+                processed[slug] = info
+                _save_processed(processed)
+                return marks, info
+            info["status"] = "pdf_parse_error"
+            info["error"]  = f"Buletinul {bulletin['id']} s-a descărcat, dar nu s-a putut extrage nicio marcă din PDF."
+        else:
+            info["status"] = "download_error"
+            info["error"]  = f"Buletinul EUIPO {bulletin['id']} ({bulletin['date'].isoformat()}) nu a putut fi descărcat."
 
     # Fallback: EUIPO Search API
     marks, api_error = _fetch_via_api(working)
