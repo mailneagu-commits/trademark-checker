@@ -375,11 +375,9 @@ def fetch_euipo_for_date(target: date) -> Tuple[List[Dict], dict]:
                 processed[slug] = info
                 _save_processed(processed)
                 return marks, info
-            info["status"] = "pdf_parse_error"
-            info["error"]  = f"Buletinul {bulletin['id']} s-a descărcat, dar nu s-a putut extrage nicio marcă din PDF."
+            info["pdf_attempt"] = "parse_error: 0 marks extracted from downloaded PDF"
         else:
-            info["status"] = "download_error"
-            info["error"]  = f"Buletinul EUIPO {bulletin['id']} ({bulletin['date'].isoformat()}) nu a putut fi descărcat."
+            info["pdf_attempt"] = "download_failed (see server logs for exact HTTP status/error)"
 
     # Fallback: EUIPO Search API
     marks, api_error = _fetch_via_api(working)
