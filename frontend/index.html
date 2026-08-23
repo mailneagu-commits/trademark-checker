@@ -810,6 +810,15 @@
     <div id="historyContent"></div>
   </div>
 
+  <!-- Found marks panel (cumulativ — toate mărcile găsite vreodată, nu doar cele noi) -->
+  <div class="card" id="foundMarksPanel" style="display:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <h2 style="margin:0;font-size:.95rem;">🎯 Mărci găsite — <span id="foundMarksTitle"></span></h2>
+      <button class="btn-export" onclick="closeFoundMarks()">Închide</button>
+    </div>
+    <div id="foundMarksContent"></div>
+  </div>
+
   <!-- Run result -->
   <div class="card" id="runResult" style="display:none;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
@@ -2481,6 +2490,7 @@ function renderWatches(items) {
             <button class="btn-action run-btn" id="run-${it.id}" onclick="runWatch(${it.id})">▶ Rulează</button>
             <button class="btn-action" onclick="toggleActive(${it.id})">${it.active?'Dezactivează':'Activează'}</button>
             <button class="btn-action" onclick="showHistory(${it.id},'${it.trademark_name.replace(/'/g,"\\'")}')">Istoric</button>
+            <button class="btn-action" onclick="showFoundMarks(${it.id},'${it.trademark_name.replace(/'/g,"\\'")}')">🎯 Mărci găsite</button>
             <button class="btn-action danger" onclick="deleteWatch(${it.id})">Șterge</button>
           </div>
         </td>
@@ -2679,6 +2689,68 @@ async function showHistory(id, name) {
 
 function closeHistory() {
   document.getElementById("historyPanel").style.display = "none";
+}
+
+// ── Found marks (cumulativ) ──────────────────────────────────────────────────
+
+const _levelLabel = { conflict: "Conflict", similar: "Similar" };
+const _levelColor = { conflict: "#c0392b", similar: "#e67e22" };
+
+async function showFoundMarks(id, name) {
+  document.getElementById("foundMarksTitle").textContent = name;
+  document.getElementById("foundMarksPanel").style.display = "block";
+  document.getElementById("foundMarksContent").innerHTML = "<em>Se încarcă...</em>";
+
+  try {
+    const r     = await fetch(`/api/monitor/watch/${id}/found-marks`);
+    const marks = await r.json();
+
+    if (!r.ok) {
+      document.getElementById("foundMarksContent").innerHTML =
+        `<div style="color:#c0392b;font-size:.84rem;">Eroare: ${marks.detail || r.status}</div>`;
+      return;
+    }
+    if (!marks.length) {
+      document.getElementById("foundMarksContent").innerHTML =
+        '<div style="color:#888;font-size:.85rem;">Nicio marcă găsită încă. Rulează o verificare pentru această marcă.</div>';
+      return;
+    }
+
+    const rows = marks.map(m => {
+      const date = m.first_seen_at
+        ? new Date(m.first_seen_at).toLocaleString("ro-RO",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})
+        : "—";
+      const color = _levelColor[m.similarity_level] || "#888";
+      const label = _levelLabel[m.similarity_level] || m.similarity_level || "—";
+      return `<tr>
+        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;"><strong>${m.tm_name||"—"}</strong></td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${m.tm_office||"—"}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${m.application_date||"—"}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;color:${color};font-weight:700;">${label}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;font-size:.78rem;color:#888;">${date}</td>
+      </tr>`;
+    }).join("");
+
+    document.getElementById("foundMarksContent").innerHTML = `
+      <div style="font-size:.82rem;color:#888;margin-bottom:10px;">
+        ${marks.length} marcă/mărci găsite cumulativ pentru această monitorizare (nu se șterg la rulări ulterioare).
+      </div>
+      <table class="watch-table">
+        <thead><tr>
+          <th>Marcă</th><th>Oficiu</th><th>Dată depunere</th><th>Nivel</th><th>Prima detectare</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) {
+    document.getElementById("foundMarksContent").innerHTML =
+      '<div style="color:#c0392b;font-size:.84rem;">Eroare la încărcare.</div>';
+  }
+
+  document.getElementById("foundMarksPanel").scrollIntoView({behavior:"smooth"});
+}
+
+function closeFoundMarks() {
+  document.getElementById("foundMarksPanel").style.display = "none";
 }
 
 // ── Excel import ──────────────────────────────────────────────────────────

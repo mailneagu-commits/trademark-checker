@@ -115,6 +115,34 @@ def get_history(item_id: int, db: Session = Depends(get_db)):
     )
 
 
+# ── Mărci găsite (cumulativ, nu doar cele noi din ultima rulare) ──────────────
+
+@router.get("/watch/{item_id}/found-marks")
+def get_found_marks(item_id: int, db: Session = Depends(get_db)):
+    """Toate mărcile detectate vreodată pentru acest watch item (SeenTrademark
+    se acumulează permanent — o rulare nouă doar adaugă, nu șterge nimic)."""
+    item = db.get(WatchItem, item_id)
+    if not item:
+        raise HTTPException(404, "Watch item negăsit.")
+    rows = (
+        db.query(SeenTrademark)
+        .filter(SeenTrademark.watch_item_id == item_id)
+        .order_by(SeenTrademark.first_seen_at.desc())
+        .all()
+    )
+    return [
+        {
+            "st13": r.st13,
+            "tm_name": r.tm_name,
+            "tm_office": r.tm_office,
+            "similarity_level": r.similarity_level,
+            "application_date": r.application_date,
+            "first_seen_at": r.first_seen_at,
+        }
+        for r in rows
+    ]
+
+
 # ── Manual run ────────────────────────────────────────────────────────────────
 
 @router.post("/watch/{item_id}/run")
