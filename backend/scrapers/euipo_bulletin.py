@@ -361,6 +361,26 @@ def _fetch_via_api(target: date) -> Tuple[List[Dict], Optional[str]]:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+# Descărcarea PDF-ului (15-30 MB, conexiune instabilă) poate depăși limita de
+# 300s a gateway-ului Railway dacă rulează sincron într-un request HTTP.
+# in_progress ține evidența job-urilor de fundal pornite, ca să nu pornim
+# de două ori aceeași descărcare dacă utilizatorul apasă din nou butonul.
+_in_progress: set = set()
+
+
+def is_bulletin_cached(target: date) -> bool:
+    """True dacă PDF-ul buletinului pentru această dată e deja în cache local
+    (deci fetch_euipo_for_date() va răspunde instant, fără descărcare)."""
+    working = _prev_working_day(target)
+    slug    = _date_slug(working)
+    return os.path.exists(os.path.join(CACHE_DIR, f"{slug}.pdf"))
+
+
+def is_fetch_in_progress(target: date) -> bool:
+    working = _prev_working_day(target)
+    return _date_slug(working) in _in_progress
+
+
 def fetch_euipo_for_date(target: date) -> Tuple[List[Dict], dict]:
     """
     Returnează mărcile EUIPO din buletinul pentru data specificată.

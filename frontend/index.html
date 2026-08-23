@@ -2028,7 +2028,12 @@ async function fetchBulletin(source) {
       const ok   = info.status === "ok" || info.status === "ok_api" || info.status === "ok_xml" || info.status === "ok_bulletin";
       const day  = info.bulletin_date || info.working_day || targetDate;
       const src  = info.source === "copla_bulletin" ? "buletin oficial PDF" : "API";
-      if (ok) {
+      if (info.status === "processing") {
+        _setBulletinResult("euipo",
+          `<span style="color:#2471a3;">⏳ ${info.message || "Descărcare în curs..."}</span>`
+        );
+        _pollEuipoBulletin(targetDate, 0);
+      } else if (ok) {
         _setBulletinResult("euipo",
           `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>
            <button onclick="toggleBulletinMarks('euipo','${day}')"
@@ -2047,6 +2052,45 @@ async function fetchBulletin(source) {
   } finally {
     btn.disabled = false; btn.textContent = origText;
   }
+}
+
+async function _pollEuipoBulletin(targetDate, attempt) {
+  const MAX_ATTEMPTS = 18;   // ~18 × 10s ≈ 3 minute
+  if (attempt >= MAX_ATTEMPTS) {
+    _setBulletinResult("euipo",
+      `<span style="color:#e67e22;">⚠ Descărcarea durează neobișnuit de mult — reîncercați "Descarcă" peste câteva minute.</span>`
+    );
+    return;
+  }
+  setTimeout(async () => {
+    try {
+      const params = new URLSearchParams({ source: "euipo" });
+      if (targetDate) params.set("target_date", targetDate);
+      const r    = await fetch("/api/monitor/bulletin-fetch?" + params.toString(), { method: "POST" });
+      const data = await r.json();
+      const info = data.euipo || {};
+      if (info.status === "processing") {
+        _setBulletinResult("euipo", `<span style="color:#2471a3;">⏳ Încă se descarcă... (verificare ${attempt + 1}/${MAX_ATTEMPTS})</span>`);
+        _pollEuipoBulletin(targetDate, attempt + 1);
+        return;
+      }
+      const ok  = info.status === "ok_api" || info.status === "ok_bulletin";
+      const day = info.bulletin_date || info.working_day || targetDate;
+      const src = info.source === "copla_bulletin" ? "buletin oficial PDF" : "API";
+      if (ok) {
+        _setBulletinResult("euipo",
+          `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>
+           <button onclick="toggleBulletinMarks('euipo','${day}')"
+             style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
+             id="euipoToggleBtn">▼ Vezi mărci</button>`
+        );
+      } else {
+        _setBulletinResult("euipo", `<span style="color:#e67e22;">⚠ ${info.error || "Nicio marcă pentru această dată"}</span>`);
+      }
+    } catch (e) {
+      _setBulletinResult("euipo", `<span style="color:#c0392b;">❌ ${e.message}</span>`);
+    }
+  }, 10000);
 }
 
 function _setBulletinResult(source, html) {

@@ -364,12 +364,40 @@ async def trigger_bulletin_fetch(
         result["osim"] = {"marks": len(marks), **info}
 
     if source in ("euipo", "both"):
-        if td:
-            marks, info = await loop.run_in_executor(None, fetch_euipo_for_date, td)
+        from datetime import date as _date_type
+        from scrapers.euipo_bulletin import is_bulletin_cached, is_fetch_in_progress, _in_progress, _date_slug, _prev_working_day
+        target_for_check = td or _date_type.today()
+
+        if td and not is_bulletin_cached(target_for_check):
+            # Nu e în cache — descărcarea (15-30 MB, conexiune instabilă) poate
+            # depăși limita de 300s a gateway-ului Railway dacă așteptăm sincron.
+            # O pornim în fundal și răspundem imediat; clientul verifică progresul
+            # prin GET /bulletin-status (reapare acolo cu status "ok_bulletin"
+            # când e gata).
+            working = _prev_working_day(target_for_check)
+            slug    = _date_slug(working)
+            if is_fetch_in_progress(target_for_check):
+                result["euipo"] = {"status": "processing", "slug": slug,
+                                    "message": "Descărcarea e deja în curs — verificați din nou peste ~30s."}
+            else:
+                _in_progress.add(slug)
+
+                async def _bg_fetch(target=target_for_check, slug=slug):
+                    try:
+                        await loop.run_in_executor(None, fetch_euipo_for_date, target)
+                    finally:
+                        _in_progress.discard(slug)
+
+                asyncio.ensure_future(_bg_fetch())
+                result["euipo"] = {"status": "processing", "slug": slug,
+                                    "message": "Descărcare pornită în fundal — poate dura 1-3 minute. Verificați din nou peste ~30s."}
         else:
-            marks = await loop.run_in_executor(None, fetch_latest_euipo)
-            info  = {}
-        result["euipo"] = {"marks": len(marks), **info}
+            if td:
+                marks, info = await loop.run_in_executor(None, fetch_euipo_for_date, td)
+            else:
+                marks = await loop.run_in_executor(None, fetch_latest_euipo)
+                info  = {}
+            result["euipo"] = {"marks": len(marks), **info}
 
     return result
 
