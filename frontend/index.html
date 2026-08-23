@@ -374,7 +374,8 @@
       .tm-card { grid-template-columns: 54px 1fr; }
       .tm-score-col { display:none; }
       .card-chk { width:20px; }
-      .watch-table th:nth-child(n+4), .watch-table td:nth-child(n+4) { display:none; }
+      .watch-table th:nth-child(1), .watch-table td:nth-child(1) { display:none; }
+      .watch-table th:nth-child(n+5), .watch-table td:nth-child(n+5) { display:none; }
       .bulletin-grid { grid-template-columns: 1fr !important; }
     }
   </style>
@@ -2391,8 +2392,12 @@ function renderWatches(items) {
       : "—";
     const classes = (it.nice_classes||[]).join(", ") || "—";
     const offices = (it.offices||[]).join(", ") || "—";
+    const img = it.reference_image
+      ? `<img src="/api/monitor/watch-image/${it.reference_image}" alt="" style="max-height:40px;max-width:70px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:2px;" loading="lazy" />`
+      : "—";
     return `
       <tr>
+        <td style="text-align:center;">${img}</td>
         <td><strong>${it.trademark_name}</strong>${it.holder_name?'<br><span style="font-size:.75rem;color:#888;">'+it.holder_name+'</span>':''}</td>
         <td>${classes}</td>
         <td>${offices}</td>
@@ -2416,6 +2421,7 @@ function renderWatches(items) {
       <table class="watch-table">
         <thead>
           <tr>
+            <th>Imagine</th>
             <th>Marcă / Titular</th>
             <th>Clase NICE</th>
             <th>Teritorii</th>
