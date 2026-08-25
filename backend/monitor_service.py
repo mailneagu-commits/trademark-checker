@@ -136,6 +136,7 @@ async def run_watch_item(watch_item, db: Session) -> Dict:
     """
     from agents.search_agent import SearchAgent
     from agents.euipo_agent import search_euipo, euipo_available
+    from agents.variant_agent import generate_all_variants, build_phonetic_variants, build_input_list as _bil
     from monitor_models import SeenTrademark, AlertLog
     from scrapers.osim_bulletin import fetch_latest_osim
     from scrapers.euipo_bulletin import fetch_latest_euipo
@@ -147,9 +148,23 @@ async def run_watch_item(watch_item, db: Session) -> Dict:
     classes      = watch_item.nice_classes or []
     offices      = watch_item.offices or ["RO", "EM"]
 
+    # Aceleași variante (fonetice/wildcard) generate ca la verificarea manuală
+    # (/api/check din main.py), pentru a folosi identic algoritmul de căutare.
+    variants    = generate_all_variants(name)
+    extra_terms = list(variants.get("search_terms", []))
+    _phon_extras = [t for t in build_phonetic_variants(name) if not t.startswith("*") and len(t) >= 3]
+    for _phon in _phon_extras[:1]:
+        for _t in _bil(_phon):
+            if _t not in extra_terms:
+                extra_terms.append(_t)
+
     # ── Sursă 1: TMview API ──────────────────────────────────────────────
     try:
-        tmview_marks, _ = await search_agent.search(name, classes, offices)
+        tmview_marks, _ = await search_agent.search(
+            name, classes, offices,
+            extra_terms=extra_terms,
+            wildcard_patterns=variants.get("wildcard_patterns", []),
+        )
     except Exception as e:
         print(f"[MONITOR] TMview error: {e}")
         tmview_marks = []
@@ -202,8 +217,8 @@ async def run_watch_item(watch_item, db: Session) -> Dict:
           f"(tmview={len(tmview_marks)}, euipo={len(euipo_marks)}, "
           f"osim_buletin={len(osim_bulletin_marks)}, euipo_buletin={len(euipo_bulletin_marks)})")
 
-    # --- similarity ---
-    analysis     = _similarity.analyze(name, all_marks, classes)
+    # --- similarity (identic cu /api/check: nume → clase → prioritate teritorii) ---
+    analysis     = _similarity.analyze(name, all_marks, classes, user_offices=offices)
     conflicts    = analysis.get("conflicts", [])
     similar      = analysis.get("similar", [])
 
