@@ -2695,11 +2695,17 @@ function closeHistory() {
 
 const _levelLabel = { conflict: "Conflict", similar: "Similar" };
 const _levelColor = { conflict: "#c0392b", similar: "#e67e22" };
+const _levelOrder = { conflict: 0, similar: 1 };
+
+const _foundMarksCache  = {};   // id -> mărci brute din API
+let   _foundMarksFilter = "all";
 
 async function showFoundMarks(id, name) {
   document.getElementById("foundMarksTitle").textContent = name;
   document.getElementById("foundMarksPanel").style.display = "block";
+  document.getElementById("foundMarksPanel").dataset.watchId = id;
   document.getElementById("foundMarksContent").innerHTML = "<em>Se încarcă...</em>";
+  _foundMarksFilter = "all";
 
   try {
     const r     = await fetch(`/api/monitor/watch/${id}/found-marks`);
@@ -2710,43 +2716,80 @@ async function showFoundMarks(id, name) {
         `<div style="color:#c0392b;font-size:.84rem;">Eroare: ${marks.detail || r.status}</div>`;
       return;
     }
-    if (!marks.length) {
-      document.getElementById("foundMarksContent").innerHTML =
-        '<div style="color:#888;font-size:.85rem;">Nicio marcă găsită încă. Rulează o verificare pentru această marcă.</div>';
-      return;
-    }
 
-    const rows = marks.map(m => {
-      const date = m.first_seen_at
-        ? new Date(m.first_seen_at).toLocaleString("ro-RO",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})
-        : "—";
-      const color = _levelColor[m.similarity_level] || "#888";
-      const label = _levelLabel[m.similarity_level] || m.similarity_level || "—";
-      return `<tr>
-        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;"><strong>${m.tm_name||"—"}</strong></td>
-        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${m.tm_office||"—"}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${m.application_date||"—"}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;color:${color};font-weight:700;">${label}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;font-size:.78rem;color:#888;">${date}</td>
-      </tr>`;
-    }).join("");
-
-    document.getElementById("foundMarksContent").innerHTML = `
-      <div style="font-size:.82rem;color:#888;margin-bottom:10px;">
-        ${marks.length} marcă/mărci găsite cumulativ pentru această monitorizare (nu se șterg la rulări ulterioare).
-      </div>
-      <table class="watch-table">
-        <thead><tr>
-          <th>Marcă</th><th>Oficiu</th><th>Dată depunere</th><th>Nivel</th><th>Prima detectare</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+    _foundMarksCache[id] = marks;
+    _renderFoundMarks(id);
   } catch (e) {
     document.getElementById("foundMarksContent").innerHTML =
       '<div style="color:#c0392b;font-size:.84rem;">Eroare la încărcare.</div>';
   }
 
   document.getElementById("foundMarksPanel").scrollIntoView({behavior:"smooth"});
+}
+
+function filterFoundMarks(level) {
+  _foundMarksFilter = level;
+  const id = document.getElementById("foundMarksPanel").dataset.watchId;
+  _renderFoundMarks(Number(id));
+}
+
+function _renderFoundMarks(id) {
+  const all = _foundMarksCache[id] || [];
+
+  if (!all.length) {
+    document.getElementById("foundMarksContent").innerHTML =
+      '<div style="color:#888;font-size:.85rem;">Nicio marcă găsită încă. Rulează o verificare pentru această marcă.</div>';
+    return;
+  }
+
+  const nConflict = all.filter(m => m.similarity_level === "conflict").length;
+  const nSimilar  = all.filter(m => m.similarity_level === "similar").length;
+
+  const marks = _foundMarksFilter === "all"
+    ? all
+    : all.filter(m => m.similarity_level === _foundMarksFilter);
+
+  // Sortare: nivel de risc (conflict înaintea similar) → data primei detectări, descrescător
+  const sorted = [...marks].sort((a, b) => {
+    const lo = (_levelOrder[a.similarity_level] ?? 2) - (_levelOrder[b.similarity_level] ?? 2);
+    if (lo !== 0) return lo;
+    return new Date(b.first_seen_at || 0) - new Date(a.first_seen_at || 0);
+  });
+
+  const filterBtn = (level, label, count) => {
+    const active = _foundMarksFilter === level;
+    return `<button class="btn-sm" onclick="filterFoundMarks('${level}')"
+      style="${active ? 'background:#0f3460;color:#fff;border-color:#0f3460;' : ''}">${label} (${count})</button>`;
+  };
+
+  const rows = sorted.map(m => {
+    const date = m.first_seen_at
+      ? new Date(m.first_seen_at).toLocaleString("ro-RO",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})
+      : "—";
+    const color = _levelColor[m.similarity_level] || "#888";
+    const label = _levelLabel[m.similarity_level] || m.similarity_level || "—";
+    return `<tr>
+      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;"><strong>${m.tm_name||"—"}</strong></td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${m.tm_office||"—"}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${m.application_date||"—"}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;color:${color};font-weight:700;">${label}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;font-size:.78rem;color:#888;">${date}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("foundMarksContent").innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+      ${filterBtn("all", "Toate", all.length)}
+      ${filterBtn("conflict", "⚠ Conflicte", nConflict)}
+      ${filterBtn("similar", "🔍 Similare", nSimilar)}
+      <span style="font-size:.78rem;color:#aaa;margin-left:auto;">sortate: nivel de risc → cele mai recente primele</span>
+    </div>
+    <table class="watch-table">
+      <thead><tr>
+        <th>Marcă</th><th>Oficiu</th><th>Dată depunere</th><th>Nivel</th><th>Prima detectare</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 function closeFoundMarks() {
