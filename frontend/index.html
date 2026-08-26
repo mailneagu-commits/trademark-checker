@@ -710,6 +710,11 @@
         </div>
       </div>
 
+      <!-- Comparație marcă din buletin ↔ listă de monitorizare -->
+      <div id="bulletinComparePanel" style="display:none;margin-bottom:14px;background:#fff;border:1.5px solid #d0d9ea;border-radius:8px;padding:14px;">
+        <div id="bulletinCompareContent"></div>
+      </div>
+
       <!-- Ambele surse simultan -->
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span style="font-size:.8rem;color:#888;">Descarcă ambele surse pentru data de mai sus</span>
@@ -2033,7 +2038,10 @@ async function fetchBulletin(source) {
         ? `<span style="color:#1e8449;">✅ ${info.marks} mărci · BOPI ${day}</span>
            <button onclick="toggleBulletinMarks('osim','${day}')"
              style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
-             id="osimToggleBtn">▼ Vezi mărci</button>`
+             id="osimToggleBtn">▼ Vezi mărci</button>
+           <button onclick="toggleBulletinCompare('osim','${day}')"
+             style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
+             id="osimCompareBtn">⚖ Compară cu monitorizarea</button>`
         : `<span style="color:#e67e22;">⚠ ${info.error || "Nedisponibil pentru această dată"}</span>`
       );
     }
@@ -2052,7 +2060,10 @@ async function fetchBulletin(source) {
           `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>
            <button onclick="toggleBulletinMarks('euipo','${day}')"
              style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
-             id="euipoToggleBtn">▼ Vezi mărci</button>`
+             id="euipoToggleBtn">▼ Vezi mărci</button>
+           <button onclick="toggleBulletinCompare('euipo','${day}')"
+             style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
+             id="euipoCompareBtn">⚖ Compară cu monitorizarea</button>`
         );
       } else {
         _setBulletinResult("euipo",
@@ -2096,7 +2107,10 @@ async function _pollEuipoBulletin(targetDate, attempt) {
           `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>
            <button onclick="toggleBulletinMarks('euipo','${day}')"
              style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
-             id="euipoToggleBtn">▼ Vezi mărci</button>`
+             id="euipoToggleBtn">▼ Vezi mărci</button>
+           <button onclick="toggleBulletinCompare('euipo','${day}')"
+             style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
+             id="euipoCompareBtn">⚖ Compară cu monitorizarea</button>`
         );
       } else {
         _setBulletinResult("euipo", `<span style="color:#e67e22;">⚠ ${info.error || "Nicio marcă pentru această dată"}</span>`);
@@ -2177,6 +2191,8 @@ function _setBulletinResult(source, html) {
   // Resetăm panoul de mărci când se descarcă un buletin nou
   const panel = document.getElementById(source + "MarksPanel");
   if (panel) { panel.style.display = "none"; panel.dataset.loaded = ""; }
+  const comparePanel = document.getElementById("bulletinComparePanel");
+  if (comparePanel && comparePanel.dataset.source === source) { comparePanel.style.display = "none"; }
 }
 
 // ── Vizualizare mărci buletin ─────────────────────────────────────────────
@@ -2277,6 +2293,118 @@ function renderBulletinMarks(source, data) {
             <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Name and address of the applicant">(731) Solicitant</th>
             <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Name and address of the representative">(740) Reprezentant</th>
             <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" title="Mark feature (WORD/FIGURATIVE/3D/...)">Tip marcă</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── Comparație buletin ↔ listă de monitorizare ──────────────────────────────
+
+const _bulletinCompareCache = {};
+
+async function toggleBulletinCompare(source, date) {
+  const panel = document.getElementById("bulletinComparePanel");
+  const btnId = source + "CompareBtn";
+  const btn   = document.getElementById(btnId);
+
+  if (panel.style.display !== "none" && panel.dataset.source === source && panel.dataset.date === date) {
+    panel.style.display = "none";
+    if (btn) btn.textContent = "⚖ Compară cu monitorizarea";
+    return;
+  }
+
+  panel.style.display = "block";
+  panel.dataset.source = source;
+  panel.dataset.date   = date;
+  if (btn) btn.textContent = "▲ Ascunde comparația";
+
+  const cacheKey = `${source}:${date}`;
+  if (_bulletinCompareCache[cacheKey]) {
+    _renderBulletinCompare(_bulletinCompareCache[cacheKey]);
+    panel.scrollIntoView({behavior:"smooth"});
+    return;
+  }
+
+  document.getElementById("bulletinCompareContent").innerHTML =
+    '<em style="color:#aaa;font-size:.82rem;">Se compară mărcile din buletin cu lista de monitorizare...</em>';
+  panel.scrollIntoView({behavior:"smooth"});
+
+  try {
+    const r    = await fetch(`/api/monitor/bulletin-compare?source=${source}&date=${date}`);
+    const data = await r.json();
+    if (!r.ok) {
+      document.getElementById("bulletinCompareContent").innerHTML =
+        `<span style="color:#c0392b;font-size:.82rem;">❌ ${data.detail || "Eroare"}</span>`;
+      return;
+    }
+    _bulletinCompareCache[cacheKey] = data;
+    _renderBulletinCompare(data);
+  } catch (e) {
+    document.getElementById("bulletinCompareContent").innerHTML =
+      `<span style="color:#c0392b;font-size:.82rem;">❌ ${e.message}</span>`;
+  }
+}
+
+function _renderBulletinCompare(data) {
+  const el = document.getElementById("bulletinCompareContent");
+
+  if (!data.rows || !data.rows.length) {
+    el.innerHTML = `<span style="color:#888;font-size:.82rem;">
+      Nicio potrivire între cele ${data.total_bulletin_marks} mărci din buletin și lista de monitorizare.
+    </span>`;
+    return;
+  }
+
+  const rows = data.rows.map(r => {
+    const bImg = r.bulletin_image
+      ? `<img src="${r.bulletin_image}" alt="" style="max-height:52px;max-width:90px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
+      : "—";
+    const wImg = r.watch_item_image
+      ? `<img src="${r.watch_item_image}" alt="" style="max-height:52px;max-width:90px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
+      : "—";
+    const riskColor = { very_high:"#c0392b", high:"#c0392b", medium:"#e67e22", low:"#e67e22" }[r.risk_level] || "#888";
+    return `<tr>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-weight:700;color:${riskColor};">${r.similarity_percent}%</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${r.bulletin_app_number || "—"}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${r.bulletin_holder || "—"}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${r.bulletin_representative || "—"}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${(r.bulletin_classes||[]).join(", ") || "—"}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;text-align:center;">${bImg}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-weight:600;background:#f5faff;">${r.bulletin_name || "—"}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;border-left:2px solid #d0d9ea;text-align:center;">${wImg}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${(r.watch_item_classes||[]).join(", ") || "—"}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-weight:600;background:#f6f4fb;">${r.watch_item_name || "—"}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-weight:700;color:${riskColor};">${r.similarity_percent}%</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div style="font-size:.82rem;color:#888;margin-bottom:10px;">
+      ${data.total_matches} potriviri găsite din ${data.total_bulletin_marks} mărci în buletin
+      (sortate după nivel de risc și procent de asemănare).
+    </div>
+    <div style="max-height:560px;overflow-y:auto;overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;">
+      <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+        <thead style="position:sticky;top:0;background:#f0f4fa;">
+          <tr>
+            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;">%</th>
+            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" colspan="6">🗞 Marcă din buletin</th>
+            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;border-left:2px solid #d0d9ea;" colspan="4">👁 Marcă monitorizată</th>
+          </tr>
+          <tr>
+            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;"></th>
+            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Nr. depozit</th>
+            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Titular</th>
+            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Reprezentant</th>
+            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Clase</th>
+            <th style="padding:5px 10px;text-align:center;color:#888;font-size:.72rem;">Imagine</th>
+            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Denumire marcă</th>
+            <th style="padding:5px 10px;text-align:center;color:#888;font-size:.72rem;border-left:2px solid #d0d9ea;">Imagine</th>
+            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Clase</th>
+            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Denumire marcă</th>
+            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">% Asemănare</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>

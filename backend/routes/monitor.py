@@ -5,7 +5,7 @@ import io
 import os
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -316,13 +316,10 @@ def bulletin_status():
     }
 
 
-@router.get("/bulletin-marks")
-def get_bulletin_marks(source: str, date: str):
-    """
-    Returnează mărcile dintr-un buletin descărcat anterior.
-    source: 'osim' | 'euipo'
-    date: 'YYYY-MM-DD'
-    """
+def _load_bulletin_marks(source: str, date: str) -> List[Dict]:
+    """Încarcă mărcile dintr-un buletin deja descărcat (OSIM sau EUIPO), fără
+    să pornească vreo descărcare — folosit atât de /bulletin-marks cât și de
+    /bulletin-compare."""
     from datetime import date as date_type
 
     try:
@@ -338,7 +335,7 @@ def get_bulletin_marks(source: str, date: str):
         pdf     = os.path.join(CACHE_DIR, f"{slug}.pdf")
         if not os.path.exists(pdf):
             raise HTTPException(404, "Buletinul OSIM pentru această dată nu a fost descărcat încă.")
-        marks = _parse_pdf(pdf)
+        return _parse_pdf(pdf)
 
     elif source == "euipo":
         from scrapers.euipo_bulletin import is_bulletin_cached, should_run_sync, fetch_euipo_for_date
@@ -352,11 +349,84 @@ def get_bulletin_marks(source: str, date: str):
         marks, info = fetch_euipo_for_date(td, skip_pdf)
         if not marks and info.get("status") not in ("ok_api", "ok_bulletin"):
             raise HTTPException(404, info.get("error") or "Buletinul EUIPO pentru această dată nu a fost descărcat încă.")
+        return marks
 
     else:
         raise HTTPException(400, "source trebuie să fie 'osim' sau 'euipo'")
 
+
+@router.get("/bulletin-marks")
+def get_bulletin_marks(source: str, date: str):
+    """
+    Returnează mărcile dintr-un buletin descărcat anterior.
+    source: 'osim' | 'euipo'
+    date: 'YYYY-MM-DD'
+    """
+    marks = _load_bulletin_marks(source, date)
     return {"source": source, "date": date, "total": len(marks), "marks": marks}
+
+
+@router.get("/bulletin-compare")
+def get_bulletin_compare(source: str, date: str, db: Session = Depends(get_db)):
+    """
+    Compară fiecare marcă din buletinul descărcat (OSIM/EUIPO) cu toată lista
+    de mărci monitorizate, folosind exact algoritmul de similaritate din
+    monitorizare (SimilarityAgent), și întoarce perechile potrivite
+    (marcă din buletin ↔ marcă monitorizată), sortate după nivel de risc și
+    procent de asemănare.
+    """
+    from monitor_service import _similarity
+
+    marks = _load_bulletin_marks(source, date)
+
+    relevant_codes = ("RO", "EU") if source == "osim" else ("EM", "EU")
+    items = (
+        db.query(WatchItem)
+        .filter(WatchItem.active == True)  # noqa: E712
+        .all()
+    )
+    items = [it for it in items if any((o or "").upper() in relevant_codes for o in (it.offices or []))]
+
+    rows = []
+    for item in items:
+        classes = item.nice_classes or []
+        watch_classes = {str(c) for c in classes}
+        analysis = _similarity.analyze(item.trademark_name, marks, classes, user_offices=item.offices)
+        for entry in analysis["conflicts"] + analysis["similar"]:
+            reps = entry.get("representatives") or []
+            rep_str = ", ".join(r.get("name", "") for r in reps if r.get("name")) or entry.get("representative", "") or ""
+            bulletin_classes = entry.get("niceClass") or []
+            class_overlap = bool(watch_classes & set(bulletin_classes))
+            rows.append({
+                "bulletin_app_number": entry.get("applicationNumber", ""),
+                "bulletin_name":       entry.get("tmName", ""),
+                "bulletin_holder":     ", ".join(entry.get("applicantName") or []),
+                "bulletin_representative": rep_str,
+                "bulletin_classes":    bulletin_classes,
+                "bulletin_image":      entry.get("markImageURI"),
+                "watch_item_id":       item.id,
+                "watch_item_name":     item.trademark_name,
+                "watch_item_classes":  classes,
+                "watch_item_image":    (f"/api/monitor/watch-image/{item.reference_image}"
+                                         if item.reference_image else None),
+                "similarity_percent":  round(entry["similarity"]["combined_score"]),
+                "risk_level":          entry["risk_level"],
+                "class_overlap":       class_overlap,
+            })
+
+    _risk_ord = {"very_high": 0, "high": 1, "medium": 2, "low": 3}
+    rows.sort(key=lambda r: (
+        _risk_ord.get(r["risk_level"], 4),
+        0 if r["class_overlap"] else 1,
+        -r["similarity_percent"],
+    ))
+
+    return {
+        "source": source, "date": date,
+        "total_bulletin_marks": len(marks),
+        "total_matches": len(rows),
+        "rows": rows,
+    }
 
 
 @router.get("/watch-image/{filename}")
