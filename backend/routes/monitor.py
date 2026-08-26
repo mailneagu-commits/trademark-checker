@@ -407,8 +407,7 @@ def get_bulletin_compare(source: str, date: str, db: Session = Depends(get_db)):
                 "watch_item_id":       item.id,
                 "watch_item_name":     item.trademark_name,
                 "watch_item_classes":  classes,
-                "watch_item_image":    (f"/api/monitor/watch-image/{item.reference_image}"
-                                         if item.reference_image else None),
+                "watch_item_holder":   item.holder_name or "",
                 "similarity_percent":  round(entry["similarity"]["combined_score"]),
                 "risk_level":          entry["risk_level"],
                 "class_overlap":       class_overlap,

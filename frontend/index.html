@@ -377,6 +377,7 @@
       .watch-table th:nth-child(1), .watch-table td:nth-child(1) { display:none; }
       .watch-table th:nth-child(n+5), .watch-table td:nth-child(n+5) { display:none; }
       .bulletin-grid { grid-template-columns: 1fr !important; }
+      #bulletinComparePanel { margin-left:0 !important; margin-right:0 !important; }
     }
   </style>
 </head>
@@ -711,7 +712,8 @@
       </div>
 
       <!-- Comparație marcă din buletin ↔ listă de monitorizare -->
-      <div id="bulletinComparePanel" style="display:none;margin-bottom:14px;background:#fff;border:1.5px solid #d0d9ea;border-radius:8px;padding:14px;">
+      <div id="bulletinComparePanel" style="display:none;margin-bottom:14px;background:#fff;border:1.5px solid #d0d9ea;border-radius:8px;padding:14px;
+                  margin-left:-48px;margin-right:-48px;box-sizing:border-box;">
         <div id="bulletinCompareContent"></div>
       </div>
 
@@ -2359,52 +2361,49 @@ function _renderBulletinCompare(data) {
 
   const rows = data.rows.map(r => {
     const bImg = r.bulletin_image
-      ? `<img src="${r.bulletin_image}" alt="" style="max-height:52px;max-width:90px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
-      : "—";
-    const wImg = r.watch_item_image
-      ? `<img src="${r.watch_item_image}" alt="" style="max-height:52px;max-width:90px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
+      ? `<img src="${r.bulletin_image}" alt="" style="max-height:64px;max-width:120px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
       : "—";
     const riskColor = { very_high:"#c0392b", high:"#c0392b", medium:"#e67e22", low:"#e67e22" }[r.risk_level] || "#888";
     return `<tr>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-weight:700;color:${riskColor};">${r.similarity_percent}%</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${r.bulletin_app_number || "—"}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${r.bulletin_holder || "—"}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${r.bulletin_representative || "—"}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${(r.bulletin_classes||[]).join(", ") || "—"}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;text-align:center;">${bImg}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-weight:600;background:#f5faff;">${r.bulletin_name || "—"}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;border-left:2px solid #d0d9ea;text-align:center;">${wImg}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${(r.watch_item_classes||[]).join(", ") || "—"}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-weight:600;background:#f6f4fb;">${r.watch_item_name || "—"}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eef1f6;font-weight:700;color:${riskColor};">${r.similarity_percent}%</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;font-weight:700;color:${riskColor};white-space:nowrap;">${r.similarity_percent}%</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;white-space:nowrap;">${r.bulletin_app_number || "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;">${r.bulletin_holder || "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;">${r.bulletin_representative || "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;white-space:nowrap;">${(r.bulletin_classes||[]).join(", ") || "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;text-align:center;">${bImg}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;font-weight:700;background:#f5faff;font-size:1rem;">${r.bulletin_name || "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;border-left:2px solid #d0d9ea;font-weight:700;background:#f6f4fb;font-size:1rem;">${r.watch_item_name || "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;white-space:nowrap;">${(r.watch_item_classes||[]).join(", ") || "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;">${r.watch_item_holder || "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;font-weight:700;color:${riskColor};white-space:nowrap;">${r.similarity_percent}%</td>
     </tr>`;
   }).join("");
 
   el.innerHTML = `
-    <div style="font-size:.82rem;color:#888;margin-bottom:10px;">
+    <div style="font-size:.85rem;color:#888;margin-bottom:10px;">
       ${data.total_matches} potriviri găsite din ${data.total_bulletin_marks} mărci în buletin
       (sortate după nivel de risc și procent de asemănare).
     </div>
-    <div style="max-height:560px;overflow-y:auto;overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;">
-      <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+    <div style="overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;">
+      <table style="width:100%;min-width:1400px;border-collapse:collapse;font-size:.9rem;">
         <thead style="position:sticky;top:0;background:#f0f4fa;">
           <tr>
-            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;">%</th>
-            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;" colspan="6">🗞 Marcă din buletin</th>
-            <th style="padding:7px 10px;text-align:left;color:#0f3460;font-size:.75rem;border-left:2px solid #d0d9ea;" colspan="4">👁 Marcă monitorizată</th>
+            <th style="padding:8px 12px;text-align:left;color:#0f3460;font-size:.78rem;"></th>
+            <th style="padding:8px 12px;text-align:left;color:#0f3460;font-size:.8rem;" colspan="6">🗞 Marcă din buletin</th>
+            <th style="padding:8px 12px;text-align:left;color:#0f3460;font-size:.8rem;border-left:2px solid #d0d9ea;" colspan="4">👁 Marcă monitorizată</th>
           </tr>
           <tr>
-            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;"></th>
-            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Nr. depozit</th>
-            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Titular</th>
-            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Reprezentant</th>
-            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Clase</th>
-            <th style="padding:5px 10px;text-align:center;color:#888;font-size:.72rem;">Imagine</th>
-            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Denumire marcă</th>
-            <th style="padding:5px 10px;text-align:center;color:#888;font-size:.72rem;border-left:2px solid #d0d9ea;">Imagine</th>
-            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Clase</th>
-            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">Denumire marcă</th>
-            <th style="padding:5px 10px;text-align:left;color:#888;font-size:.72rem;">% Asemănare</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">%</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">Nr. depozit</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">Titular</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">Reprezentant</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">Clase</th>
+            <th style="padding:6px 12px;text-align:center;color:#888;font-size:.75rem;">Imagine</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">Denumire marcă</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;border-left:2px solid #d0d9ea;">Denumire marcă</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">Clase</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">Titular</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">% Asemănare</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
