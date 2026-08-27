@@ -276,8 +276,15 @@ class SimilarityAgent:
             words_q = query.upper().split()
             words_c = name.upper().split()
 
+            # Pragul de 80 pentru fuzz.ratio prindea și cuvinte scurte fără nicio
+            # legătură de marcă (ex. "PHARMA" vs "PARA" = 80.0 — coincidență de
+            # cuvinte comune, nu variantă de marcă); 87 lasă în continuare variantele
+            # reale de o literă (ex. "FLEXIMOBIL" vs "FLEXIBIL" = 88.9), iar rădăcina
+            # comună de 4 litere (_roots) rămâne neschimbată — ea prinde variante cu
+            # scor de similaritate mai mic dar cu o particulă de brand distinctivă
+            # comună (ex. "NICFLEX" vs "FLEXIMOBIL").
             similar_word_match = any(
-                fuzz.ratio(wq, wc) >= 80 or bool(_roots(wq) & _roots(wc))
+                fuzz.ratio(wq, wc) >= 87 or bool(_roots(wq) & _roots(wc))
                 for wq in words_q
                 for wc in words_c
                 if len(wq) >= 4 and len(wc) >= 4
@@ -285,7 +292,13 @@ class SimilarityAgent:
             if similar_word_match and sc < self.threshold_medium:
                 sc = max(sc, self.threshold_medium)
 
-            if (query.upper() in name.upper() or name.upper() in query.upper()) and sc < self.threshold_medium:
+            # Containment (ex. "PHARMA" ⊂ "SHANAB PHARMA") e un semnal real doar dacă
+            # partea scurtă e un cuvânt propriu-zis, nu o literă/particulă incidentală
+            # (altfel orice marcă de 1-2 litere, ex. "R", ar "conține"-se în aproape
+            # orice altă marcă și ar primi automat risc minim mediu).
+            shorter_len = min(len(query.strip()), len(name.strip()))
+            if (query.upper() in name.upper() or name.upper() in query.upper()) \
+                    and shorter_len >= 3 and sc < self.threshold_medium:
                 sc = max(sc, self.threshold_medium)
 
             # Cuvânt identic (≥3 litere) → risc ridicat minim, la finalul secțiunii
