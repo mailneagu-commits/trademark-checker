@@ -375,6 +375,13 @@ def _compute_bulletin_compare(source: str, date: str) -> Dict:
     procent de asemănare. CPU-bound (rapidfuzz) — poate lua zeci de secunde
     pentru buletine mari (EUIPO are ~1500 mărci/zi față de ~40 la OSIM), de
     aceea rulează ca job de fundal, nu direct în request.
+
+    Filtrare: o pereche apare doar dacă are AND (nu OR) — clase NICE comune
+    ȘI similaritate de nume ≥ prag mediu (risc medium/high/very_high). Doar
+    numele asemănător sau doar clasa comună, fără celălalt criteriu, produce
+    prea multe potriviri irelevante (ex. nume complet diferite dar cu scor
+    ridicat din cauza unui cuvânt comun scurt, sau mărci din domenii total
+    diferite care întâmplător au aceeași clasă NICE).
     """
     from monitor_service import _similarity
     from db import SessionLocal
@@ -397,6 +404,8 @@ def _compute_bulletin_compare(source: str, date: str) -> Dict:
                 rep_str = ", ".join(r.get("name", "") for r in reps if r.get("name")) or entry.get("representative", "") or ""
                 bulletin_classes = entry.get("niceClass") or []
                 class_overlap = bool(watch_classes & set(bulletin_classes))
+                if not class_overlap or entry["risk_level"] == "low":
+                    continue
                 rows.append({
                     "bulletin_app_number": entry.get("applicationNumber", ""),
                     "bulletin_name":       entry.get("tmName", ""),
