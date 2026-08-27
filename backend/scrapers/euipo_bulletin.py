@@ -151,38 +151,62 @@ def _download_bulletin(value: str, slug: str, lang: str = "EN") -> Tuple[Optiona
     url = f"{BULLETIN_DL_URL}/{value}/{lang}"
     # Transferul mare (15-20 MB) se întrerupe intermitent la conexiune (verificat: ~40-50%
     # rată de succes per încercare, chiar și local — nu e blocaj, doar instabilitate de
-    # rețea pe fișiere mari). Compensăm cu mai multe încercări + validare reală de PDF
-    # complet (marker %%EOF), nu doar primii octeți.
+    # rețea pe fișiere mari), de multe ori aproape de final (ex. 17.7 din 20 MB citiți).
+    # Reluăm de unde am rămas via header Range în loc să redescărcăm tot de la zero la
+    # fiecare încercare — dacă serverul nu suportă Range (răspunde 200 în loc de 206 la
+    # o cerere cu Range), renunțăm la ce aveam și pornim din nou de la zero.
     max_attempts = 5
     last_err: Optional[str] = None
+    content = bytearray()
     for attempt in range(1, max_attempts + 1):
-        print(f"[EUIPO Bulletin] Downloading {url} (attempt {attempt}/{max_attempts})")
+        resuming = len(content) > 0
+        headers = dict(_HEADERS)
+        if resuming:
+            headers["Range"] = f"bytes={len(content)}-"
+            print(f"[EUIPO Bulletin] Downloading {url} (attempt {attempt}/{max_attempts}, "
+                  f"resuming from {len(content)//1024} KB)")
+        else:
+            print(f"[EUIPO Bulletin] Downloading {url} (attempt {attempt}/{max_attempts})")
         try:
-            r = requests.get(url, headers=_HEADERS, timeout=REQUEST_TIMEOUT, stream=True)
-            if r.status_code != 200:
+            r = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT, stream=True)
+            if resuming and r.status_code == 200:
+                print("[EUIPO Bulletin] Serverul nu suportă reluare (Range) — reia de la zero")
+                content = bytearray()
+                resuming = False
+            elif r.status_code not in (200, 206):
                 last_err = f"http_{r.status_code}"
                 print(f"[EUIPO Bulletin] Download {url} → {r.status_code}")
+                if r.status_code == 416:   # range invalid — starea locală nu mai e de încredere
+                    content = bytearray()
                 continue
-            chunks = bytearray()
+
             for chunk in r.iter_content(chunk_size=1024 * 256):
-                chunks.extend(chunk)
-            content = bytes(chunks)
-            if not content or content[:5] != b"%PDF-":
-                last_err = f"not_pdf: {content[:80]!r}"
-                print(f"[EUIPO Bulletin] Răspuns neașteptat (nu PDF): {content[:80]}")
+                content.extend(chunk)
+
+            if not resuming and (not content or content[:5] != b"%PDF-"):
+                last_err = f"not_pdf: {bytes(content[:80])!r}"
+                print(f"[EUIPO Bulletin] Răspuns neașteptat (nu PDF): {bytes(content[:80])}")
+                content = bytearray()
                 continue
-            if b"%%EOF" not in content[-2048:]:
-                last_err = f"truncated: {len(content)} bytes, no %%EOF trailer"
-                print(f"[EUIPO Bulletin] PDF trunchiat (attempt {attempt}): {len(content)} bytes, fără %%EOF")
+
+            if b"%%EOF" not in bytes(content[-2048:]):
+                last_err = f"truncated: {len(content)} bytes so far, no %%EOF trailer"
+                print(f"[EUIPO Bulletin] PDF trunchiat (attempt {attempt}): {len(content)} bytes, "
+                      f"fără %%EOF — reluăm de unde am rămas")
                 continue
+
+            data = bytes(content)
             with open(local, "wb") as f:
-                f.write(content)
-            size_kb = len(content) // 1024
+                f.write(data)
+            size_kb = len(data) // 1024
             print(f"[EUIPO Bulletin] Saved {local} ({size_kb} KB, attempt {attempt})")
             return local, None
         except Exception as e:
             last_err = f"{type(e).__name__}: {e}"
-            print(f"[EUIPO Bulletin] Download error (attempt {attempt}): {e}")
+            print(f"[EUIPO Bulletin] Download error (attempt {attempt}, "
+                  f"{len(content)//1024} KB acumulați până acum): {e}")
+            # păstrăm `content` — e o cădere de conexiune la mijlocul transferului,
+            # nu date corupte, deci merită reluat de unde a rămas
     return None, last_err
 
 
