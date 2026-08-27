@@ -366,52 +366,54 @@ def get_bulletin_marks(source: str, date: str):
     return {"source": source, "date": date, "total": len(marks), "marks": marks}
 
 
-@router.get("/bulletin-compare")
-def get_bulletin_compare(source: str, date: str, db: Session = Depends(get_db)):
+def _compute_bulletin_compare(source: str, date: str) -> Dict:
     """
     Compară fiecare marcă din buletinul descărcat (OSIM/EUIPO) cu toată lista
     de mărci monitorizate, folosind exact algoritmul de similaritate din
     monitorizare (SimilarityAgent), și întoarce perechile potrivite
     (marcă din buletin ↔ marcă monitorizată), sortate după nivel de risc și
-    procent de asemănare.
+    procent de asemănare. CPU-bound (rapidfuzz) — poate lua zeci de secunde
+    pentru buletine mari (EUIPO are ~1500 mărci/zi față de ~40 la OSIM), de
+    aceea rulează ca job de fundal, nu direct în request.
     """
     from monitor_service import _similarity
+    from db import SessionLocal
 
     marks = _load_bulletin_marks(source, date)
 
-    relevant_codes = ("RO", "EU") if source == "osim" else ("EM", "EU")
-    items = (
-        db.query(WatchItem)
-        .filter(WatchItem.active == True)  # noqa: E712
-        .all()
-    )
-    items = [it for it in items if any((o or "").upper() in relevant_codes for o in (it.offices or []))]
+    db = SessionLocal()
+    try:
+        relevant_codes = ("RO", "EU") if source == "osim" else ("EM", "EU")
+        items = db.query(WatchItem).filter(WatchItem.active == True).all()  # noqa: E712
+        items = [it for it in items if any((o or "").upper() in relevant_codes for o in (it.offices or []))]
 
-    rows = []
-    for item in items:
-        classes = item.nice_classes or []
-        watch_classes = {str(c) for c in classes}
-        analysis = _similarity.analyze(item.trademark_name, marks, classes, user_offices=item.offices)
-        for entry in analysis["conflicts"] + analysis["similar"]:
-            reps = entry.get("representatives") or []
-            rep_str = ", ".join(r.get("name", "") for r in reps if r.get("name")) or entry.get("representative", "") or ""
-            bulletin_classes = entry.get("niceClass") or []
-            class_overlap = bool(watch_classes & set(bulletin_classes))
-            rows.append({
-                "bulletin_app_number": entry.get("applicationNumber", ""),
-                "bulletin_name":       entry.get("tmName", ""),
-                "bulletin_holder":     ", ".join(entry.get("applicantName") or []),
-                "bulletin_representative": rep_str,
-                "bulletin_classes":    bulletin_classes,
-                "bulletin_image":      entry.get("markImageURI"),
-                "watch_item_id":       item.id,
-                "watch_item_name":     item.trademark_name,
-                "watch_item_classes":  classes,
-                "watch_item_holder":   item.holder_name or "",
-                "similarity_percent":  round(entry["similarity"]["combined_score"]),
-                "risk_level":          entry["risk_level"],
-                "class_overlap":       class_overlap,
-            })
+        rows = []
+        for item in items:
+            classes = item.nice_classes or []
+            watch_classes = {str(c) for c in classes}
+            analysis = _similarity.analyze(item.trademark_name, marks, classes, user_offices=item.offices)
+            for entry in analysis["conflicts"] + analysis["similar"]:
+                reps = entry.get("representatives") or []
+                rep_str = ", ".join(r.get("name", "") for r in reps if r.get("name")) or entry.get("representative", "") or ""
+                bulletin_classes = entry.get("niceClass") or []
+                class_overlap = bool(watch_classes & set(bulletin_classes))
+                rows.append({
+                    "bulletin_app_number": entry.get("applicationNumber", ""),
+                    "bulletin_name":       entry.get("tmName", ""),
+                    "bulletin_holder":     ", ".join(entry.get("applicantName") or []),
+                    "bulletin_representative": rep_str,
+                    "bulletin_classes":    bulletin_classes,
+                    "bulletin_image":      entry.get("markImageURI"),
+                    "watch_item_id":       item.id,
+                    "watch_item_name":     item.trademark_name,
+                    "watch_item_classes":  classes,
+                    "watch_item_holder":   item.holder_name or "",
+                    "similarity_percent":  round(entry["similarity"]["combined_score"]),
+                    "risk_level":          entry["risk_level"],
+                    "class_overlap":       class_overlap,
+                })
+    finally:
+        db.close()
 
     _risk_ord = {"very_high": 0, "high": 1, "medium": 2, "low": 3}
     rows.sort(key=lambda r: (
@@ -426,6 +428,50 @@ def get_bulletin_compare(source: str, date: str, db: Session = Depends(get_db)):
         "total_matches": len(rows),
         "rows": rows,
     }
+
+
+_compare_jobs: dict = {}   # "source:date" -> {"running": bool, "result": dict|None, "error": str|None}
+
+
+@router.post("/bulletin-compare/start")
+async def start_bulletin_compare(source: str, date: str):
+    import asyncio
+
+    key = f"{source}:{date}"
+    job = _compare_jobs.get(key)
+    if job and job.get("running"):
+        return {"status": "already_running"}
+    if job and job.get("result") is not None:
+        return {"status": "done", **job["result"]}
+
+    _compare_jobs[key] = {"running": True, "result": None, "error": None}
+
+    loop = asyncio.get_event_loop()
+
+    async def _bg():
+        try:
+            result = await loop.run_in_executor(None, _compute_bulletin_compare, source, date)
+            _compare_jobs[key] = {"running": False, "result": result, "error": None}
+        except HTTPException as e:
+            _compare_jobs[key] = {"running": False, "result": None, "error": e.detail}
+        except Exception as e:
+            _compare_jobs[key] = {"running": False, "result": None, "error": str(e)}
+
+    asyncio.ensure_future(_bg())
+    return {"status": "started"}
+
+
+@router.get("/bulletin-compare/status")
+def bulletin_compare_status(source: str, date: str):
+    key = f"{source}:{date}"
+    job = _compare_jobs.get(key)
+    if not job:
+        return {"status": "not_started"}
+    if job.get("running"):
+        return {"status": "running"}
+    if job.get("error"):
+        return {"status": "error", "error": job["error"]}
+    return {"status": "done", **job["result"]}
 
 
 @router.get("/watch-image/{filename}")

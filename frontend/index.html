@@ -2330,23 +2330,57 @@ async function toggleBulletinCompare(source, date) {
   }
 
   document.getElementById("bulletinCompareContent").innerHTML =
-    '<em style="color:#aaa;font-size:.82rem;">Se compară mărcile din buletin cu lista de monitorizare...</em>';
+    '<em style="color:#aaa;font-size:.82rem;">Se compară mărcile din buletin cu lista de monitorizare (poate dura până la un minut pentru buletine mari)...</em>';
   panel.scrollIntoView({behavior:"smooth"});
 
   try {
-    const r    = await fetch(`/api/monitor/bulletin-compare?source=${source}&date=${date}`);
+    const r    = await fetch(`/api/monitor/bulletin-compare/start?source=${source}&date=${date}`, {method:"POST"});
     const data = await r.json();
     if (!r.ok) {
       document.getElementById("bulletinCompareContent").innerHTML =
         `<span style="color:#c0392b;font-size:.82rem;">❌ ${data.detail || "Eroare"}</span>`;
       return;
     }
-    _bulletinCompareCache[cacheKey] = data;
-    _renderBulletinCompare(data);
+    if (data.status === "done") {
+      _bulletinCompareCache[cacheKey] = data;
+      _renderBulletinCompare(data);
+      return;
+    }
+    _pollBulletinCompare(source, date, 0);
   } catch (e) {
     document.getElementById("bulletinCompareContent").innerHTML =
       `<span style="color:#c0392b;font-size:.82rem;">❌ ${e.message}</span>`;
   }
+}
+
+async function _pollBulletinCompare(source, date, attempt) {
+  const MAX_ATTEMPTS = 30;   // ~30 × 4s = 2 minute
+  const cacheKey = `${source}:${date}`;
+  if (attempt >= MAX_ATTEMPTS) {
+    document.getElementById("bulletinCompareContent").innerHTML =
+      '<span style="color:#e67e22;font-size:.82rem;">⚠ Comparația durează neobișnuit de mult — încercați din nou peste câteva minute.</span>';
+    return;
+  }
+  setTimeout(async () => {
+    try {
+      const r    = await fetch(`/api/monitor/bulletin-compare/status?source=${source}&date=${date}`);
+      const data = await r.json();
+      if (data.status === "running" || data.status === "not_started") {
+        _pollBulletinCompare(source, date, attempt + 1);
+        return;
+      }
+      if (data.status === "error") {
+        document.getElementById("bulletinCompareContent").innerHTML =
+          `<span style="color:#c0392b;font-size:.82rem;">❌ ${data.error || "Eroare"}</span>`;
+        return;
+      }
+      _bulletinCompareCache[cacheKey] = data;
+      _renderBulletinCompare(data);
+    } catch (e) {
+      document.getElementById("bulletinCompareContent").innerHTML =
+        `<span style="color:#c0392b;font-size:.82rem;">❌ ${e.message}</span>`;
+    }
+  }, 4000);
 }
 
 function _renderBulletinCompare(data) {
