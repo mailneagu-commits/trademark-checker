@@ -93,7 +93,12 @@ async def _prefetch_bulletins():
         guard_slug = _date_slug(_prev_working_day(today))
         _in_progress.add(guard_slug)
         try:
-            await loop.run_in_executor(None, fetch_latest_euipo)
+            # max_days=1: spre deosebire de OSIM, fetch_euipo_for_date rezolvă deja
+            # "cel mai recent buletin publicat la sau înainte de data cerută" — o a
+            # doua verificare pentru "ieri" ar re-descărca practic ACELAȘI buletin,
+            # doar sub altă cheie de cache (bazată pe data cerută, nu pe data reală a
+            # buletinului), irosind încă un ciclu întreg de reîncercări PDF (minute).
+            await loop.run_in_executor(None, fetch_latest_euipo, 1)
         except Exception as e:
             print(f"[SCHEDULER] EUIPO prefetch error: {e}")
         finally:
