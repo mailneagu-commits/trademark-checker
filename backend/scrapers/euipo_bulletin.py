@@ -506,8 +506,15 @@ def fetch_euipo_for_date(target: date, skip_pdf_download: bool = False) -> Tuple
         else:
             info["pdf_attempt"] = f"download_failed: {dl_error}"
 
-    # Fallback: EUIPO Search API
-    marks, api_error = _fetch_via_api(working)
+    # Fallback: EUIPO Search API — la fel ca la PDF, cache-uim rezultatul, altfel
+    # fiecare cerere ulterioară repetă interogarea paginată live (~15-16 pagini
+    # pentru buletinul EUIPO), inutil de lent pentru date deja rezolvate.
+    api_error = None
+    marks = _load_marks_cache(slug)
+    if marks is None:
+        marks, api_error = _fetch_via_api(working)
+        if marks:
+            _save_marks_cache(slug, marks)
     if api_error:
         info["api_error"] = api_error
     if marks:
