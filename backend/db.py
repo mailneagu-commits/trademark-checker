@@ -1,9 +1,11 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+from paths import DATA_DIR
 
 # Dacă DATABASE_URL e setat (ex: PostgreSQL pe Railway), îl folosim direct.
-# Altfel, SQLite local.
+# Altfel, SQLite — pe DATA_DIR (volum persistent) dacă e configurat, altfel pe
+# filesystem-ul efemer al containerului (implicit — se pierde la fiecare deploy).
 _pg_url = os.environ.get("DATABASE_URL", "")
 if _pg_url.startswith("postgres://"):
     # SQLAlchemy necesită "postgresql://" nu "postgres://"
@@ -13,10 +15,12 @@ if _pg_url:
     DATABASE_URL = _pg_url
     _engine_kwargs = {}
 else:
-    DB_PATH = os.environ.get(
-        "MONITOR_DB_PATH",
-        os.path.join(os.path.dirname(__file__), "..", "monitor.db"),
+    _default_db_path = (
+        os.path.join(DATA_DIR, "monitor.db") if DATA_DIR
+        else os.path.join(os.path.dirname(__file__), "..", "monitor.db")
     )
+    DB_PATH = os.environ.get("MONITOR_DB_PATH", _default_db_path)
+    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     DATABASE_URL = f"sqlite:///{DB_PATH}"
     _engine_kwargs = {"connect_args": {"check_same_thread": False}}
 

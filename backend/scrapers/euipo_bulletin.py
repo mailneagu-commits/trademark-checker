@@ -29,13 +29,18 @@ from typing import List, Dict, Optional, Tuple
 
 import requests
 
+from paths import DATA_DIR
+
 EUIPO_COPLA_BASE   = "https://euipo.europa.eu/copla"
 BULLETIN_LIST_URL  = f"{EUIPO_COPLA_BASE}/bulletin/data/list/CTM"        # /{year}
 # Download: /copla/bulletin/data/download/CTM/{value}/{lang}
 # NOTE: requires EUIPO SSO browser session — returns 404 without it
 BULLETIN_DL_URL    = f"{EUIPO_COPLA_BASE}/bulletin/data/download/ctm"   # /{value}/{lang} — minuscule; "CTM" (majuscule) dă 404, nu e o problemă de autentificare
 
-CACHE_DIR      = os.path.join(os.path.dirname(__file__), "..", "..", "data", "bulletins", "euipo")
+CACHE_DIR      = (
+    os.path.join(DATA_DIR, "bulletins", "euipo") if DATA_DIR
+    else os.path.join(os.path.dirname(__file__), "..", "..", "data", "bulletins", "euipo")
+)
 PROCESSED_FILE = os.path.join(CACHE_DIR, "_processed.json")
 REQUEST_TIMEOUT = 90   # buletinul PDF poate avea 15-20 MB
 

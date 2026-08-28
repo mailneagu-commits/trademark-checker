@@ -14,8 +14,13 @@ from typing import List, Dict, Optional, Tuple
 
 import requests
 
+from paths import DATA_DIR
+
 OSIM_BASE      = "https://www.osim.ro/images/Publicatii/Marci"
-CACHE_DIR      = os.path.join(os.path.dirname(__file__), "..", "..", "data", "bulletins", "osim")
+CACHE_DIR      = (
+    os.path.join(DATA_DIR, "bulletins", "osim") if DATA_DIR
+    else os.path.join(os.path.dirname(__file__), "..", "..", "data", "bulletins", "osim")
+)
 PROCESSED_FILE = os.path.join(CACHE_DIR, "_processed.json")
 REQUEST_TIMEOUT = 30
 

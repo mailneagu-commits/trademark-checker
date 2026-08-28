@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from db import get_db
 from monitor_models import WatchItem, SeenTrademark, AlertLog
 from monitor_service import run_watch_item
+from paths import DATA_DIR
 
 router = APIRouter(prefix="/api/monitor", tags=["monitor"])
 
@@ -560,7 +561,7 @@ def get_watch_image(filename: str):
     """Servește logo-ul de referință al unui watch item, inserat la import Excel."""
     from fastapi.responses import FileResponse
     safe = re.sub(r'[^a-fA-F0-9]', '', filename.rsplit(".", 1)[0]) + ".png"
-    path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "watch_images", safe)
+    path = os.path.join(WATCH_IMAGE_DIR, safe)
     if not os.path.exists(path):
         raise HTTPException(404, "Imaginea nu a fost găsită.")
     return FileResponse(path, media_type="image/png")
@@ -719,7 +720,10 @@ async def trigger_bulletin_fetch(
     return result
 
 
-WATCH_IMAGE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "watch_images")
+WATCH_IMAGE_DIR = (
+    os.path.join(DATA_DIR, "watch_images") if DATA_DIR
+    else os.path.join(os.path.dirname(__file__), "..", "..", "data", "watch_images")
+)
 
 
 @router.post("/import")
