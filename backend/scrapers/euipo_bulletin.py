@@ -476,6 +476,17 @@ def fetch_euipo_for_date(target: date, skip_pdf_download: bool = False) -> Tuple
     working   = _prev_working_day(target)
     slug      = _date_slug(working)
 
+    # Dacă mărcile pentru acest buletin sunt deja parsate (din PDF sau din API),
+    # le întoarcem direct — fără niciun apel de rețea, nici măcar cel spre lista
+    # de buletine COPLA (folosit doar ca să localizăm PDF-ul de descărcat).
+    cached_marks = _load_marks_cache(slug)
+    if cached_marks is not None:
+        info = dict(processed.get(slug) or {})
+        info["slug"]         = slug
+        info["target_date"]  = target.isoformat()
+        info.setdefault("working_day", working.isoformat())
+        return cached_marks, info
+
     info = {
         "slug":        slug,
         "target_date": target.isoformat(),
