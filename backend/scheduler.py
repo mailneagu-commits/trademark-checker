@@ -77,6 +77,12 @@ async def _prefetch_bulletins():
         print(f"[SCHEDULER] OSIM prefetch error: {e}")
     new_osim = sorted(_ok_osim_slugs(_osim_processed()) - before_osim)
 
+    # Comparația OSIM pornește ACUM, imediat — nu mai jos, după EUIPO. EUIPO poate
+    # dura 1-4+ minute (uneori mai mult, pe conexiune instabilă); OSIM nu are de ce
+    # să aștepte după el doar pentru că sunt în aceeași funcție.
+    for slug in new_osim:
+        await _auto_compare("osim", slug.removeprefix("osim-"))
+
     # ── EUIPO ── (evită coliziunea cu un fetch pornit manual din UI — ambele
     # ar scrie același fișier PDF — sărind peste tick-ul ăsta dacă e deja în curs)
     before_euipo = _ok_euipo_slugs(_euipo_processed())
@@ -94,8 +100,6 @@ async def _prefetch_bulletins():
             _in_progress.discard(guard_slug)
         new_euipo = sorted(_ok_euipo_slugs(_euipo_processed()) - before_euipo)
 
-    for slug in new_osim:
-        await _auto_compare("osim", slug.removeprefix("osim-"))
     for slug in new_euipo:
         await _auto_compare("euipo", slug.removeprefix("euipo-"))
     if new_osim or new_euipo:
