@@ -67,6 +67,31 @@ def _save_processed(data: dict) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
+# ── Marks cache (rezultatul parsării, nu doar PDF-ul brut) ────────────────────
+# Parsarea PDF-ului cu pdfplumber (sute de pagini pentru buletinul EUIPO) durează
+# zeci de secunde — fără acest cache, se repeta la fiecare cerere (ex. la fiecare
+# rulare a comparației buletin↔monitorizare), chiar dacă PDF-ul era deja descărcat.
+
+def _marks_cache_path(slug: str) -> str:
+    return os.path.join(CACHE_DIR, f"{slug}.marks.json")
+
+
+def _load_marks_cache(slug: str) -> Optional[List[Dict]]:
+    path = _marks_cache_path(slug)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _save_marks_cache(slug: str, marks: List[Dict]) -> None:
+    with open(_marks_cache_path(slug), "w") as f:
+        json.dump(marks, f, ensure_ascii=False)
+
+
 # ── Date helpers ──────────────────────────────────────────────────────────────
 
 def _prev_working_day(d: date) -> date:
@@ -464,7 +489,11 @@ def fetch_euipo_for_date(target: date, skip_pdf_download: bool = False) -> Tuple
         info["bulletin_date"] = bulletin["date"].isoformat()
         local, dl_error = _download_bulletin(bulletin["value"], slug)
         if local:
-            marks = _parse_bulletin_pdf(local)
+            marks = _load_marks_cache(slug)
+            if marks is None:
+                marks = _parse_bulletin_pdf(local)
+                if marks:
+                    _save_marks_cache(slug, marks)
             if marks:
                 info["status"] = "ok_bulletin"
                 info["source"] = "copla_bulletin"

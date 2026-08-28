@@ -56,6 +56,42 @@ def _save_processed(data: dict) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
+# ── Marks cache (rezultatul parsării, nu doar PDF-ul brut) ────────────────────
+# Fără el, PDF-ul se reparsa la fiecare cerere (ex. la fiecare rulare a
+# comparației buletin↔monitorizare), chiar dacă era deja descărcat.
+
+def _marks_cache_path(slug: str) -> str:
+    return os.path.join(CACHE_DIR, f"{slug}.marks.json")
+
+
+def _load_marks_cache(slug: str) -> Optional[List[Dict]]:
+    path = _marks_cache_path(slug)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _save_marks_cache(slug: str, marks: List[Dict]) -> None:
+    with open(_marks_cache_path(slug), "w") as f:
+        json.dump(marks, f, ensure_ascii=False)
+
+
+def parse_pdf_cached(local: str, slug: str) -> List[Dict]:
+    """_parse_pdf(local), dar din cache dacă acest buletin a mai fost parsat deja —
+    folosit atât de fetch_osim_for_date cât și direct de /api/monitor (marks/compare),
+    ca reparsarea (rapidă la OSIM, dar tot inutilă) să nu se repete la fiecare cerere."""
+    marks = _load_marks_cache(slug)
+    if marks is None:
+        marks = _parse_pdf(local)
+        if marks:
+            _save_marks_cache(slug, marks)
+    return marks
+
+
 # ── Date helpers ──────────────────────────────────────────────────────────────
 
 def _prev_working_day(d: date) -> date:
@@ -409,7 +445,7 @@ def fetch_osim_for_date(target: date) -> Tuple[List[Dict], dict]:
         _save_processed(processed)
         return [], info
 
-    marks = _parse_pdf(local)
+    marks = parse_pdf_cached(local, slug)
     info["status"] = "ok"
     info["marks"]  = len(marks)
     info["at"]     = datetime.utcnow().isoformat()

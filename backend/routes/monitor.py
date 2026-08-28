@@ -328,14 +328,14 @@ def _load_bulletin_marks(source: str, date: str) -> List[Dict]:
         raise HTTPException(400, f"Dată invalidă: {date}")
 
     if source == "osim":
-        from scrapers.osim_bulletin import _prev_working_day, _date_slug, _parse_pdf, CACHE_DIR
+        from scrapers.osim_bulletin import _prev_working_day, _date_slug, parse_pdf_cached, CACHE_DIR
         import os
         working = _prev_working_day(td)
         slug    = _date_slug(working)
         pdf     = os.path.join(CACHE_DIR, f"{slug}.pdf")
         if not os.path.exists(pdf):
             raise HTTPException(404, "Buletinul OSIM pentru această dată nu a fost descărcat încă.")
-        return _parse_pdf(pdf)
+        return parse_pdf_cached(pdf, slug)
 
     elif source == "euipo":
         from scrapers.euipo_bulletin import is_bulletin_cached, should_run_sync, fetch_euipo_for_date
