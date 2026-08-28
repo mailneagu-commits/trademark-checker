@@ -455,18 +455,26 @@ def fetch_osim_for_date(target: date) -> Tuple[List[Dict], dict]:
 
 
 def fetch_latest_osim(max_days: int = 3) -> List[Dict]:
-    """Descarcă buletinele pentru ultimele N zile lucrătoare neprocesate."""
+    """Descarcă buletinele pentru ultimele N zile lucrătoare. `tried` numără zilele
+    examinate, nu doar cele redescărcate — altfel, odată ce zilele recente sunt deja
+    rezolvate cu succes, bucla nu se mai oprește niciodată (nu ajunge să incrementeze
+    tried) și avansează la nesfârșit înapoi în timp. O zi eșuată anterior (buletin
+    încă nepublicat) NU e tratată drept "rezolvată" — se reîncearcă la fiecare apel,
+    esențial pentru un job care verifică periodic dacă a apărut un buletin nou."""
     all_marks: List[Dict] = []
     processed = _load_processed()
     d         = _prev_working_day(date.today())
     tried     = 0
 
     while tried < max_days:
-        slug = _date_slug(d)
-        if slug not in processed:
+        slug  = _date_slug(d)
+        entry = processed.get(slug)
+        if entry and entry.get("status") == "ok":
+            all_marks.extend(_load_marks_cache(slug) or [])
+        else:
             marks, _ = fetch_osim_for_date(d)
             all_marks.extend(marks)
-            tried += 1
+        tried += 1
         d = _prev_working_day(d - timedelta(days=1))
 
     return all_marks
