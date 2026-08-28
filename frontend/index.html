@@ -747,7 +747,7 @@
          ondrop="handleDrop(event)">
       <div style="font-size:2rem;margin-bottom:6px;">📊</div>
       <strong>Trage fișierul Excel aici</strong> sau apasă pentru a selecta<br>
-      <span style="font-size:.77rem;">Coloane: (511) Clase NICE, (540) Denumire Marcă, (731) Titular, Teritorii, Email, Frecvență</span>
+      <span style="font-size:.77rem;">Coloane: (511) Clase NICE, (540) Denumire Marcă, (731) Titular, Teritorii, Email, Frecvență, (210) Nr. Depozit, (111) Nr. Înregistrare, (220) Data depunerii — mărcile identice (denumire+clase+imagine) nu se importă de două ori</span>
     </div>
 
     <!-- Import result -->
@@ -2991,8 +2991,16 @@ async function uploadExcel(file) {
     let html = `<div class="${data.errors > 0 ? 'import-warn' : 'import-ok'}">`;
     html += `<strong>${data.imported} mărci importate</strong>`;
     if (data.skipped > 0) html += ` · ${data.skipped} rânduri ignorate`;
+    if (data.duplicates > 0) html += ` · <span style="color:#e67e22;">${data.duplicates} mărci identice neimportate</span>`;
     if (data.errors  > 0) html += ` · <span style="color:#c0392b;">${data.errors} erori</span>`;
     html += "</div>";
+
+    if (data.details.duplicates && data.details.duplicates.length) {
+      html += `<div style="margin-top:8px;font-size:.8rem;color:#e67e22;">
+        <strong>Mărci identice (nu s-au importat din nou):</strong><ul style="margin:4px 0 0 16px;">
+        ${data.details.duplicates.map(d=>`<li>Rând ${d.row}: ${d.trademark} — ${d.reason}</li>`).join("")}
+        </ul></div>`;
+    }
 
     if (data.details.errors.length) {
       html += `<div style="margin-top:8px;font-size:.8rem;color:#c0392b;">

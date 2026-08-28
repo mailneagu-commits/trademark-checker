@@ -5,6 +5,7 @@ import io
 import os
 import re
 from datetime import datetime
+from datetime import date as dt_date
 from typing import List, Optional, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -27,6 +28,9 @@ class WatchItemCreate(BaseModel):
     offices:            List[str] = ["RO", "EM"]
     notification_email: str
     frequency:          str  = "weekly"   # daily / weekly / monthly
+    application_number: str  = ""
+    registration_number: str = ""
+    filing_date:        str  = ""
 
 
 class WatchItemOut(BaseModel):
@@ -38,6 +42,9 @@ class WatchItemOut(BaseModel):
     notification_email: str
     frequency:          str
     reference_image:    Optional[str] = None
+    application_number: Optional[str] = None
+    registration_number: Optional[str] = None
+    filing_date:        Optional[str] = None
     active:             bool
     created_at:         datetime
     last_checked_at:    Optional[datetime]
@@ -239,6 +246,9 @@ def download_template():
         "Teritorii (separate prin virgulă)*",
         "Email notificare*",
         "Frecvență (daily/weekly/monthly)",
+        "(210) Nr. Depozit (opțional)",
+        "(111) Nr. Înregistrare (opțional)",
+        "(220) Data depunerii (opțional)",
     ]
 
     header_fill   = PatternFill("solid", fgColor="1A3C5E")
@@ -247,7 +257,7 @@ def download_template():
         left=Side(style="thin"), right=Side(style="thin"),
         top=Side(style="thin"), bottom=Side(style="thin"),
     )
-    col_widths = [35, 30, 30, 30, 30, 35, 30]
+    col_widths = [35, 30, 30, 30, 30, 35, 30, 24, 24, 24]
 
     for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
         cell            = ws.cell(row=1, column=col_idx, value=header)
@@ -261,7 +271,8 @@ def download_template():
     ws.row_dimensions[2].height = 60   # loc pentru o imagine mică în celula exemplu
 
     # Example row
-    example = ["35, 42", "ACME", "", "ACME România SRL", "RO, EM", "office@firma.ro", "weekly"]
+    example = ["35, 42", "ACME", "", "ACME România SRL", "RO, EM", "office@firma.ro", "weekly",
+               "019301780", "", "2025-03-12"]
     example_fill = PatternFill("solid", fgColor="EBF5FB")
     for col_idx, val in enumerate(example, start=1):
         cell           = ws.cell(row=2, column=col_idx, value=val)
@@ -274,11 +285,15 @@ def download_template():
     ws.cell(row=3, column=1).font = Font(italic=True, color="888888")
     ws.cell(row=4, column=1, value="Teritorii acceptate: RO, EM, EU, DE, FR, IT, ES, UK, US, WO (sau orice cod de țară din TMview)")
     ws.cell(row=4, column=1).font = Font(italic=True, color="888888")
-    ws.merge_cells("A4:G4")
+    ws.merge_cells("A4:J4")
     ws.cell(row=5, column=1,
             value='Imagine: inserați logo-ul direct în celulă (Excel: Insert → Pictures → Place in Cell), în dreptul mărcii — folosit pentru comparație vizuală cu mărcile din buletine.')
     ws.cell(row=5, column=1).font = Font(italic=True, color="888888")
-    ws.merge_cells("A5:G5")
+    ws.merge_cells("A5:J5")
+    ws.cell(row=6, column=1,
+            value='Nr. Depozit / Nr. Înregistrare / Data depunerii: opționale, dar recomandate — dacă două rânduri au aceeași denumire, aceleași clase și aceeași imagine, sunt considerate aceeași marcă și nu se importă de două ori, ÎN AFARĂ de cazul în care au numere de depozit/înregistrare diferite (atunci sunt tratate ca mărci distincte, chiar dacă arată identic).')
+    ws.cell(row=6, column=1).font = Font(italic=True, color="888888")
+    ws.merge_cells("A6:J6")
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -298,6 +313,63 @@ def _parse_classes(raw: str) -> List[str]:
 
 def _parse_offices(raw: str) -> List[str]:
     return [o.strip().upper() for o in re.split(r"[,;\s]+", str(raw)) if o.strip()]
+
+
+def _norm_watch_name(name: str) -> str:
+    return re.sub(r"\s+", " ", (name or "").strip().upper())
+
+
+def _parse_filing_date(raw) -> str:
+    """Normalizează o dată de depunere (celulă Excel — poate fi datetime, sau text
+    în diverse formate) la "YYYY-MM-DD". Întoarce "" dacă lipsește sau nu poate fi
+    recunoscută (o păstrăm ca text brut în acel caz, nu aruncăm eroare — e un câmp
+    opțional, folosit doar pentru diferențiere, nu validat strict)."""
+    if raw is None or raw == "":
+        return ""
+    if isinstance(raw, (datetime, dt_date)):
+        return raw.strftime("%Y-%m-%d")
+    s = str(raw).strip()
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return s
+
+
+def _watch_identity_key(name: str, classes, image_hash: Optional[str]) -> tuple:
+    """(511)+(540 verbal)+(540 imagine) — cele trei criterii de identitate cerute:
+    aceeași denumire verbală, aceleași clase NICE, aceeași imagine (hash pe conținut,
+    nu pe numele fișierului — două fișiere diferite cu exact același logo trebuie
+    să dea același hash)."""
+    return (_norm_watch_name(name), frozenset(str(c) for c in (classes or [])), image_hash)
+
+
+def _is_duplicate_watch(existing: dict, candidate: dict) -> bool:
+    """True doar dacă identitatea (nume+clase+imagine) coincide ȘI numerele de
+    depozit/înregistrare (când sunt disponibile pe ambele) nu se contrazic — dacă
+    ambele au un număr și acesta diferă, sunt mărci distincte, chiar dacă arată
+    identic (ex. aceeași denumire refiled ulterior cu un nr. de depozit nou).
+    Dacă niciuna dintre mărci nu are nici nr. de depozit, nici de înregistrare,
+    folosim data depunerii ca ultimă diferențiere disponibilă."""
+    if _watch_identity_key(existing["name"], existing["classes"], existing["image_hash"]) != \
+       _watch_identity_key(candidate["name"], candidate["classes"], candidate["image_hash"]):
+        return False
+
+    e_app, c_app = (existing.get("application_number") or "").strip(), (candidate.get("application_number") or "").strip()
+    if e_app and c_app and e_app != c_app:
+        return False
+
+    e_reg, c_reg = (existing.get("registration_number") or "").strip(), (candidate.get("registration_number") or "").strip()
+    if e_reg and c_reg and e_reg != c_reg:
+        return False
+
+    if not e_app and not c_app and not e_reg and not c_reg:
+        e_date, c_date = (existing.get("filing_date") or "").strip(), (candidate.get("filing_date") or "").strip()
+        if e_date and c_date and e_date != c_date:
+            return False
+
+    return True
 
 
 def _parse_frequency(raw: str) -> str:
@@ -656,6 +728,7 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
         raise HTTPException(400, "Fișierul trebuie să fie .xlsx sau .xls")
 
     from openpyxl import load_workbook
+    import hashlib
     import uuid
 
     content = file.file.read()
@@ -665,9 +738,10 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
         raise HTTPException(400, f"Fișier Excel invalid: {e}")
 
     ws = wb.active
-    imported  = []
-    skipped   = []
-    errors    = []
+    imported   = []
+    skipped    = []
+    errors     = []
+    duplicates = []
 
     # Imaginile inserate direct în celule (logo de referință, coloana (540) Imagine) —
     # cheiate pe rândul (1-indexat) în care sunt ancorate, ca să le potrivim cu rândul
@@ -681,6 +755,22 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
                 images_by_row[row_num] = data
         except Exception:
             continue
+
+    # Identitatea unei mărci deja existente în listă (denumire + clase + imagine,
+    # plus nr. depozit/înregistrare/dată depunere pentru diferențiere) — verificată
+    # atât față de mărcile deja din DB, cât și față de rândurile deja importate din
+    # ACEST fișier (ex. același rând dus de două ori în Excel).
+    existing_keys = [
+        {
+            "name": w.trademark_name,
+            "classes": w.nice_classes or [],
+            "image_hash": w.image_hash,
+            "application_number": w.application_number,
+            "registration_number": w.registration_number,
+            "filing_date": w.filing_date,
+        }
+        for w in db.query(WatchItem).all()
+    ]
 
     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         has_image = row_idx in images_by_row
@@ -700,6 +790,9 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
         offices_raw        = str(row[4] or "").strip() if len(row) > 4 else ""
         notification_email = str(row[5] or "").strip() if len(row) > 5 else ""
         frequency_raw      = str(row[6] or "").strip() if len(row) > 6 else "weekly"
+        application_number = str(row[7] or "").strip() if len(row) > 7 else ""
+        registration_number = str(row[8] or "").strip() if len(row) > 8 else ""
+        filing_date         = _parse_filing_date(row[9] if len(row) > 9 else None)
 
         if not trademark_name:
             skipped.append({"row": row_idx, "reason": "Denumire marcă lipsă"})
@@ -716,12 +809,30 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
         offices   = _parse_offices(offices_raw) or ["RO", "EM"]
         frequency = _parse_frequency(frequency_raw)
 
+        image_bytes = images_by_row.get(row_idx)
+        image_hash  = hashlib.sha256(image_bytes).hexdigest() if image_bytes else None
+
+        candidate_key = {
+            "name": trademark_name, "classes": nice_classes, "image_hash": image_hash,
+            "application_number": application_number, "registration_number": registration_number,
+            "filing_date": filing_date,
+        }
+        dup = next((e for e in existing_keys if _is_duplicate_watch(e, candidate_key)), None)
+        if dup:
+            duplicates.append({
+                "row": row_idx, "trademark": trademark_name,
+                "reason": "Marcă identică (denumire + clase + imagine) deja în listă"
+                          + (f" — nr. depozit/înregistrare {dup.get('application_number') or dup.get('registration_number')}"
+                             if (dup.get("application_number") or dup.get("registration_number")) else ""),
+            })
+            continue
+
         reference_image = None
-        if has_image:
+        if image_bytes:
             os.makedirs(WATCH_IMAGE_DIR, exist_ok=True)
             filename = f"{uuid.uuid4().hex}.png"
             with open(os.path.join(WATCH_IMAGE_DIR, filename), "wb") as f:
-                f.write(images_by_row[row_idx])
+                f.write(image_bytes)
             reference_image = filename
 
         item = WatchItem(
@@ -732,19 +843,28 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
             notification_email = notification_email,
             frequency          = frequency,
             reference_image    = reference_image,
+            image_hash          = image_hash,
+            application_number  = application_number or None,
+            registration_number = registration_number or None,
+            filing_date         = filing_date or None,
         )
         db.add(item)
         imported.append({"row": row_idx, "trademark": trademark_name, "email": notification_email})
+        # rândul abia adăugat intră și el în lista de verificare, ca să prindem
+        # și duplicate ÎNTRE rândurile acestui fișier, nu doar față de DB
+        existing_keys.append(candidate_key)
 
     db.commit()
 
     return {
-        "imported": len(imported),
-        "skipped":  len(skipped),
-        "errors":   len(errors),
+        "imported":   len(imported),
+        "skipped":    len(skipped),
+        "errors":     len(errors),
+        "duplicates": len(duplicates),
         "details": {
-            "imported": imported,
-            "skipped":  skipped,
-            "errors":   errors,
+            "imported":   imported,
+            "skipped":    skipped,
+            "errors":     errors,
+            "duplicates": duplicates,
         },
     }

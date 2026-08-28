@@ -14,6 +14,10 @@ class WatchItem(Base):
     notification_email = Column(String, nullable=False)
     frequency          = Column(String, default="weekly")  # daily / weekly / monthly
     reference_image    = Column(String, nullable=True)  # nume fișier logo de referință (import Excel), pentru comparație vizuală
+    image_hash         = Column(String, nullable=True)  # sha256 al imaginii de referință — identitate vizuală, pentru deduplicare la import
+    application_number = Column(String, nullable=True)  # (210) Nr. Depozit / Nr. Cerere
+    registration_number = Column(String, nullable=True)  # (111) Nr. Înregistrare
+    filing_date        = Column(String, nullable=True)  # (220) Data depunerii, "YYYY-MM-DD"
     active             = Column(Boolean, default=True)
     created_at         = Column(DateTime, default=datetime.utcnow)
     last_checked_at    = Column(DateTime, nullable=True)
