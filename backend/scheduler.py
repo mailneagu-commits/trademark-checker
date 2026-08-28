@@ -18,42 +18,89 @@ def _get_scheduler() -> AsyncIOScheduler:
     return _scheduler
 
 
+async def _auto_compare(source: str, date_str: str):
+    """Pornește automat comparația buletin↔monitorizare (ca tabelul să fie deja
+    gata în UI, fără click pe „Compară"). Apelat doar când buletinul pentru
+    `date_str` tocmai a fost rezolvat cu succes pentru prima dată."""
+    from routes.monitor import start_bulletin_compare
+    try:
+        await start_bulletin_compare(source, date_str)
+        print(f"[SCHEDULER] Comparație auto pornită: {source} {date_str}")
+    except Exception as e:
+        print(f"[SCHEDULER] Eroare comparație auto ({source} {date_str}): {e}")
+
+
+async def _auto_run_all_watches():
+    """Pornește automat „Monitorizează acum toate mărcile" (căutare completă per
+    marcă + alertă email, dacă SMTP e configurat). O singură rulare per tick, chiar
+    dacă atât OSIM cât și EUIPO au fost proaspăt rezolvate în același tick — nu are
+    rost s-o repete de două ori la rând."""
+    from routes.monitor import run_all_watches
+    try:
+        result = await run_all_watches()
+        print(f"[SCHEDULER] Monitorizare auto (run-all): {result}")
+    except Exception as e:
+        print(f"[SCHEDULER] Eroare monitorizare auto: {e}")
+
+
 async def _prefetch_bulletins():
-    """Pre-descarcă și pre-parsează buletinele OSIM/EUIPO de îndată ce apar, ca
-    utilizatorul să nu mai aștepte 1-4 minute la primul click pe „Descarcă" sau
-    „Compară cu monitorizarea" — până atunci deja sunt în cache. Rulează periodic
-    (nu o singură dată/zi) pentru că ora exactă de publicare variază; fetch_latest_*
-    e ieftin (aproape instant) odată ce ziua curentă e deja rezolvată cu succes, și
-    reîncearcă din nou zilele nepublicate încă la verificarea precedentă."""
-    from scrapers.osim_bulletin import fetch_latest_osim
+    """Pre-descarcă și pre-parsează buletinele OSIM/EUIPO de îndată ce apar (nu o
+    singură dată/zi — rulează periodic, pentru că ora exactă de publicare variază),
+    apoi — DOAR dacă buletinul tocmai a fost rezolvat cu succes pentru prima dată —
+    pornește automat și comparația cu lista de monitorizare + „Monitorizează acum
+    toate mărcile". La un tick ulterior din aceeași zi (deja rezolvat), nu repetă
+    nimic — fetch_*_for_date e aproape instant din cache, iar monitorizarea completă
+    (căutări TMview/EUIPO per marcă) nu merită repetată la fiecare oră fără rost."""
+    from scrapers.osim_bulletin import (
+        fetch_osim_for_date, _prev_working_day as _osim_prev,
+        _date_slug as _osim_slug, _load_processed as _osim_processed,
+    )
     from scrapers.euipo_bulletin import (
-        fetch_latest_euipo, is_fetch_in_progress, _in_progress,
-        _prev_working_day, _date_slug,
+        fetch_euipo_for_date, is_fetch_in_progress, _in_progress,
+        _prev_working_day, _date_slug, _load_processed as _euipo_processed,
     )
     from datetime import date
 
-    loop = asyncio.get_event_loop()
+    loop  = asyncio.get_event_loop()
+    today = date.today()
 
+    # ── OSIM ──
+    osim_working = _osim_prev(today)
+    osim_slug    = _osim_slug(osim_working)
+    osim_was_ok  = (_osim_processed().get(osim_slug) or {}).get("status") == "ok"
     try:
-        await loop.run_in_executor(None, fetch_latest_osim)
+        await loop.run_in_executor(None, fetch_osim_for_date, today)
     except Exception as e:
         print(f"[SCHEDULER] OSIM prefetch error: {e}")
+    osim_now_ok = (_osim_processed().get(osim_slug) or {}).get("status") == "ok"
 
-    # Evită să pornească o descărcare EUIPO în paralel cu una declanșată manual de
-    # utilizator din UI (ambele ar scrie același fișier PDF) — dacă una e deja în
-    # curs (pornită din /bulletin-fetch), sărim peste acest tick.
-    today = date.today()
+    # ── EUIPO ── (evită coliziunea cu un fetch pornit manual din UI — ambele
+    # ar scrie același fișier PDF — sărind peste tick-ul ăsta dacă e deja în curs)
+    euipo_working = _prev_working_day(today)
+    euipo_slug    = _date_slug(euipo_working)
+    euipo_was_ok  = (_euipo_processed().get(euipo_slug) or {}).get("status") in ("ok_bulletin", "ok_api")
+    euipo_now_ok  = euipo_was_ok
     if is_fetch_in_progress(today):
         print("[SCHEDULER] EUIPO fetch deja în curs — sar peste acest tick de prefetch")
-        return
-    slug = _date_slug(_prev_working_day(today))
-    _in_progress.add(slug)
-    try:
-        await loop.run_in_executor(None, fetch_latest_euipo)
-    except Exception as e:
-        print(f"[SCHEDULER] EUIPO prefetch error: {e}")
-    finally:
-        _in_progress.discard(slug)
+    else:
+        _in_progress.add(euipo_slug)
+        try:
+            await loop.run_in_executor(None, fetch_euipo_for_date, today)
+        except Exception as e:
+            print(f"[SCHEDULER] EUIPO prefetch error: {e}")
+        finally:
+            _in_progress.discard(euipo_slug)
+        euipo_now_ok = (_euipo_processed().get(euipo_slug) or {}).get("status") in ("ok_bulletin", "ok_api")
+
+    fresh_osim  = osim_now_ok  and not osim_was_ok
+    fresh_euipo = euipo_now_ok and not euipo_was_ok
+
+    if fresh_osim:
+        await _auto_compare("osim", osim_working.isoformat())
+    if fresh_euipo:
+        await _auto_compare("euipo", euipo_working.isoformat())
+    if fresh_osim or fresh_euipo:
+        await _auto_run_all_watches()
 
 
 async def _run_all_due(frequency: str):
