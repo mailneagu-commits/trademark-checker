@@ -148,7 +148,7 @@ ALL_EU_TERRITORIES = [
 _EU_COUNTRY_SET = set(ALL_EU_TERRITORIES)
 
 # Țări non-UE căutate după oficiu (nu după teritoriu TMview)
-_NON_EU_OFFICES = {"GB", "CH", "TR", "UA", "MD", "US", "SA", "RU", "AM"}
+_NON_EU_OFFICES = {"GB", "CH", "TR", "UA", "MD", "US", "SA", "RU", "AM", "VN"}
 
 
 _BENELUX = {"BE", "NL", "LU"}

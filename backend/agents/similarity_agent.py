@@ -40,6 +40,7 @@ OFFICE_NAMES = {
     "SA": "SAIP (Arabia Saudită)",
     "RU": "ROSPATENT (Rusia)",
     "AM": "AIPA (Armenia)",
+    "VN": "IP Vietnam (Vietnam)",
 }
 
 VALIDITY_YEARS = 10  # standard trademark validity
