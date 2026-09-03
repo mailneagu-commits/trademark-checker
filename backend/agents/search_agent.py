@@ -102,7 +102,14 @@ HEADERS = {
 # Sesiune browser importată (cookie + headers din cURL copiat de user)
 _browser_session: Dict = {}
 
-_SESSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".session.json")
+from paths import DATA_DIR
+
+_SESSION_FILE = (
+    os.path.join(DATA_DIR, ".session.json") if DATA_DIR
+    else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".session.json")
+)
+if DATA_DIR:
+    os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def _save_session(data: Dict) -> None:
