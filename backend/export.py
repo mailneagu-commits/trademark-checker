@@ -818,7 +818,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
             "HU":"HIPO Ungaria", "CZ":"IPO Cehia",   "AT":"APO Austria",
             "NL":"BOIP Olanda",  "BE":"BOIP Belgia",  "PT":"INPI Portugalia",
             "SE":"PRV Suedia",   "DK":"DKPTO Danemarca","GB":"UKIPO Marea Britanie",
-            "VN":"IP Vietnam",
+            "VN":"IP Vietnam", "CN":"CNIPA China",
         }
         for ri, (code, cnt) in enumerate(geo_sorted, 1):
             pct  = cnt / geo_max
@@ -2131,7 +2131,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
             "HU":"HIPO Ungaria","CZ":"IPO Cehia","AT":"APO Austria",
             "NL":"BOIP Olanda","BE":"BOIP Belgia","PT":"INPI Portugalia",
             "SE":"PRV Suedia","DK":"DKPTO Danemarca","GB":"UKIPO Marea Britanie",
-            "VN":"IP Vietnam",
+            "VN":"IP Vietnam", "CN":"CNIPA China",
         }
         geo_max = geo_sorted[0][1] if geo_sorted else 1
         geo_tbl_w = doc.add_table(rows=1, cols=3)

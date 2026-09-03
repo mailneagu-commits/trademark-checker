@@ -41,6 +41,7 @@ OFFICE_NAMES = {
     "RU": "ROSPATENT (Rusia)",
     "AM": "AIPA (Armenia)",
     "VN": "IP Vietnam (Vietnam)",
+    "CN": "CNIPA (China)",
 }
 
 VALIDITY_YEARS = 10  # standard trademark validity
