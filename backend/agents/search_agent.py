@@ -745,32 +745,49 @@ class SearchAgent:
                 print(f"[EUIPO] Primary search error: {type(e).__name__}: {e}")
 
         # 2. Incearca TMview direct (fara proxy - ScraperAPI e blocat de TMview)
-        _cb_reset()
-        try:
-            # EU_FULL (many_territories) are nevoie de mai mult timp: 90s vs 60s normal
-            _, _ter_preview = build_offices_and_territories(offices)
-            _tmview_timeout = 90.0 if len(_ter_preview) > TERRITORY_BATCH else 60.0
-            marks = await asyncio.wait_for(
-                _fetch_tmview(name, nice_classes, offices, proxy_url="",
-                              include_expired=include_expired,
-                              extra_terms=extra_terms,
-                              wildcard_patterns=wildcard_patterns),
-                timeout=_tmview_timeout
-            )
-            if marks:
-                # Preferăm orice rezultate REALE deja adunate (ex. batch-uri reușite
-                # dintr-o căutare EU_FULL pe mai multe teritorii) unor date 100% demo —
-                # chiar dacă circuit breaker-ul s-a deschis între timp (blocând doar
-                # cererile ULTERIOARE, nu invalidând ce am găsit deja).
-                print(f"[TMVIEW] direct success: {len(marks)} marks"
-                      + (" (parțial — circuit breaker deschis pe parcurs)" if _cb_is_open() else ""))
-                if not include_expired:
-                    marks = [m for m in marks if not _is_expired_mark(m)]
-                return marks, "live:tmview"
-        except asyncio.TimeoutError:
-            print("[TMVIEW] direct timeout")
-        except Exception as e:
-            print(f"[TMVIEW] direct error: {type(e).__name__}: {e}")
+        # Conectivitatea Railway→TMview e intermitentă — verificat live: aceeași
+        # căutare poate eșua complet (timeout de conexiune) și reuși perfect la
+        # 30 de minute distanță, fără nicio schimbare de cod. O singură încercare
+        # eșuată RAPID (probabil o cădere de conexiune trecătoare, nu un blocaj
+        # susținut) merită reîncercată o dată înainte de a renunța la date demo —
+        # dar doar dacă a eșuat repede (nu are rost să reîncercăm încă 90s după ce
+        # deja am așteptat 90s fără rezultat).
+        _, _ter_preview = build_offices_and_territories(offices)
+        _tmview_timeout = 90.0 if len(_ter_preview) > TERRITORY_BATCH else 60.0
+        _fast_fail_threshold = 20.0
+
+        for _attempt in (1, 2):
+            _cb_reset()
+            _t0 = asyncio.get_event_loop().time()
+            try:
+                marks = await asyncio.wait_for(
+                    _fetch_tmview(name, nice_classes, offices, proxy_url="",
+                                  include_expired=include_expired,
+                                  extra_terms=extra_terms,
+                                  wildcard_patterns=wildcard_patterns),
+                    timeout=_tmview_timeout
+                )
+                if marks:
+                    # Preferăm orice rezultate REALE deja adunate (ex. batch-uri reușite
+                    # dintr-o căutare EU_FULL pe mai multe teritorii) unor date 100% demo —
+                    # chiar dacă circuit breaker-ul s-a deschis între timp (blocând doar
+                    # cererile ULTERIOARE, nu invalidând ce am găsit deja).
+                    print(f"[TMVIEW] direct success (attempt {_attempt}): {len(marks)} marks"
+                          + (" (parțial — circuit breaker deschis pe parcurs)" if _cb_is_open() else ""))
+                    if not include_expired:
+                        marks = [m for m in marks if not _is_expired_mark(m)]
+                    return marks, "live:tmview"
+            except asyncio.TimeoutError:
+                print(f"[TMVIEW] direct timeout (attempt {_attempt})")
+            except Exception as e:
+                print(f"[TMVIEW] direct error (attempt {_attempt}): {type(e).__name__}: {e}")
+
+            _elapsed = asyncio.get_event_loop().time() - _t0
+            if _attempt == 1 and _elapsed < _fast_fail_threshold:
+                print(f"[TMVIEW] Eșec rapid ({_elapsed:.1f}s) — reîncerc o dată")
+                await asyncio.sleep(2.0)
+                continue
+            break
 
         return _demo_marks(name, nice_classes, offices), "demo (TMview/EUIPO indisponibil - date demonstrative)"
 
