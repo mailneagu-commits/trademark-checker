@@ -81,6 +81,57 @@ async def set_curl(request: CurlRequest):
     return {"status": "ok", "message": "Sesiune TMview activată. Căutările vor folosi acum sesiunea ta de browser."}
 
 
+@app.get("/api/debug-network")
+async def debug_network():
+    """Izolează cauza blocajului: IP-ul serverului (orice client ar da timeout)
+    vs. amprenta TLS a curl_cffi (impersonate=chrome120 — un WAF poate "arunca"
+    tăcut pachetele unui fingerprint suspect, ceea ce arată identic cu un timeout
+    de rețea). Testează același host (tmdn.org) cu 3 clienți diferiți + un site
+    de control (fără WAF anti-scraping) ca reper."""
+    import time
+    import requests as _plain_requests
+    results = {}
+
+    def _try(label, fn):
+        t0 = time.time()
+        try:
+            r = fn()
+            results[label] = {"ok": True, "status": r.status_code, "time": round(time.time() - t0, 2)}
+        except Exception as e:
+            results[label] = {"ok": False, "error": f"{type(e).__name__}: {e}", "time": round(time.time() - t0, 2)}
+
+    # 1. plain `requests` (stack TLS standard Python, fără impersonare de browser)
+    _try("tmdn_plain_requests", lambda: _plain_requests.get(
+        "https://www.tmdn.org/tmview/", timeout=10,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}))
+
+    # 2. curl_cffi FĂRĂ impersonare de browser (TLS implicit, nu Chrome-spoofed)
+    try:
+        from curl_cffi.requests import Session as _CurlSession
+        def _cc_noimp():
+            with _CurlSession() as s:
+                return s.get("https://www.tmdn.org/tmview/", timeout=10)
+        _try("tmdn_curlcffi_no_impersonate", _cc_noimp)
+    except Exception as e:
+        results["tmdn_curlcffi_no_impersonate"] = {"ok": False, "error": f"setup: {e}"}
+
+    # 3. curl_cffi CU impersonare Chrome (exact ce foloseşte deja căutarea normală)
+    try:
+        from curl_cffi.requests import Session as _CurlSession
+        def _cc_imp():
+            with _CurlSession(impersonate="chrome120") as s:
+                return s.get("https://www.tmdn.org/tmview/", timeout=10)
+        _try("tmdn_curlcffi_chrome120", _cc_imp)
+    except Exception as e:
+        results["tmdn_curlcffi_chrome120"] = {"ok": False, "error": f"setup: {e}"}
+
+    # 4. Control — un site oarecare, fără protecție anti-scraping cunoscută,
+    # ca să confirmăm că egress-ul general al serverului funcţionează normal.
+    _try("control_example_com", lambda: _plain_requests.get("https://example.com", timeout=10))
+
+    return results
+
+
 @app.get("/api/debug-tmview")
 async def debug_tmview():
     """Test TMview direct (fara proxy) si cu proxy."""
