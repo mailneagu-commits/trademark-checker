@@ -757,8 +757,13 @@ class SearchAgent:
                               wildcard_patterns=wildcard_patterns),
                 timeout=_tmview_timeout
             )
-            if marks is not None and not _cb_is_open():
-                print(f"[TMVIEW] direct success: {len(marks)} marks")
+            if marks:
+                # Preferăm orice rezultate REALE deja adunate (ex. batch-uri reușite
+                # dintr-o căutare EU_FULL pe mai multe teritorii) unor date 100% demo —
+                # chiar dacă circuit breaker-ul s-a deschis între timp (blocând doar
+                # cererile ULTERIOARE, nu invalidând ce am găsit deja).
+                print(f"[TMVIEW] direct success: {len(marks)} marks"
+                      + (" (parțial — circuit breaker deschis pe parcurs)" if _cb_is_open() else ""))
                 if not include_expired:
                     marks = [m for m in marks if not _is_expired_mark(m)]
                 return marks, "live:tmview"
