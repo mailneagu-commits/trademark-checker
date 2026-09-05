@@ -754,7 +754,9 @@ class SearchAgent:
         # așteptat 90s fără rezultat). Până la 3 încercări în total.
         _, _ter_preview = build_offices_and_territories(offices)
         _tmview_timeout = 90.0 if len(_ter_preview) > TERRITORY_BATCH else 60.0
-        _fast_fail_threshold = 20.0
+        # Verificat live: eșecurile reale durează adesea 22-24s (nu doar sub 20s
+        # cum presupuneam) — un prag de 20s le rata pe toate, fără nicio reîncercare.
+        _fast_fail_threshold = 40.0
         _MAX_ATTEMPTS = 3
 
         for _attempt in range(1, _MAX_ATTEMPTS + 1):
@@ -786,7 +788,7 @@ class SearchAgent:
             _elapsed = asyncio.get_event_loop().time() - _t0
             if _attempt < _MAX_ATTEMPTS and _elapsed < _fast_fail_threshold:
                 print(f"[TMVIEW] Eșec rapid ({_elapsed:.1f}s) — reîncerc ({_attempt + 1}/{_MAX_ATTEMPTS})")
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(4.0)
                 continue
             break
 
