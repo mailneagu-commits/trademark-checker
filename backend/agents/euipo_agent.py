@@ -124,9 +124,16 @@ def search_euipo(name: str, nice_classes: List[str]) -> List[Dict]:
     # Variante fonetice (ex. KARTEZIAN → CARTESIAN necesită DOUĂ substituții
     # simultane, K→C ȘI Z→S) — spre deosebire de căutarea TMview, aici fiecare
     # variantă e un query separat, rapid (API oficial, nu scraping), deci nu
-    # limităm la primele 1-2 ca acolo; le includem pe toate.
+    # limităm la primele 1-2 ca acolo. Dar tot limităm la un plafon rezonabil
+    # (12) — unele nume cu multe litere ambigue fonetic (C/K/S/Z/I/Y/W/V) pot
+    # genera zeci de variante (verificat: peste 60 pentru unele cuvinte), ceea
+    # ce ar însemna sute de cereri paralele către EUIPO — risc de timeout și de
+    # limitare de rată chiar de la EUIPO, ambele ducând la fallback pe demo.
     from agents.variant_agent import build_phonetic_variants
+    _MAX_PHONETIC = 12
     for t in build_phonetic_variants(name):
+        if len(terms) >= _MAX_PHONETIC:
+            break
         if not t.startswith("*") and t not in terms:
             terms.append(t)
 

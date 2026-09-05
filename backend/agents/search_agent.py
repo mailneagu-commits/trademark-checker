@@ -733,7 +733,7 @@ class SearchAgent:
                 loop = asyncio.get_event_loop()
                 euipo_marks = await asyncio.wait_for(
                     loop.run_in_executor(None, search_euipo, name, nice_classes),
-                    timeout=20.0
+                    timeout=35.0
                 )
                 if not include_expired:
                     euipo_marks = [m for m in euipo_marks if not _is_expired_mark(m)]
