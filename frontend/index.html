@@ -1127,7 +1127,22 @@ async function _prefetchRepsFor(marksWithIdx, isLive, gen) {
   }
 }
 
-// ---- Search ----
+// ---- Search (job de fundal — conexiunea spre TMview poate pica minute
+// întregi, deci reîncercăm mult mai mult decât ar suporta un singur request) ----
+async function _pollCheckJob(jobId) {
+  const POLL_MS      = 4000;
+  const MAX_ATTEMPTS = 220;   // ~220 × 4s ≈ 14.5 minute — acoperă bugetul cel mai defavorabil de reîncercări din backend
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const r = await fetch(`/api/check/status?job_id=${encodeURIComponent(jobId)}`);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Job de căutare negăsit.");
+    if (data.status === "done")  return data.result;
+    if (data.status === "error") throw new Error(data.error || "Eroare la căutare.");
+    await new Promise(res => setTimeout(res, POLL_MS));
+  }
+  throw new Error("Căutarea durează neobișnuit de mult — încercați din nou peste câteva minute.");
+}
+
 async function doSearch() {
   const name = document.getElementById("trademarkName").value.trim();
   document.getElementById("errorBox").style.display = "none";
@@ -1142,7 +1157,7 @@ async function doSearch() {
   exportSel.clear(); _allCardKeys = []; updateSelBar();
 
   try {
-    const res = await fetch("/api/check", {
+    const startRes = await fetch("/api/check/start", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
@@ -1152,8 +1167,13 @@ async function doSearch() {
         include_expired: document.getElementById("includeExpired")?.checked ?? true,
       }),
     });
-    const data = await res.json();
-    if (!res.ok) { showError(data.detail || "Eroare necunoscută."); return; }
+    const startData = await startRes.json();
+    if (!startRes.ok) { showError(startData.detail || "Eroare necunoscută."); return; }
+
+    // Conexiunea către TMview poate pica minute întregi (verificat live) — căutarea
+    // rulează în fundal, cu reîncercări mult mai generoase decât ar suporta o
+    // singură cerere sincronă, iar aici doar verificăm periodic dacă s-a terminat.
+    const data = await _pollCheckJob(startData.job_id);
     lastResults = data;
     allResults  = data.results || [];
     activeTab    = "all";
@@ -1179,7 +1199,7 @@ async function doSearch() {
     ], _isLive, _prefetchGen);
   } catch(e) {
     setExportControlsEnabled(false);
-    showError("Nu s-a putut contacta serverul. Asigurați-vă că backend-ul rulează pe portul 8000.");
+    showError(e.message || "Nu s-a putut contacta serverul. Asigurați-vă că backend-ul rulează pe portul 8000.");
   } finally {
     setLoading(false);
   }

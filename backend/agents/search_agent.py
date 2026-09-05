@@ -701,7 +701,8 @@ class SearchAgent:
     async def search(self, name: str, nice_classes: List[str], offices: List[str],
                      extra_terms: Optional[List[str]] = None,
                      wildcard_patterns: Optional[List[str]] = None,
-                     include_expired: bool = True) -> Tuple[List[Dict], str]:
+                     include_expired: bool = True,
+                     max_tmview_attempts: int = 3) -> Tuple[List[Dict], str]:
         if not HAS_CURL_CFFI:
             marks = _demo_marks(name, nice_classes, offices)
             if not include_expired:
@@ -746,22 +747,18 @@ class SearchAgent:
 
         # 2. Incearca TMview direct (fara proxy - ScraperAPI e blocat de TMview)
         # Conectivitatea Railway→TMview e intermitentă — verificat live: aceeași
-        # căutare poate eșua complet (timeout de conexiune) și reuși perfect la
-        # 30 de minute distanță, fără nicio schimbare de cod. O încercare eșuată
-        # RAPID (probabil o cădere de conexiune trecătoare, nu un blocaj susținut)
-        # merită reîncercată înainte de a renunța la date demo — dar doar dacă a
-        # eșuat repede (nu are rost să reîncercăm încă 90s după ce deja am
-        # așteptat 90s fără rezultat). Până la 3 încercări în total.
+        # căutare poate eșua complet (timeout de conexiune) minute întregi și
+        # reuși perfect la puțin timp distanță, fără nicio schimbare de cod.
+        # Reîncercăm necondiționat (nu doar la eșecuri "rapide" — verificat live
+        # că eșecurile reale pot dura 24-80+ secunde) până la max_tmview_attempts,
+        # cu pauză progresivă între încercări (4s, 8s, 16s, 30s, apoi plafonat).
         _, _ter_preview = build_offices_and_territories(offices)
         _tmview_timeout = 90.0 if len(_ter_preview) > TERRITORY_BATCH else 60.0
-        # Verificat live: eșecurile reale durează adesea 22-24s (nu doar sub 20s
-        # cum presupuneam) — un prag de 20s le rata pe toate, fără nicio reîncercare.
-        _fast_fail_threshold = 40.0
-        _MAX_ATTEMPTS = 3
+        _MAX_ATTEMPTS = max(1, max_tmview_attempts)
+        _backoff_schedule = [4.0, 8.0, 16.0, 30.0]
 
         for _attempt in range(1, _MAX_ATTEMPTS + 1):
             _cb_reset()
-            _t0 = asyncio.get_event_loop().time()
             try:
                 marks = await asyncio.wait_for(
                     _fetch_tmview(name, nice_classes, offices, proxy_url="",
@@ -785,10 +782,10 @@ class SearchAgent:
             except Exception as e:
                 print(f"[TMVIEW] direct error (attempt {_attempt}/{_MAX_ATTEMPTS}): {type(e).__name__}: {e}")
 
-            _elapsed = asyncio.get_event_loop().time() - _t0
-            if _attempt < _MAX_ATTEMPTS and _elapsed < _fast_fail_threshold:
-                print(f"[TMVIEW] Eșec rapid ({_elapsed:.1f}s) — reîncerc ({_attempt + 1}/{_MAX_ATTEMPTS})")
-                await asyncio.sleep(4.0)
+            if _attempt < _MAX_ATTEMPTS:
+                _delay = _backoff_schedule[min(_attempt - 1, len(_backoff_schedule) - 1)]
+                print(f"[TMVIEW] Reîncerc peste {_delay:.0f}s ({_attempt + 1}/{_MAX_ATTEMPTS})")
+                await asyncio.sleep(_delay)
                 continue
             break
 

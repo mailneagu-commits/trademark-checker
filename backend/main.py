@@ -1,3 +1,4 @@
+import asyncio
 import os
 import traceback
 from contextlib import asynccontextmanager
@@ -421,8 +422,7 @@ async def get_settings():
     }
 
 
-@app.post("/api/check")
-async def check_trademark(request: SearchRequest):
+async def _run_check(request: "SearchRequest", max_tmview_attempts: int = 3) -> dict:
     if not request.trademark_name.strip():
         raise HTTPException(status_code=400, detail="Denumirea mărcii este obligatorie.")
     if not request.nice_classes:
@@ -452,6 +452,7 @@ async def check_trademark(request: SearchRequest):
         extra_terms=extra_terms,
         wildcard_patterns=variants.get("wildcard_patterns", []),
         include_expired=request.include_expired,
+        max_tmview_attempts=max_tmview_attempts,
     )
     analysis = similarity_agent.analyze(name, trademarks, request.nice_classes, user_offices=request.offices)
 
@@ -471,6 +472,56 @@ async def check_trademark(request: SearchRequest):
         "source":            source,
         "variants":          variants,
     }
+
+
+@app.post("/api/check")
+async def check_trademark(request: SearchRequest):
+    return await _run_check(request)
+
+
+# ── Căutare ca job de fundal ───────────────────────────────────────────────
+# Conectivitatea spre TMview poate pica minute întregi (verificat live) — o
+# singură cerere sincronă nu poate reîncerca insistent fără să blocheze
+# nerezonabil de mult pagina. Aici pornim căutarea în fundal, cu un buget de
+# reîncercări mult mai generos (până la ~7 minute), și frontend-ul verifică
+# periodic dacă s-a terminat, în loc să aștepte pe un singur request.
+_check_jobs: dict = {}
+
+
+@app.post("/api/check/start")
+async def check_trademark_start(request: SearchRequest):
+    import uuid
+    # Validăm întâi sincron, ca erorile (câmpuri lipsă) să ajungă imediat,
+    # nu după ce utilizatorul așteaptă un job care oricum ar eșua instant.
+    if not request.trademark_name.strip():
+        raise HTTPException(status_code=400, detail="Denumirea mărcii este obligatorie.")
+    if not request.nice_classes:
+        raise HTTPException(status_code=400, detail="Selectați cel puțin o clasă NICE.")
+    if not request.offices:
+        raise HTTPException(status_code=400, detail="Selectați cel puțin un teritoriu.")
+
+    job_id = uuid.uuid4().hex
+    _check_jobs[job_id] = {"status": "running", "result": None, "error": None}
+
+    async def _bg():
+        try:
+            result = await _run_check(request, max_tmview_attempts=7)
+            _check_jobs[job_id] = {"status": "done", "result": result, "error": None}
+        except HTTPException as e:
+            _check_jobs[job_id] = {"status": "error", "result": None, "error": e.detail}
+        except Exception as e:
+            _check_jobs[job_id] = {"status": "error", "result": None, "error": str(e)}
+
+    asyncio.ensure_future(_bg())
+    return {"job_id": job_id, "status": "started"}
+
+
+@app.get("/api/check/status")
+async def check_trademark_status(job_id: str):
+    job = _check_jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job negăsit — a expirat sau ID invalid.")
+    return job
 
 
 @app.post("/api/export")
