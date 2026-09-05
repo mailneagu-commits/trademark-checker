@@ -119,38 +119,62 @@ def search_euipo(name: str, nice_classes: List[str]) -> List[Dict]:
     nc_filter = f";niceClasses=in=({','.join(nc_ints)})" if nc_ints else ""
 
     upper = name.upper()
-    queries = [
-        f"wordMarkSpecification.verbalElement=={upper}",
-        f"wordMarkSpecification.verbalElement==*{upper}*",
-    ]
+    terms = [upper]
 
-    seen: set = set()
-    all_marks: List[Dict] = []
+    # Variante fonetice (ex. KARTEZIAN → CARTESIAN necesită DOUĂ substituții
+    # simultane, K→C ȘI Z→S) — spre deosebire de căutarea TMview, aici fiecare
+    # variantă e un query separat, rapid (API oficial, nu scraping), deci nu
+    # limităm la primele 1-2 ca acolo; le includem pe toate.
+    from agents.variant_agent import build_phonetic_variants
+    for t in build_phonetic_variants(name):
+        if not t.startswith("*") and t not in terms:
+            terms.append(t)
+
+    queries = []
+    for t in terms:
+        queries.append(f"wordMarkSpecification.verbalElement=={t}")
+        queries.append(f"wordMarkSpecification.verbalElement==*{t}*")
+
     token = _get_access_token()
 
-    for q in queries:
+    def _run_query(q: str):
         params = {"query": q + nc_filter, "size": 100, "page": 0}
         resp = requests.get(EUIPO_SEARCH_URL, headers=_headers(token), params=params, timeout=15)
         if resp.status_code == 401:
             # Token expirat/invalid — reîmprospătăm o dată și reîncercăm.
-            token = _get_access_token(force_refresh=True)
-            resp = requests.get(EUIPO_SEARCH_URL, headers=_headers(token), params=params, timeout=15)
+            fresh = _get_access_token(force_refresh=True)
+            resp = requests.get(EUIPO_SEARCH_URL, headers=_headers(fresh), params=params, timeout=15)
+        return resp
 
-        if resp.status_code == 200:
-            data = resp.json()
-            items = (data.get("trademarks") or data.get("items") or
-                     data.get("results") or data.get("data") or [])
-            for tm in items:
-                key = tm.get("applicationNumber", "")
-                if key and key not in seen:
-                    seen.add(key)
-                    all_marks.append(_to_internal(tm))
-        elif resp.status_code in (401, 403):
-            # Propagăm eroarea — nu returnăm [] silențios
-            raise Exception(f"EUIPO {resp.status_code}: {resp.text[:120]}")
-        else:
-            print(f"[EUIPO] {resp.status_code}: {resp.text[:100]}")
+    # Fiecare variantă fonetică adaugă 2 query-uri (exact + wildcard) — până la
+    # ~20 pentru un nume cu multe substituții posibile. Le rulăm în paralel (API
+    # oficial, rapid) ca timpul total să rămână apropiat de o singură cerere,
+    # nu suma tuturor.
+    seen: set = set()
+    all_marks: List[Dict] = []
+    errors: List[str] = []
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for resp in pool.map(_run_query, queries):
+            if resp.status_code == 200:
+                data = resp.json()
+                items = (data.get("trademarks") or data.get("items") or
+                         data.get("results") or data.get("data") or [])
+                for tm in items:
+                    key = tm.get("applicationNumber", "")
+                    if key and key not in seen:
+                        seen.add(key)
+                        all_marks.append(_to_internal(tm))
+            elif resp.status_code in (401, 403):
+                errors.append(f"EUIPO {resp.status_code}: {resp.text[:120]}")
+            else:
+                print(f"[EUIPO] {resp.status_code}: {resp.text[:100]}")
+
+    if not all_marks and errors:
+        # Propagăm eroarea doar dacă NICIUN query n-a reușit — un 401 izolat pe
+        # o variantă fonetică nu trebuie să strice o căutare altfel reușită.
+        raise Exception(errors[0])
 
     if all_marks:
-        print(f"[EUIPO] Found {len(all_marks)} marks for '{name}'")
+        print(f"[EUIPO] Found {len(all_marks)} marks for '{name}' ({len(queries)} queries)")
     return all_marks
