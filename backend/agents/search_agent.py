@@ -347,45 +347,68 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     if nice_classes: payload["niceClass"]   = [int(c) if c.isdigit() else c for c in nice_classes]
     if _cb_is_open():
         return [], 0
-    try:
-        r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=55 if _PROXIES else 10)
-        print(f"[TMVIEW] POST status={r.status_code} crit={criteria} term={term[:20]} offices={sorted(offices)} territories={sorted(territories)}")
-        if r.status_code == 200:
-            # Check content-type before parsing — Imperva returns text/html (200) when blocking.
-            # Do NOT count Imperva blocks as circuit-breaker failures (they're IP-level, not connection errors).
-            ct = r.headers.get("content-type", "")
-            body = r.text
-            if not body.strip() or "json" not in ct.lower():
-                print(f"[TMVIEW] IMPERVA BLOCK — ct={ct!r} body_len={len(body)}")
-                return [], 0
-            # Check if response is actually JSON (not HTML/redirect)
-            try:
-                data  = r.json()
-            except ValueError:
-                resp_preview = body[:100].lower()
-                if "html" in resp_preview or "<!doctype" in resp_preview or "302" in str(r.status_code):
-                    print(f"[TMVIEW] HTML response (possible IP ban/redirect): {resp_preview}")
+
+    # O căutare completă face zeci de cereri individuale (criterii, pagini, variante
+    # fonetice) — verificat live că fiecare cerere poate eșua tranzitoriu ("Connection
+    # reset by peer") chiar și când conexiunea, per ansamblu, e funcțională (un test
+    # izolat imediat după reușea). Fără reîncercare AICI, la nivel de cerere, o singură
+    # flotare izolată deschide circuit breaker-ul (după 3 eșecuri consecutive) și
+    # prăbușește toată căutarea — chiar dacă restul cererilor ar fi mers bine.
+    _PAGE_RETRIES = 3
+    for _try in range(_PAGE_RETRIES):
+        try:
+            r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=55 if _PROXIES else 10)
+            print(f"[TMVIEW] POST status={r.status_code} crit={criteria} term={term[:20]} offices={sorted(offices)} territories={sorted(territories)}")
+            if r.status_code == 200:
+                # Check content-type before parsing — Imperva returns text/html (200) when blocking.
+                # Do NOT count Imperva blocks as circuit-breaker failures (they're IP-level, not connection errors).
+                ct = r.headers.get("content-type", "")
+                body = r.text
+                if not body.strip() or "json" not in ct.lower():
+                    print(f"[TMVIEW] IMPERVA BLOCK — ct={ct!r} body_len={len(body)}")
                     return [], 0
-                raise
-            _cb_record_success()
-            marks = data.get("tradeMarks", [])
-            print(f"[TMVIEW] found {len(marks)} marks")
-            for m in marks:
-                m.setdefault("_found_by", term)
-            return marks, int(data.get("totalResults") or data.get("total") or 0)
-        elif r.status_code == 499:
-            _cb_record_failure()
-            print(f"[TMVIEW] 499 — IP partajat detectat (ScraperAPI datacenter ban)")
-        elif r.status_code in (429, 503):
-            _cb_record_failure()
-            print(f"[TMVIEW] Rate-limit {r.status_code} — aștept 10s")
-            await asyncio.sleep(10)
-    except Exception as _e:
-        err_str = str(_e).lower()
-        if any(w in err_str for w in ("connection reset", "connection refused", "ssl", "json",
-                                       "timed out", "timeout", "connection timed")):
-            _cb_record_failure()
-        print(f"[TMVIEW] _search_page error: {type(_e).__name__}: {_e}")
+                # Check if response is actually JSON (not HTML/redirect)
+                try:
+                    data  = r.json()
+                except ValueError:
+                    resp_preview = body[:100].lower()
+                    if "html" in resp_preview or "<!doctype" in resp_preview or "302" in str(r.status_code):
+                        print(f"[TMVIEW] HTML response (possible IP ban/redirect): {resp_preview}")
+                        return [], 0
+                    raise
+                _cb_record_success()
+                marks = data.get("tradeMarks", [])
+                print(f"[TMVIEW] found {len(marks)} marks")
+                for m in marks:
+                    m.setdefault("_found_by", term)
+                return marks, int(data.get("totalResults") or data.get("total") or 0)
+            elif r.status_code == 499:
+                _cb_record_failure()
+                print(f"[TMVIEW] 499 — IP partajat detectat (ScraperAPI datacenter ban)")
+                break
+            elif r.status_code in (429, 503):
+                _cb_record_failure()
+                print(f"[TMVIEW] Rate-limit {r.status_code} — aștept 10s")
+                await asyncio.sleep(10)
+                break
+            else:
+                break
+        except Exception as _e:
+            err_str = str(_e).lower()
+            _is_conn_err = any(w in err_str for w in (
+                "connection reset", "connection refused", "connection aborted",
+                "remote end closed", "recv failure", "ssl", "json",
+                "timed out", "timeout", "connection timed",
+            ))
+            if _is_conn_err and _try < _PAGE_RETRIES - 1:
+                print(f"[TMVIEW] eroare de conexiune, reîncerc rapid ({_try + 1}/{_PAGE_RETRIES}): "
+                      f"{type(_e).__name__}: {_e}")
+                await asyncio.sleep(1.5)
+                continue
+            if _is_conn_err:
+                _cb_record_failure()
+            print(f"[TMVIEW] _search_page error: {type(_e).__name__}: {_e}")
+            break
     return [], 0
 
 
