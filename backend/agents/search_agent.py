@@ -204,16 +204,30 @@ DEMO_MARKS = [
 async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
     if not st13 or st13.startswith("DEMO"):
         return {}
+    # Conexiunea spre TMview e adesea instabilă (verificat live, toată sesiunea) —
+    # timeout-ul inițial de 3-4s era prea agresiv, ratând aproape orice cerere cu
+    # o mică întârziere și lăsând CLASE NISA PRODUSE/SERVICII gol la export, în
+    # tăcere (exceptions înghițite mai jos). Reîncercăm de 2 ori, cu timeout mai
+    # generos, înainte să renunțăm la acest ST13.
+    r = None
+    for _try in range(2):
+        try:
+            r = await asyncio.wait_for(
+                session.get(
+                    TMVIEW_DETAIL.format(st13=st13),
+                    headers=_build_headers(),
+                    timeout=10,
+                ),
+                timeout=12,
+            )
+            break
+        except Exception:
+            if _try == 0:
+                await asyncio.sleep(1.0)
+                continue
+            return {}
     try:
-        r = await asyncio.wait_for(
-            session.get(
-                TMVIEW_DETAIL.format(st13=st13),
-                headers=_build_headers(),
-                timeout=3,
-            ),
-            timeout=4,
-        )
-        if r.status_code != 200:
+        if r is None or r.status_code != 200:
             return {}
         data = r.json()
         tm   = data.get("tradeMark", {})
@@ -302,11 +316,23 @@ async def enrich_marks_with_detail(marks: list) -> list:
     try:
         async with AsyncSession(impersonate="chrome120", proxies=_PROXIES,
                                 verify=not bool(_PROXIES)) as session:
-            await session.get(TMVIEW_HOME, timeout=8, headers=_build_headers())
+            # Dacă acest "warmup" GET eșuează o singură dată, funcția întreagă
+            # renunța tăcut — nici măcar marca cu cea mai bună șansă nu mai era
+            # încercată. O reîncercare rapidă înainte de a renunța la toată
+            # îmbogățirea (nu doar la o marcă individuală).
+            for _try in range(2):
+                try:
+                    await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
+                    break
+                except Exception:
+                    if _try == 0:
+                        await asyncio.sleep(1.5)
+                        continue
+                    raise
             results = await asyncio.wait_for(
                 asyncio.gather(*(_enrich_one(session, m) for m in marks),
                                return_exceptions=True),
-                timeout=28,
+                timeout=90,
             )
         return [m if not isinstance(m, Exception) else marks[i]
                 for i, m in enumerate(results)]
