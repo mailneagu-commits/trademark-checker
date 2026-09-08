@@ -9,6 +9,6 @@
     "healthcheckPath": "/api/session-status",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
-    "region": "asia-southeast1-eqsg3a"
+    "region": "europe-west4-drams3a"
   }
 }
