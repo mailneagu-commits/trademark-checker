@@ -82,6 +82,50 @@ async def set_curl(request: CurlRequest):
     return {"status": "ok", "message": "Sesiune TMview activată. Căutările vor folosi acum sesiunea ta de browser."}
 
 
+@app.get("/api/debug-euipo-query")
+async def debug_euipo_query(name: str, nc: str = ""):
+    """Testează mai multe variante de formatare RSQL pentru un nume cu spații —
+    query-ul EUIPO actual (wordMarkSpecification.verbalElement==NUME CU SPATII,
+    fără ghilimele) poate fi interpretat greșit de parserul RSQL, ratând mărci
+    care există cu adevărat (verificat: "PROTECT YOUR BUSINESS" clasa 45 nu
+    apărea deloc, deși e înregistrată)."""
+    from agents.euipo_agent import EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, euipo_available, _get_access_token
+    if not euipo_available():
+        return {"error": "EUIPO not configured"}
+    import requests as _plain_requests
+
+    upper = name.upper()
+    nc_ints = [c.strip() for c in nc.split(",") if c.strip().isdigit()]
+    nc_filter = f";niceClasses=in=({','.join(nc_ints)})" if nc_ints else ""
+
+    variants = {
+        "unquoted":        f"wordMarkSpecification.verbalElement=={upper}",
+        "unquoted_wild":   f"wordMarkSpecification.verbalElement==*{upper}*",
+        "double_quoted":   f'wordMarkSpecification.verbalElement=="{upper}"',
+        "double_quoted_wild": f'wordMarkSpecification.verbalElement=="*{upper}*"',
+        "single_quoted":   f"wordMarkSpecification.verbalElement=='{upper}'",
+        "url_encoded_plus": f"wordMarkSpecification.verbalElement=={upper.replace(' ', '+')}",
+    }
+
+    token = _get_access_token()
+    headers = {"Authorization": f"Bearer {token}", "X-IBM-Client-Id": EUIPO_CLIENT_ID, "Accept": "application/json"}
+    results = {}
+    for label, q in variants.items():
+        try:
+            resp = _plain_requests.get(EUIPO_SEARCH_URL, headers=headers,
+                                        params={"query": q + nc_filter, "size": 10, "page": 0}, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                items = data.get("trademarks") or data.get("items") or data.get("results") or data.get("data") or []
+                results[label] = {"query_sent": q + nc_filter, "status": 200, "count": len(items),
+                                   "names": [it.get("wordMarkSpecification", {}).get("verbalElement") for it in items[:5]]}
+            else:
+                results[label] = {"query_sent": q + nc_filter, "status": resp.status_code, "body": resp.text[:200]}
+        except Exception as e:
+            results[label] = {"query_sent": q + nc_filter, "error": f"{type(e).__name__}: {e}"}
+    return results
+
+
 @app.get("/api/debug-network")
 async def debug_network():
     """Izolează cauza blocajului: IP-ul serverului (orice client ar da timeout)
