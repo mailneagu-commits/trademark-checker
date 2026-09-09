@@ -137,10 +137,18 @@ def search_euipo(name: str, nice_classes: List[str]) -> List[Dict]:
         if not t.startswith("*") and t not in terms:
             terms.append(t)
 
+    # Verificat live: fără ghilimele, orice nume cu spații (ex. "PROTECT YOUR
+    # BUSINESS") dă direct 400 "Invalid request parameter" de la API-ul EUIPO —
+    # nu doar 0 rezultate, dar eroarea era înghițită tăcut mai jos (elif pe
+    # 401/403, restul doar loghează), ratând complet mărci reale, existente.
+    # Ghilimelele duble funcționează și pentru nume dintr-un singur cuvânt.
+    def _q(term: str) -> str:
+        return '"' + term.replace('"', '\\"') + '"'
+
     queries = []
     for t in terms:
-        queries.append(f"wordMarkSpecification.verbalElement=={t}")
-        queries.append(f"wordMarkSpecification.verbalElement==*{t}*")
+        queries.append(f"wordMarkSpecification.verbalElement=={_q(t)}")
+        queries.append(f"wordMarkSpecification.verbalElement=={_q(f'*{t}*')}")
 
     token = _get_access_token()
 
