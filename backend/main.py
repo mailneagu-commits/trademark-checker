@@ -294,6 +294,27 @@ async def session_status():
     return {"active": has_browser_session()}
 
 
+@app.get("/api/debug-session")
+async def debug_session():
+    """Arată ce chei de cookie/header s-au extras din cURL-ul lipit — fără valori
+    (nu expunem cookie-urile efective), doar numele, ca să diagnosticăm dacă
+    cookie-urile Imperva (incap_ses_*, visid_incap_*, nlbi_*, ___utmvc) au fost
+    prinse la parsare sau lipsesc din cURL-ul copiat."""
+    from agents.search_agent import _browser_session
+    cookies = _browser_session.get("cookies", {}) or {}
+    headers = _browser_session.get("headers", {}) or {}
+    return {
+        "active": has_browser_session(),
+        "cookie_keys": sorted(cookies.keys()),
+        "cookie_count": len(cookies),
+        "header_keys": sorted(headers.keys()),
+        "has_imperva_cookie": any(
+            k.lower().startswith(("incap_ses", "visid_incap", "nlbi", "___utmvc", "reese84"))
+            for k in cookies
+        ),
+    }
+
+
 @app.get("/api/debug-search")
 async def debug_search(name: str = "VISUAL", offices: str = "EM", nc: str = "9", full: str = "0"):
     """Rulează căutarea și returnează source + log intern.
