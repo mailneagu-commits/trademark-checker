@@ -63,7 +63,33 @@ from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
+# ── Traducere clase NISA (Google Cloud Translation) ─────────────────────
+_GOOGLE_TRANSLATE_API_KEY = os.environ.get("GOOGLE_TRANSLATE_API_KEY", "")
+_translation_cache: dict = {}
 
+
+def _translate_to_ro(text: str) -> str:
+    """Traduce în română textul liber de produse/servicii (goodAndServices),
+    depus de solicitant în orice limbă. Cache în memorie — multe mărci
+    reutilizează text identic/similar pentru aceeași clasă NISA."""
+    if not text or not _GOOGLE_TRANSLATE_API_KEY:
+        return text
+    if text in _translation_cache:
+        return _translation_cache[text]
+    try:
+        resp = requests.post(
+            "https://translation.googleapis.com/language/translate/v2",
+            params={"key": _GOOGLE_TRANSLATE_API_KEY},
+            data={"q": text, "target": "ro", "format": "text"},
+            timeout=8,
+        )
+        if resp.status_code == 200:
+            translated = resp.json()["data"]["translations"][0]["translatedText"]
+            _translation_cache[text] = translated
+            return translated
+    except Exception:
+        pass
+    return text
 
 
 # ── Risk thresholds ────────────────────────────────────────────────────
@@ -1975,6 +2001,8 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
                     continue
                 text_w = info["desc"]
                 is_generic = True
+            else:
+                text_w = _translate_to_ro(text_w)
             gs_t = doc.add_table(rows=1, cols=1); gs_t.style = "Table Grid"; gs_t.autofit = False
             gs_c2 = gs_t.cell(0,0); gs_c2.width = Cm(page_w_cm)
             _set_cell_bg(gs_c2, "FFFFFF"); _set_left_accent(gs_c2, "0F3460")
@@ -1984,6 +2012,9 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
             _p(gs_c2, hdr_w, bold=True, size=8.5, color=BLUE, first=True)
             if is_generic:
                 _p(gs_c2, "Listă de produse/servicii indisponibilă în TMview pentru această marcă — se afișează descrierea generică a clasei:",
+                   size=7, color=LGRAY, italic=True)
+            elif _GOOGLE_TRANSLATE_API_KEY:
+                _p(gs_c2, "Tradus automat din limba de depunere originală:",
                    size=7, color=LGRAY, italic=True)
             _p(gs_c2, text_w, size=8, color=RGBColor(0x33,0x33,0x33), align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             _set_borders(gs_t)
