@@ -66,6 +66,7 @@ from docx.oxml import OxmlElement
 # ── Traducere clase NISA (Google Cloud Translation) ─────────────────────
 _GOOGLE_TRANSLATE_API_KEY = os.environ.get("GOOGLE_TRANSLATE_API_KEY", "")
 _translation_cache: dict = {}
+_translate_chars_used = 0  # resetat la începutul fiecărui build_word — cost per export
 
 
 def _translate_to_ro(text: str) -> str:
@@ -73,6 +74,7 @@ def _translate_to_ro(text: str) -> str:
     depus de solicitant în orice limbă. Cache în memorie — multe mărci
     reutilizează text identic/similar pentru aceeași clasă NISA. Textul deja
     în română e detectat local (gratuit) și lăsat neschimbat, fără apel API."""
+    global _translate_chars_used
     if not text or not _GOOGLE_TRANSLATE_API_KEY:
         return text
     if text in _translation_cache:
@@ -94,6 +96,7 @@ def _translate_to_ro(text: str) -> str:
         if resp.status_code == 200:
             translated = resp.json()["data"]["translations"][0]["translatedText"]
             _translation_cache[text] = translated
+            _translate_chars_used += len(text)
             return translated
     except Exception:
         pass
@@ -2048,6 +2051,9 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     from datetime import datetime as dt
     from docx.enum.section import WD_ORIENT
 
+    global _translate_chars_used
+    _translate_chars_used = 0
+
     template_path = os.path.join(os.path.dirname(__file__), "last_export.docx")
 
     # A4 portrait: 21 × 29.7 cm, margini 1.3 cm → latime utila = 18.4 cm
@@ -2369,6 +2375,9 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         p_ter.paragraph_format.space_after = Pt(6)
         for tm in terminated_marks:
             _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
+
+    if _GOOGLE_TRANSLATE_API_KEY:
+        print(f"[TRANSLATE] {_translate_chars_used} caractere trimise la Google Translate pentru acest export")
 
     buf = io.BytesIO()
     doc.save(buf)

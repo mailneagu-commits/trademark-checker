@@ -449,12 +449,15 @@
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn-export" id="quickExportExcel" onclick="doExport('excel')">📥 Export Excel</button>
         <button class="btn-export" id="quickExportPdf" onclick="doExport('pdf')">📄 Export PDF</button>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <button class="btn-export" id="quickExportWord" onclick="doExport('word')">📝 Export Word</button>
-          <label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:600;color:#555;cursor:pointer;white-space:nowrap;margin:0;text-transform:none;letter-spacing:0;" title="Include și mărci expirate în documentul Word">
-            <input type="checkbox" id="wordIncludeExpired" checked style="width:14px;height:14px;cursor:pointer;" />
-            incl. expirate
-          </label>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button class="btn-export" id="quickExportWord" onclick="doExport('word')">📝 Export Word</button>
+            <label style="display:flex;align-items:center;gap:4px;font-size:.78rem;font-weight:600;color:#555;cursor:pointer;white-space:nowrap;margin:0;text-transform:none;letter-spacing:0;" title="Include și mărci expirate în documentul Word">
+              <input type="checkbox" id="wordIncludeExpired" checked style="width:14px;height:14px;cursor:pointer;" />
+              incl. expirate
+            </label>
+          </div>
+          <div id="wordExportDuration" style="font-size:.72rem;color:#888;min-height:14px;padding-left:2px;"></div>
         </div>
         <button class="btn-export" id="quickOpenMonitor" style="background:#e8f5e9;border-color:#c8e6c9;color:#1e8449;" onclick="openAddToMonitor()">👁 Adaugă la monitorizare</button>
       </div>
@@ -1972,6 +1975,10 @@ async function doExport(format) {
     exportEnded = allEnded; exportTerminated = allTerminated;
   }
 
+  const durationEl = format === "word" ? document.getElementById("wordExportDuration") : null;
+  const t0 = performance.now();
+  if (durationEl) durationEl.textContent = "⏳ se generează...";
+
   try {
     const res = await fetch("/api/export", {
       method: "POST",
@@ -1990,7 +1997,12 @@ async function doExport(format) {
         include_expired: format === 'word' ? (document.getElementById('wordIncludeExpired')?.checked ?? true) : true,
       }),
     });
-    if (!res.ok) { const e = await res.json().catch(()=>({})); showError("Export eșuat: " + (e.detail || res.status)); return; }
+    if (!res.ok) {
+      const e = await res.json().catch(()=>({}));
+      showError("Export eșuat: " + (e.detail || res.status));
+      if (durationEl) durationEl.textContent = "";
+      return;
+    }
     const blob = await res.blob();
     const ext  = format === "excel" ? "xlsx" : format === "word" ? "docx" : "pdf";
     const url  = URL.createObjectURL(blob);
@@ -2000,8 +2012,10 @@ async function doExport(format) {
     a.download = `raport_${lastResults.query.replace(/ /g,"_")}${sel}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
+    if (durationEl) durationEl.textContent = `⏱ ${((performance.now() - t0) / 1000).toFixed(1)}s`;
   } catch(e) {
     showError("Eroare la export: " + e.message);
+    if (durationEl) durationEl.textContent = "";
   }
 }
 
