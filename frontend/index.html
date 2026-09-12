@@ -95,6 +95,7 @@
       cursor: pointer; transition: all .15s;
     }
     .btn-export:hover { background: #0f3460; color: #fff; }
+    .btn-export.export-success { background: #1e8449 !important; border-color: #1e8449 !important; color: #fff !important; }
 
     .spinner {
       display: none; width: 20px; height: 20px;
@@ -1976,8 +1977,10 @@ async function doExport(format) {
   }
 
   const durationEl = format === "word" ? document.getElementById("wordExportDuration") : null;
+  const wordBtn    = format === "word" ? document.getElementById("quickExportWord") : null;
   const t0 = performance.now();
   if (durationEl) durationEl.textContent = "⏳ se generează...";
+  if (wordBtn) wordBtn.classList.remove("export-success");
 
   try {
     const res = await fetch("/api/export", {
@@ -2013,6 +2016,10 @@ async function doExport(format) {
     a.click();
     URL.revokeObjectURL(url);
     if (durationEl) durationEl.textContent = `⏱ ${((performance.now() - t0) / 1000).toFixed(1)}s`;
+    if (wordBtn) {
+      wordBtn.classList.add("export-success");
+      setTimeout(() => wordBtn.classList.remove("export-success"), 4000);
+    }
   } catch(e) {
     showError("Eroare la export: " + e.message);
     if (durationEl) durationEl.textContent = "";
