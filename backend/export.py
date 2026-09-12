@@ -71,11 +71,19 @@ _translation_cache: dict = {}
 def _translate_to_ro(text: str) -> str:
     """Traduce în română textul liber de produse/servicii (goodAndServices),
     depus de solicitant în orice limbă. Cache în memorie — multe mărci
-    reutilizează text identic/similar pentru aceeași clasă NISA."""
+    reutilizează text identic/similar pentru aceeași clasă NISA. Textul deja
+    în română e detectat local (gratuit) și lăsat neschimbat, fără apel API."""
     if not text or not _GOOGLE_TRANSLATE_API_KEY:
         return text
     if text in _translation_cache:
         return _translation_cache[text]
+    try:
+        from langdetect import detect
+        if detect(text) == "ro":
+            _translation_cache[text] = text
+            return text
+    except Exception:
+        pass
     try:
         resp = requests.post(
             "https://translation.googleapis.com/language/translate/v2",
