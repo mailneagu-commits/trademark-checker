@@ -641,7 +641,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
               expired_conflicts: List[Dict] = None, expired_similar: List[Dict] = None,
               include_expired: bool = True,
               ended_marks: List[Dict] = None, terminated_marks: List[Dict] = None) -> bytes:
-    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.lib.pagesizes import A4
     from reportlab.platypus import KeepTogether, PageBreak
     from datetime import datetime as dt
 
@@ -651,7 +651,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
     if not include_expired:
         ended_marks, terminated_marks, expired_conflicts, expired_similar = [], [], [], []
 
-    PAGE = landscape(A4)
+    PAGE = A4  # portrait
     LM = RM = 1.4 * cm
     TM = BM = 1.4 * cm
     W  = PAGE[0] - LM - RM
@@ -888,7 +888,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
     if not active_all:
         story.append(Paragraph("Niciun conflict activ detectat.", styb("nc0a", fontSize=11, textColor=colors.HexColor("#1E8449"))))
 
-    # Column widths  (landscape A4 cu margini 1.4cm → W ≈ 812pt)
+    # Column widths  (portrait A4 cu margini 1.4cm → W ≈ 522pt)
     STRIP = 0.35 * cm   # strip colorat stânga
     LOGO  = 2.60 * cm   # logo marcă — mai mare
     SCORE = 4.20 * cm   # coloana scor — mai lată
