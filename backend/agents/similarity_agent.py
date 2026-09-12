@@ -254,6 +254,7 @@ class SimilarityAgent:
             is_expired = any(w in status_raw for w in [
                 "expir", "lapsed", "cancelled", "refused",
                 "withdrawn", "surrendered", "invalidated", "abandoned", "ended",
+                "încheiat", "incheiat",
             ])
             if not is_expired:
                 exp_str = normalized.get("expiryDate", "")

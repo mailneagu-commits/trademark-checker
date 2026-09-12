@@ -1034,6 +1034,7 @@ function statusBadge(status) {
   if (!status) return "";
   const s = status.toLowerCase();
   if (s.includes("ended") || s.includes("lapsed") || s.includes("expir") ||
+      s.includes("încheiat") || s.includes("incheiat") ||
       s.includes("cancelled") || s.includes("withdrawn") || s.includes("surrendered") ||
       s.includes("invalidated") || s.includes("abandoned") || s.includes("refused"))
     return `<span class="status-badge status-exp">✖ Expirată/Încheiată</span>`;
@@ -1053,6 +1054,7 @@ function getStatusKey(status) {
   if (!status) return "other";
   const s = status.toLowerCase();
   if (s.includes("ended") || s.includes("lapsed") || s.includes("expir") ||
+      s.includes("încheiat") || s.includes("incheiat") ||
       s.includes("cancelled") || s.includes("withdrawn") || s.includes("surrendered") ||
       s.includes("invalidated") || s.includes("abandoned") || s.includes("refused"))
     return "expired";

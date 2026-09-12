@@ -91,7 +91,7 @@ def _inactive_category(tm: dict) -> str:
         return "ended"
     if any(w in status for w in _TERMINATED_WORDS):
         return "terminated"
-    if "expir" in status or "lapsed" in status:
+    if "expir" in status or "lapsed" in status or "încheiat" in status or "incheiat" in status:
         return "expired"
 
     # Fallback dată expirată
