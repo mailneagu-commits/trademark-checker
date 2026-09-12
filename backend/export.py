@@ -1385,10 +1385,10 @@ def _add_section_title(doc, text: str):
     return p
 
 
-def _add_protectmark_header(doc: Document, query: str = "", offices: List[str] = None):
+def _add_protectmark_header(doc: Document, query: str = "", offices: List[str] = None, page_w_cm: float = 27.1):
     _LOGO_H    = Cm(2.25)
-    _LOGO_COL  = 3.5
-    _TITLE_COL = 27.1 - 2 * _LOGO_COL  # 20.1 cm
+    _LOGO_COL  = 2.8  # logo-uri patrate 2.25cm — coloana fixa, restul merge la titlu
+    _TITLE_COL = page_w_cm - 2 * _LOGO_COL
 
     _fe = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
     _pm_bytes = (open(os.path.join(_fe, "protectmark-logo.png"), "rb").read()
@@ -1405,7 +1405,7 @@ def _add_protectmark_header(doc: Document, query: str = "", offices: List[str] =
     for el in list(fph._element):
         fph._element.remove(el)
 
-    table = fph.add_table(rows=1, cols=3, width=Cm(27.1))
+    table = fph.add_table(rows=1, cols=3, width=Cm(page_w_cm))
     _fix_table_layout(table, [_LOGO_COL, _TITLE_COL, _LOGO_COL])
     _clear_table_borders(table)
     row = table.rows[0]
@@ -1943,8 +1943,8 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
 
     template_path = os.path.join(os.path.dirname(__file__), "last_export.docx")
 
-    # A4 landscape: 29.7 × 21 cm, margini 1.3 cm → latime utila = 27.1 cm
-    PAGE_W_CM = 27.1
+    # A4 portrait: 21 × 29.7 cm, margini 1.3 cm → latime utila = 18.4 cm
+    PAGE_W_CM = 18.4
     MARGIN    = Cm(1.3)
 
     try:
@@ -1959,15 +1959,15 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         pass
 
     for sec in doc.sections:
-        sec.orientation   = WD_ORIENT.LANDSCAPE
-        sec.page_width    = Cm(29.7)
-        sec.page_height   = Cm(21.0)
+        sec.orientation   = WD_ORIENT.PORTRAIT
+        sec.page_width    = Cm(21.0)
+        sec.page_height   = Cm(29.7)
         sec.top_margin    = Cm(3.0)   # extra space for logo header (0.4 dist + 2.25 logo + 0.35 gap)
         sec.bottom_margin = MARGIN
         sec.left_margin   = MARGIN
         sec.right_margin  = MARGIN
 
-    _add_protectmark_header(doc, query, offices)
+    _add_protectmark_header(doc, query, offices, page_w_cm=PAGE_W_CM)
 
     # Separam defensiv marcile inactive din listele active (garantie indiferent de API)
     results, similar, ended_marks, terminated_marks, expired_conflicts, expired_similar = _segregate_inactive(
@@ -2178,9 +2178,9 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     # New section for results pages — smaller top margin (no header → saves space)
     from docx.enum.section import WD_SECTION
     results_sec = doc.add_section(WD_SECTION.NEW_PAGE)
-    results_sec.orientation   = WD_ORIENT.LANDSCAPE
-    results_sec.page_width    = Cm(29.7)
-    results_sec.page_height   = Cm(21.0)
+    results_sec.orientation   = WD_ORIENT.PORTRAIT
+    results_sec.page_width    = Cm(21.0)
+    results_sec.page_height   = Cm(29.7)
     results_sec.top_margin    = Cm(1.5)
     results_sec.bottom_margin = MARGIN
     results_sec.left_margin   = MARGIN
