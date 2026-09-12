@@ -113,7 +113,11 @@ def _segregate_inactive(
     """Mută mărcile inactive din listele active în categoriile corecte.
 
     Garantează că nicio marcă inactivă nu apare la activi și că
-    ended/terminated nu ajung la expirate și invers.
+    ended/terminated nu ajung la expirate și invers. Verifică și invers:
+    o marcă ajunsă într-o listă inactivă la momentul căutării (ex. status
+    lipsă → dedus doar din data de expirare) poate primi ulterior, la
+    export, un status îmbogățit (markCurrentStatusCode din TMview detail)
+    care arată clar că e activă — o mutăm înapoi la activi.
     """
     seen: set = set()
     for lst in (ended_marks, terminated_marks, expired_conflicts, expired_similar):
@@ -123,10 +127,19 @@ def _segregate_inactive(
                 seen.add(k)
 
     clean_results, clean_similar = [], []
-    end_out  = list(ended_marks)
-    ter_out  = list(terminated_marks)
-    exp_c    = list(expired_conflicts)
-    exp_s    = list(expired_similar)
+    end_out, ter_out, exp_c, exp_s = [], [], [], []
+
+    def _reactivate(tm):
+        score = (tm.get("similarity") or {}).get("combined_score", 0)
+        (clean_results if score >= 75 else clean_similar).append(tm)
+
+    for out_lst, lst in ((end_out, ended_marks), (ter_out, terminated_marks),
+                         (exp_c, expired_conflicts), (exp_s, expired_similar)):
+        for tm in lst:
+            if _inactive_category(tm):
+                out_lst.append(tm)
+            else:
+                _reactivate(tm)
 
     def _route(tm, high_risk: bool):
         cat = _inactive_category(tm)

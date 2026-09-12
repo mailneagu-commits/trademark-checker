@@ -254,6 +254,7 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
                 designated = [c.strip() for c in madrid_str.split("-") if c.strip()]
 
         return {
+            "markImageURI":          tm.get("markImageURI") or data.get("markImageURI") or "",
             "goodAndServices":       tm.get("goodAndServices", []),
             "registrationDate":      (tm.get("codeRegistrationDate") or "")[:10],
             "expiryDate":            (tm.get("expiryDate") or "")[:10],
@@ -308,6 +309,12 @@ async def enrich_marks_with_detail(marks: list) -> list:
                 # applicants_detail has normalized {name, address, country}
                 if detail.get("applicants_detail"):
                     merged["applicants"] = detail["applicants_detail"]
+                # Completăm imaginea din detail doar dacă lipsea la căutare —
+                # unele mărci inactive (expirate) nu au markImageURI în
+                # rezultatul de search, dar detail-ul o poate avea.
+                if not merged.get("imageUrl") and detail.get("markImageURI"):
+                    merged["imageUrl"] = detail["markImageURI"]
+                merged.pop("markImageURI", None)
                 return merged
         except Exception:
             pass
