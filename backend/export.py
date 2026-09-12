@@ -1219,12 +1219,10 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         for nc in sorted(all_cls.keys(), key=lambda x: int(x)):
             info  = all_cls[nc]
             text  = info["text"]
-            is_generic = False
             if not text:
                 if not info.get("desc"):
                     continue
                 text = info["desc"]
-                is_generic = True
 
             short = info.get("short") or ""
             hdr   = f"Clasa {nc} — {short}" if short else f"Clasa {nc}"
@@ -1232,12 +1230,6 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
                 [Paragraph(hdr, styb(f"gt{i}{nc}", fontSize=8.5, textColor=BLUE,
                                      leading=11, spaceAfter=0))],
             ]
-            if is_generic:
-                box_rows.append([Paragraph(
-                    "Listă de produse/servicii indisponibilă în TMview pentru această marcă — se afișează descrierea generică a clasei:",
-                    sty(f"gtn{i}{nc}", fontSize=7, textColor=colors.HexColor("#999999"),
-                        leading=10, spaceAfter=2)
-                )])
             if text:
                 disp = text[:MAX_GS] + ("…" if len(text) > MAX_GS else "")
                 box_rows.append([Paragraph(
@@ -2006,12 +1998,10 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
         for nc in sorted(all_cls_w.keys(), key=lambda x: int(x)):
             info = all_cls_w[nc]
             text_w = info["text"]
-            is_generic = False
             if not text_w:
                 if not info.get("desc"):
                     continue
                 text_w = info["desc"]
-                is_generic = True
             else:
                 text_w = _translate_to_ro(text_w)
             gs_t = doc.add_table(rows=1, cols=1); gs_t.style = "Table Grid"; gs_t.autofit = False
@@ -2021,9 +2011,6 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
             short_w = info.get("short") or ""
             hdr_w   = f"Clasa {nc} — {short_w}" if short_w else f"Clasa {nc}"
             _p(gs_c2, hdr_w, bold=True, size=8.5, color=BLUE, first=True)
-            if is_generic:
-                _p(gs_c2, "Listă de produse/servicii indisponibilă în TMview pentru această marcă — se afișează descrierea generică a clasei:",
-                   size=7, color=LGRAY, italic=True)
             _p(gs_c2, text_w, size=8, color=RGBColor(0x33,0x33,0x33), align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             _set_borders(gs_t)
             _fix_table_layout(gs_t, [page_w_cm])
