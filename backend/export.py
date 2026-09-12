@@ -1198,7 +1198,6 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
                 ("BOX",           (0,0), (-1,-1), 0.5, colors.HexColor("#D8E3F0")),
             ]))
             gs_blocks.append(box)
-            gs_blocks.append(Spacer(1, 0.28*cm))
 
         story.append(KeepTogether([card_tbl] + detail_elements))
         if gs_blocks:
@@ -1978,7 +1977,8 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
             _cant_split(gs_t)
 
             sp2 = doc.add_paragraph()
-            sp2.paragraph_format.space_before = Pt(0); sp2.paragraph_format.space_after = Pt(3)
+            sp2.paragraph_format.space_before = Pt(0); sp2.paragraph_format.space_after = Pt(0)
+            r_sp2 = sp2.add_run(""); r_sp2.font.size = Pt(1)
             _keep_next(sp2)
 
     sp = doc.add_paragraph()
