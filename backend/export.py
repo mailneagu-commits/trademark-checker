@@ -58,7 +58,7 @@ from PIL import Image as PILImage
 
 from docx import Document
 from docx.shared import Pt, RGBColor, Cm, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
@@ -1230,7 +1230,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
     if expired_conflicts or expired_similar:
         story.append(PageBreak())
         story.append(Paragraph(
-            "Mărci expirate / anulate / respinse similare",
+            "Mărci expirate / anulate / respinse similare / încheiate",
             styb("exh", fontSize=13, textColor=colors.HexColor("#6C3483"), spaceAfter=4)
         ))
         story.append(Paragraph(
@@ -1978,6 +1978,8 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
 
             sp2 = doc.add_paragraph()
             sp2.paragraph_format.space_before = Pt(0); sp2.paragraph_format.space_after = Pt(0)
+            sp2.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+            sp2.paragraph_format.line_spacing = Pt(1)
             r_sp2 = sp2.add_run(""); r_sp2.font.size = Pt(1)
             _keep_next(sp2)
 
@@ -2161,7 +2163,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         expired_badge.rows[0].height = Cm(0.9)
         p_exp_badge = expired_cell.paragraphs[0]
         p_exp_badge.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r_exp_badge = p_exp_badge.add_run(f"Mărci expirate / anulate / respinse: {expired_count}")
+        r_exp_badge = p_exp_badge.add_run(f"Mărci expirate / anulate / respinse / încheiate: {expired_count}")
         r_exp_badge.bold = True; r_exp_badge.font.size = Pt(9); r_exp_badge.font.name = "Arial"
         r_exp_badge.font.color.rgb = RGBColor(0x6C, 0x34, 0x83)
         _set_borders(expired_badge, sz="2")
@@ -2296,7 +2298,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     if expired_count:
         doc.add_page_break()
         p_exp = doc.add_paragraph()
-        r_exp = p_exp.add_run("Mărci expirate / anulate / respinse similare")
+        r_exp = p_exp.add_run("Mărci expirate / anulate / respinse similare / încheiate")
         r_exp.bold = True
         r_exp.font.size = Pt(11)
         r_exp.font.name = "Arial"
