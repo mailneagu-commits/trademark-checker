@@ -369,9 +369,7 @@ class SimilarityAgent:
             else:
                 ter = 3
             exact_end = 1 if e.get("_exact_boost") else 0
-            e_status = (e.get("status") or "").lower()
-            is_renewal = 1 if any(w in e_status for w in ("reînnoire", "reinnoire", "renewal")) else 0
-            return (is_renewal, _risk_ord.get(e["risk_level"], 4), ter, exact_end, -e["similarity"]["combined_score"])
+            return (_risk_ord.get(e["risk_level"], 4), ter, exact_end, -e["similarity"]["combined_score"])
 
         for lst in (conflicts, similar, ended_marks, terminated_marks, expired_conflicts, expired_similar):
             lst.sort(key=_sort_key)

@@ -75,14 +75,6 @@ from docx.oxml import OxmlElement
 _TERMINATED_WORDS = {"cancelled", "refused", "withdrawn", "surrendered", "invalidated", "abandoned"}
 _ACTIVE_WORDS     = {"registered", "active", "published", "pending", "examination",
                      "application", "renewal", "opposition", "granted", "filed"}
-_RENEWAL_WORDS    = {"reînnoire", "reinnoire", "renewal"}
-
-
-def _is_renewal_status(tm: dict) -> bool:
-    """Mărci 'În curs de reînnoire' — se afișează la finalul listei de mărci active."""
-    status = str(tm.get("status") or tm.get("markCurrentStatusCode")
-                 or tm.get("tradeMarkStatus") or "").lower()
-    return any(w in status for w in _RENEWAL_WORDS)
 
 
 def _inactive_category(tm: dict) -> str:
@@ -448,7 +440,7 @@ def build_excel(query: str, nice_classes: List[str], offices: List[str],
     def _xl_sort(x):
         sim = x.get("similarity", {})
         lvl = x.get("risk_level") or sim.get("risk_level") or "low"
-        return (1 if _is_renewal_status(x) else 0, _RISK_ORDER_XL.get(lvl, 9), -sim.get("combined_score", 0))
+        return (_RISK_ORDER_XL.get(lvl, 9), -sim.get("combined_score", 0))
 
     all_results = sorted(
         (results or []) + (similar or []) + (ended_marks or []) + (terminated_marks or []) + (expired_conflicts or []) + (expired_similar or []),
@@ -699,10 +691,10 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         reverse=True
     )
     # Doar mărcile active (nu ended/terminated/expirate) intră la riscuri și la capitolul "activ"
-    # Mărcile "În curs de reînnoire" merg la finalul listei, indiferent de scor.
     active_all = sorted(
         (results or []) + (similar or []),
-        key=lambda x: (1 if _is_renewal_status(x) else 0, -x.get("similarity", {}).get("combined_score", 0))
+        key=lambda x: x.get("similarity", {}).get("combined_score", 0),
+        reverse=True
     )
     expired_count = len(expired_conflicts or []) + len(expired_similar or [])
     very_high = [r for r in active_all if r.get("risk_level") == "very_high"]
@@ -2043,7 +2035,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     def _risk_sort_key(x):
         sim = x.get("similarity", {})
         lvl = x.get("risk_level") or sim.get("risk_level") or "low"
-        return (1 if _is_renewal_status(x) else 0, _RISK_ORDER.get(lvl, 9), -sim.get("combined_score", 0))
+        return (_RISK_ORDER.get(lvl, 9), -sim.get("combined_score", 0))
 
     active_conflicts  = sorted(results or [],           key=_risk_sort_key)
     active_similar    = sorted(similar or [],            key=_risk_sort_key)
