@@ -2024,9 +2024,6 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
             if is_generic:
                 _p(gs_c2, "Listă de produse/servicii indisponibilă în TMview pentru această marcă — se afișează descrierea generică a clasei:",
                    size=7, color=LGRAY, italic=True)
-            elif _GOOGLE_TRANSLATE_API_KEY:
-                _p(gs_c2, "Tradus automat din limba de depunere originală:",
-                   size=7, color=LGRAY, italic=True)
             _p(gs_c2, text_w, size=8, color=RGBColor(0x33,0x33,0x33), align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             _set_borders(gs_t)
             _fix_table_layout(gs_t, [page_w_cm])
