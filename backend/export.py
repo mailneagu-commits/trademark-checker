@@ -690,10 +690,17 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         key=lambda x: x.get("similarity", {}).get("combined_score", 0),
         reverse=True
     )
-    very_high = [r for r in all_results if r.get("risk_level") == "very_high"]
-    high      = [r for r in all_results if r.get("risk_level") == "high"]
-    medium    = [r for r in all_results if r.get("risk_level") == "medium"]
-    low       = [r for r in all_results if r.get("risk_level") == "low"]
+    # Doar mărcile active (nu ended/terminated/expirate) intră la riscuri și la capitolul "activ"
+    active_all = sorted(
+        (results or []) + (similar or []),
+        key=lambda x: x.get("similarity", {}).get("combined_score", 0),
+        reverse=True
+    )
+    expired_count = len(expired_conflicts or []) + len(expired_similar or [])
+    very_high = [r for r in active_all if r.get("risk_level") == "very_high"]
+    high      = [r for r in active_all if r.get("risk_level") == "high"]
+    medium    = [r for r in active_all if r.get("risk_level") == "medium"]
+    low       = [r for r in active_all if r.get("risk_level") == "low"]
 
     def fmt_date(d):
         if not d: return "—"
@@ -868,15 +875,18 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         styb("rh", fontSize=13, textColor=BLUE, spaceAfter=4)
     ))
     story.append(Paragraph(
-        f"Total: {len(all_results)} marci  |  Clase NICE: {', '.join(nice_classes)}  |  Data: {date.today().strftime('%d.%m.%Y')}",
+        f"Total active: {len(active_all)} marci  |  Clase NICE: {', '.join(nice_classes)}  |  Data: {date.today().strftime('%d.%m.%Y')}",
         sty("rsub", fontSize=8, textColor=DKGRAY, spaceAfter=12)
     ))
 
-    if not all_results:
+    if not (active_all or ended_marks or terminated_marks or expired_conflicts or expired_similar):
         story.append(Paragraph("Niciun conflict detectat.", styb("nc0", fontSize=11, textColor=colors.HexColor("#1E8449"))))
         doc.build(story)
         buf.seek(0)
         return buf.read()
+
+    if not active_all:
+        story.append(Paragraph("Niciun conflict activ detectat.", styb("nc0a", fontSize=11, textColor=colors.HexColor("#1E8449"))))
 
     # Column widths  (landscape A4 cu margini 1.4cm → W ≈ 812pt)
     STRIP = 0.35 * cm   # strip colorat stânga
@@ -886,9 +896,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
 
     MAX_GS = 3000  # caractere max / clasă G&S
 
-
-
-    for i, tm in enumerate(all_results):
+    def _render_pdf_card(tm, i):
         sim   = tm.get("similarity") or {}
         score = sim.get("combined_score") or 0
         lvl   = _risk_level(score)
@@ -1201,6 +1209,50 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
             for el in gs_blocks:
                 story.append(el)
         story.append(Spacer(1, 0.70*cm))
+
+    # ─── Randare pe capitole: activ → ended → expirate → anulate ────────
+    _card_idx = 0
+    for tm in active_all:
+        _render_pdf_card(tm, _card_idx); _card_idx += 1
+
+    if ended_marks:
+        story.append(PageBreak())
+        story.append(Paragraph(
+            "Mărci cu statut Ended (perioadă încheiată)",
+            styb("edh", fontSize=13, textColor=colors.HexColor("#E67E22"), spaceAfter=4)
+        ))
+        story.append(Paragraph(
+            f"Total: {len(ended_marks)} marci",
+            sty("edsub", fontSize=8, textColor=DKGRAY, spaceAfter=12)
+        ))
+        for tm in ended_marks:
+            _render_pdf_card(tm, _card_idx); _card_idx += 1
+
+    if expired_conflicts or expired_similar:
+        story.append(PageBreak())
+        story.append(Paragraph(
+            "Mărci expirate / anulate / respinse similare",
+            styb("exh", fontSize=13, textColor=colors.HexColor("#6C3483"), spaceAfter=4)
+        ))
+        story.append(Paragraph(
+            f"Total: {expired_count} marci",
+            sty("exsub", fontSize=8, textColor=DKGRAY, spaceAfter=12)
+        ))
+        for tm in (expired_conflicts + expired_similar):
+            _render_pdf_card(tm, _card_idx); _card_idx += 1
+
+    if terminated_marks:
+        story.append(PageBreak())
+        story.append(Paragraph(
+            "Mărci anulate / retrase / refuzate",
+            styb("tmh", fontSize=13, textColor=colors.HexColor("#C0392B"), spaceAfter=4)
+        ))
+        story.append(Paragraph(
+            f"Total: {len(terminated_marks)} marci",
+            sty("tmsub", fontSize=8, textColor=DKGRAY, spaceAfter=12)
+        ))
+        for tm in terminated_marks:
+            _render_pdf_card(tm, _card_idx); _card_idx += 1
 
     # ─── SUMMARY PAGE ──────────────────────────────────────────────────
     story.append(PageBreak())
@@ -2231,6 +2283,16 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         for tm in active_similar:
             _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM)
 
+    if ended_marks:
+        doc.add_page_break()
+        p_end = doc.add_paragraph()
+        r_end = p_end.add_run("Mărci cu statut Ended (perioadă încheiată)")
+        r_end.bold = True; r_end.font.size = Pt(11); r_end.font.name = "Arial"
+        r_end.font.color.rgb = RGBColor(0xE6, 0x7E, 0x22)
+        p_end.paragraph_format.space_after = Pt(6)
+        for tm in ended_marks:
+            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
+
     if expired_count:
         doc.add_page_break()
         p_exp = doc.add_paragraph()
@@ -2241,16 +2303,6 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         r_exp.font.color.rgb = RGBColor(0x6C, 0x34, 0x83)
         p_exp.paragraph_format.space_after = Pt(6)
         for tm in expired_conflicts + expired_similar:
-            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
-
-    if ended_marks:
-        doc.add_page_break()
-        p_end = doc.add_paragraph()
-        r_end = p_end.add_run("Mărci cu statut Ended (perioadă încheiată)")
-        r_end.bold = True; r_end.font.size = Pt(11); r_end.font.name = "Arial"
-        r_end.font.color.rgb = RGBColor(0xE6, 0x7E, 0x22)
-        p_end.paragraph_format.space_after = Pt(6)
-        for tm in ended_marks:
             _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
 
     if terminated_marks:
