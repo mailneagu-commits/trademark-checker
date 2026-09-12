@@ -309,6 +309,12 @@ async def enrich_marks_with_detail(marks: list) -> list:
                 # applicants_detail has normalized {name, address, country}
                 if detail.get("applicants_detail"):
                     merged["applicants"] = detail["applicants_detail"]
+                # Nu suprascriem goodAndServices deja populat (ex. printr-un fetch
+                # de detaliu declanșat mai devreme din UI la expandarea cardului)
+                # cu un răspuns gol dintr-o nouă încercare server-side eșuată sau
+                # incompletă — TMview e adesea instabil la request individual.
+                if mark.get("goodAndServices") and not detail.get("goodAndServices"):
+                    merged["goodAndServices"] = mark["goodAndServices"]
                 # Completăm imaginea din detail doar dacă lipsea la căutare —
                 # unele mărci inactive (expirate) nu au markImageURI în
                 # rezultatul de search, dar detail-ul o poate avea.
