@@ -1624,8 +1624,43 @@ _FOOTER_ADDRESS_LINES = (
 )
 
 
+def _add_footer_hr(footer, width_cm: float):
+    """Add a hairline rule, exactly width_cm wide and centered, above the footer text."""
+    tbl = footer.add_table(rows=1, cols=1, width=Cm(width_cm))
+    _fix_table_layout(tbl, [width_cm])
+    cell = tbl.cell(0, 0)
+    _zero_cell_margins(cell)
+
+    tcPr = cell._tc.get_or_add_tcPr()
+    for el in tcPr.findall(qn("w:tcBorders")):
+        tcPr.remove(el)
+    tcBorders = OxmlElement("w:tcBorders")
+    top = OxmlElement("w:top")
+    top.set(qn("w:val"), "single"); top.set(qn("w:sz"), "2")
+    top.set(qn("w:space"), "0"); top.set(qn("w:color"), "AAAAAA")
+    tcBorders.append(top)
+    for name in ("left", "bottom", "right"):
+        b = OxmlElement(f"w:{name}")
+        b.set(qn("w:val"), "none"); b.set(qn("w:sz"), "0")
+        b.set(qn("w:space"), "0"); b.set(qn("w:color"), "auto")
+        tcBorders.append(b)
+    tcPr.append(tcBorders)
+
+    p = cell.paragraphs[0]
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after  = Pt(0)
+    r = p.add_run("")
+    r.font.size = Pt(1)
+
+
 def _add_footer_address(footer):
-    """Add centered company address block (Helvetica Neue, small) to a footer."""
+    """Add a hairline rule (exact width of the first address line) + centered
+    company address block (Helvetica Neue, small) to a footer."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    width_pt = stringWidth(_FOOTER_ADDRESS_LINES[0], "Helvetica", 6.5)
+    width_cm = width_pt * 2.54 / 72
+    _add_footer_hr(footer, width_cm)
+
     p = footer.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.space_before = Pt(0)
