@@ -2132,7 +2132,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
 
             short_w = info.get("short") or ""
             hdr_w   = f"Clasa {nc} — {short_w}" if short_w else f"Clasa {nc}"
-            _p(gs_c2, hdr_w, bold=True, size=8.5, color=BLUE, first=True)
+            _p(gs_c2, hdr_w, bold=True, size=7, color=BLUE, first=True)
             _p(gs_c2, text_w, size=6, color=RGBColor(0x33,0x33,0x33), align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             _set_borders(gs_t)
             _fix_table_layout(gs_t, [page_w_cm])
