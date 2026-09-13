@@ -244,6 +244,56 @@ def _risk_color_pdf(score: float):
     return colors.Color(r/255, g/255, b/255)
 
 
+# Oficii naționale de proprietate industrială, pentru textul de Concluzii —
+# acoperă toate teritoriile selectabile din frontend (COUNTRIES în index.html).
+_NATIONAL_OFFICE_NAMES = {
+    "RO": "OSIM", "DE": "DPMA (Germania)", "FR": "INPI (Franța)", "IT": "UIBM (Italia)",
+    "ES": "OEPM (Spania)", "PT": "INPI (Portugalia)",
+    "BX": "BOIP (Benelux)", "BE": "BOIP (Benelux)", "NL": "BOIP (Benelux)", "LU": "BOIP (Benelux)",
+    "AT": "Patentamt (Austria)", "PL": "UPRP (Polonia)", "CZ": "ÚPV (Cehia)",
+    "HU": "HIPO (Ungaria)", "BG": "Patentno Vedomstvo (Bulgaria)", "HR": "DZIV (Croația)",
+    "SK": "ÚPV SR (Slovacia)", "SI": "SIPO (Slovenia)", "GR": "OBI (Grecia)",
+    "SE": "PRV (Suedia)", "DK": "DKPTO (Danemarca)", "FI": "PRH (Finlanda)",
+    "IE": "IPOI (Irlanda)", "MT": "IPRD (Malta)", "CY": "DRCOR IP (Cipru)",
+    "LV": "Patentu Valde (Letonia)", "LT": "VPB (Lituania)", "EE": "Patendiamet (Estonia)",
+    "GB": "UKIPO (Marea Britanie)", "CH": "IPI (Elveția)", "TR": "TÜRKPATENT (Turcia)",
+    "UA": "NIPU (Ucraina)", "MD": "AGEPI (Moldova)", "US": "USPTO (SUA)",
+    "SA": "SAIP (Arabia Saudită)", "RU": "ROSPATENT (Rusia)", "AM": "AIPA (Armenia)",
+    "VN": "NOIP (Vietnam)", "CN": "CNIPA (China)",
+}
+
+
+def _conclusions_scope_text(offices: List[str]) -> Optional[str]:
+    """Text pentru paragraful de Concluzii, adaptat teritoriilor efectiv selectate:
+    - EU_FULL   -> "in cele 27 de state membre UE"
+    - RO/altele -> "la OSIM" / "la <oficiul national corespunzator>" (posibil mai multe)
+    - fara nicio tara nationala selectata (doar EM si/sau WO) -> None, sectiunea se omite.
+    """
+    codes = {(o or "").upper() for o in (offices or [])}
+    if "EU_FULL" in codes:
+        national = "în cele 27 de state membre UE"
+    else:
+        national_codes = sorted(c for c in codes if c not in ("EM", "WO"))
+        if not national_codes:
+            return None
+        names = [_NATIONAL_OFFICE_NAMES.get(c, c) for c in national_codes]
+        if len(names) == 1:
+            joined = names[0]
+        else:
+            joined = ", ".join(names[:-1]) + " și " + names[-1]
+        national = f"la {joined}"
+    return f"înregistrate național {national}, european la EUIPO sau internațional la WIPO"
+
+
+def _ro_count_noun(n: int, noun: str = "mărci", noun_singular: str = "marcă") -> str:
+    """Aplica regula de numeral romaneasca: 'de' inainte de substantiv pentru 0 si >=20."""
+    if n == 1:
+        return f"o {noun_singular}"
+    if n == 0 or n >= 20:
+        return f"{n} de {noun}"
+    return f"{n} {noun}"
+
+
 def _scale_widths(widths: List[float], target_total: float) -> List[float]:
     total = sum(widths)
     if total <= 0:
@@ -2359,6 +2409,51 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         p_ter.paragraph_format.space_after = Pt(6)
         for tm in terminated_marks:
             _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
+
+    # ─── CONCLUZII ───────────────────────────────────────────────────────
+    scope_text = _conclusions_scope_text(offices)
+    if scope_text:
+        rr_count = len(very_high) + len(high)
+        rm_count = len(medium)
+        rs_count = len(low)
+
+        doc.add_page_break()
+        _add_section_title(doc, "Concluzii")
+
+        p_intro = doc.add_paragraph()
+        r_intro = p_intro.add_run(
+            "Rezultatele prezentei cercetări se bazează pe o analiză statistică a bazelor de "
+            "date cu mărcile identice/similare existente, "
+            f"{scope_text}, și evidențiază trei „niveluri de risc” care indică mărcile care ar "
+            "putea cauza potențiale conflicte."
+        )
+        r_intro.font.size = Pt(9); r_intro.font.name = "Arial"
+        p_intro.paragraph_format.space_after = Pt(10)
+
+        for title, count, word in (
+            ("Nivelul 1 - Mărci cu risc ridicat de confuzie/asociere [RR]:", rr_count, "ridicat"),
+            ("Nivelul 2 - Mărci cu risc mediu de confuzie/asociere [RM]:",   rm_count, "mediu"),
+            ("Nivelul 3 - Mărcile cu risc scăzut de confuzie/asociere [RS]:", rs_count, "scăzut"),
+        ):
+            p_t = doc.add_paragraph()
+            r_t = p_t.add_run(title)
+            r_t.bold = True; r_t.font.size = Pt(9); r_t.font.name = "Arial"; r_t.font.color.rgb = BLUE
+            p_t.paragraph_format.space_after = Pt(2)
+
+            p_c = doc.add_paragraph(
+                f"Dintre toate conflictele, {_ro_count_noun(count)} prezintă risc {word} de similaritate."
+            )
+            p_c.runs[0].font.size = Pt(9); p_c.runs[0].font.name = "Arial"
+            p_c.paragraph_format.space_after = Pt(8)
+
+        p_dist = doc.add_paragraph()
+        r_dist = p_dist.add_run(
+            f"În ceea ce priveşte condiţia distinctivităţii mărcii, considerăm că denumirea "
+            f"{query.upper()} îndeplineşte cerinţele prevăzute de lege pentru înregistrare. "
+            "Ținȃnd însă cont de drepturile anterioare prezentate, vă rugăm să luați în calcul "
+            f"și posibilitatea introducerii unor opoziții împotriva înregistrării mărcii {query.upper()}."
+        )
+        r_dist.font.size = Pt(9); r_dist.font.name = "Arial"
 
     if _GOOGLE_TRANSLATE_API_KEY:
         print(f"[TRANSLATE] {_translate_chars_used} caractere trimise la Google Translate pentru acest export")
