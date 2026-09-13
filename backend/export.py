@@ -1625,11 +1625,18 @@ _FOOTER_ADDRESS_LINES = (
 
 
 def _add_footer_hr(footer, width_cm: float):
-    """Add a hairline rule, exactly width_cm wide and centered, above the footer text."""
+    """Add a hairline rule, exactly width_cm wide and centered, flush against the text below."""
+    from docx.enum.table import WD_ROW_HEIGHT_RULE
+
     tbl = footer.add_table(rows=1, cols=1, width=Cm(width_cm))
     _fix_table_layout(tbl, [width_cm])
     cell = tbl.cell(0, 0)
     _zero_cell_margins(cell)
+
+    # Force the row down to a hairline — no auto line-height padding under the border.
+    row = tbl.rows[0]
+    row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+    row.height = Pt(1)
 
     tcPr = cell._tc.get_or_add_tcPr()
     for el in tcPr.findall(qn("w:tcBorders")):
@@ -1649,6 +1656,8 @@ def _add_footer_hr(footer, width_cm: float):
     p = cell.paragraphs[0]
     p.paragraph_format.space_before = Pt(0)
     p.paragraph_format.space_after  = Pt(0)
+    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    p.paragraph_format.line_spacing = Pt(1)
     r = p.add_run("")
     r.font.size = Pt(1)
 
