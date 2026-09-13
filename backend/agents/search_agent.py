@@ -79,7 +79,8 @@ except ImportError:
 from agents.variant_agent import (build_input_list, build_phonetic_variants,
                                    build_plural_stem_variants, build_vowel_variants,
                                    build_abbreviation_variants,
-                                   build_offices_and_territories, MAX_PAGES_PER_TERM)
+                                   build_offices_and_territories, MAX_PAGES_PER_TERM,
+                                   NON_EU_OFFICES)
 from agents.euipo_agent import euipo_available, search_euipo
 
 TMVIEW_URL    = "https://www.tmdn.org/tmview/api/search/results?translate=true"
@@ -623,6 +624,38 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
                 marks = await _search_term(session, term, nice_classes, ["WO"], ["EM"], crit, seen, max_pages=2)
                 all_marks.extend(marks)
             all_marks = all_marks[:MAX_TOTAL]
+
+        # Mărci WIPO/Madrid pentru oficii non-UE (VN, CN, US etc.) — territories=[cod]
+        # nu e valid în TMview pentru aceste țări (doar offices=[cod] funcționează,
+        # vezi build_offices_and_territories), deci nu putem filtra direct ca la EM
+        # mai sus. Căutăm global pe WO, apoi verificăm prin detail fetch care mărci
+        # chiar desemnează țara cerută — altfel am afișa conflicte Madrid nelegate de ea.
+        _non_eu_codes = [o for o in offices if o in NON_EU_OFFICES]
+        if _non_eu_codes and not many_territories and not _cb_is_open():
+            wo_seen: set = set()
+            wo_candidates: List[Dict] = []
+            for crit, term in [("E", upper), ("C", f"*{upper}*")]:
+                if len(wo_candidates) >= 30 or _cb_is_open():
+                    break
+                marks = await _search_term(session, term, nice_classes, ["WO"], [], crit, wo_seen, max_pages=1)
+                wo_candidates.extend(marks)
+                await asyncio.sleep(random.uniform(*inter_search_delay))
+            wo_candidates = wo_candidates[:30]
+            if wo_candidates:
+                _sem = asyncio.Semaphore(5)
+
+                async def _check_designation(mark):
+                    async with _sem:
+                        detail = await _fetch_detail(session, mark.get("ST13", ""))
+                    designated = {str(c).upper() for c in (detail.get("designatedCountries") or [])}
+                    return mark if any(code in designated for code in _non_eu_codes) else None
+
+                checked = await asyncio.gather(*[_check_designation(m) for m in wo_candidates])
+                wo_marks = [m for m in checked if m]
+                print(f"[TMVIEW] WIPO/Madrid suplimentar ({_non_eu_codes}): "
+                      f"{len(wo_marks)}/{len(wo_candidates)} mărci desemnează teritoriul căutat")
+                all_marks.extend(wo_marks)
+                all_marks = all_marks[:MAX_TOTAL]
 
         # Variante fonetice
         if many_territories:

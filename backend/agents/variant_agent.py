@@ -148,7 +148,7 @@ ALL_EU_TERRITORIES = [
 _EU_COUNTRY_SET = set(ALL_EU_TERRITORIES)
 
 # Țări non-UE căutate după oficiu (nu după teritoriu TMview)
-_NON_EU_OFFICES = {"GB", "CH", "TR", "UA", "MD", "US", "SA", "RU", "AM", "VN", "CN"}
+NON_EU_OFFICES = {"GB", "CH", "TR", "UA", "MD", "US", "SA", "RU", "AM", "VN", "CN"}
 
 
 _BENELUX = {"BE", "NL", "LU"}
@@ -202,7 +202,7 @@ def build_offices_and_territories(user_offices: List[str]):
             # territories singur întoarce întotdeauna un set egal sau mai complet.
             territories_set.add(c)
             territories_set.add("EM")  # mărcile EUIPO sunt valabile în toate statele UE
-        elif c in _NON_EU_OFFICES:
+        elif c in NON_EU_OFFICES:
             # Oficii non-UE (GB/CH/TR/UA/MD/US/SA/RU/AM/VN/CN) — TMview le are ca
             # participating offices, dar NU ca teritorii UE. territories=[cod] pentru
             # aceste coduri nu era valid și întorcea mereu 0 rezultate (bug: acest
