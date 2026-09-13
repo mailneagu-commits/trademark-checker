@@ -2455,22 +2455,16 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         r_intro.font.size = Pt(9); r_intro.font.name = "Arial"
         p_intro.paragraph_format.space_after = Pt(10)
 
-        for title, count, word, risk_key in (
-            ("Nivelul 1 - Mărci cu risc ridicat de confuzie/asociere [RR]:", rr_count, "ridicat", "high"),
-            ("Nivelul 2 - Mărci cu risc mediu de confuzie/asociere [RM]:",   rm_count, "mediu",   "medium"),
-            ("Nivelul 3 - Mărcile cu risc scăzut de confuzie/asociere [RS]:", rs_count, "scăzut",  "low"),
+        for title, count, risk_key in (
+            ("Nivelul 1 - Mărci cu risc ridicat de confuzie/asociere [RR]:", rr_count, "high"),
+            ("Nivelul 2 - Mărci cu risc mediu de confuzie/asociere [RM]:",   rm_count, "medium"),
+            ("Nivelul 3 - Mărcile cu risc scăzut de confuzie/asociere [RS]:", rs_count, "low"),
         ):
             p_t = doc.add_paragraph()
-            r_t = p_t.add_run(title)
+            r_t = p_t.add_run(f"{title} {_ro_count_noun(count)}")
             r_t.bold = True; r_t.font.size = Pt(9); r_t.font.name = "Arial"
             r_t.font.color.rgb = RGBColor(*_RISK_RGB[risk_key])
-            p_t.paragraph_format.space_after = Pt(2)
-
-            p_c = doc.add_paragraph(
-                f"Dintre toate conflictele, {_ro_count_noun(count)} prezintă risc {word} de similaritate."
-            )
-            p_c.runs[0].font.size = Pt(9); p_c.runs[0].font.name = "Arial"
-            p_c.paragraph_format.space_after = Pt(8)
+            p_t.paragraph_format.space_after = Pt(6)
 
         p_dist = doc.add_paragraph()
         r_dist = p_dist.add_run(
