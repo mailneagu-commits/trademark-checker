@@ -2460,10 +2460,13 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
             ("Nivelul 2 - Mărci cu risc mediu de confuzie/asociere [RM]:",   rm_count, "medium"),
             ("Nivelul 3 - Mărcile cu risc scăzut de confuzie/asociere [RS]:", rs_count, "low"),
         ):
+            risk_rgb = RGBColor(*_RISK_RGB[risk_key])
             p_t = doc.add_paragraph()
+            r_sq = p_t.add_run("■ ")
+            r_sq.font.size = Pt(9); r_sq.font.name = "Arial"; r_sq.font.color.rgb = risk_rgb
             r_t = p_t.add_run(f"{title} {_ro_count_noun(count)}")
             r_t.bold = True; r_t.font.size = Pt(9); r_t.font.name = "Arial"
-            r_t.font.color.rgb = RGBColor(*_RISK_RGB[risk_key])
+            r_t.font.color.rgb = risk_rgb
             p_t.paragraph_format.space_after = Pt(6)
 
         p_dist = doc.add_paragraph()
