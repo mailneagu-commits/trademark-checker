@@ -2461,14 +2461,15 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         r_intro.font.size = Pt(9); r_intro.font.name = "Arial"
         p_intro.paragraph_format.space_after = Pt(10)
 
-        for title, count, word in (
-            ("Nivelul 1 - Mărci cu risc ridicat de confuzie/asociere [RR]:", rr_count, "ridicat"),
-            ("Nivelul 2 - Mărci cu risc mediu de confuzie/asociere [RM]:",   rm_count, "mediu"),
-            ("Nivelul 3 - Mărcile cu risc scăzut de confuzie/asociere [RS]:", rs_count, "scăzut"),
+        for title, count, word, risk_key in (
+            ("Nivelul 1 - Mărci cu risc ridicat de confuzie/asociere [RR]:", rr_count, "ridicat", "high"),
+            ("Nivelul 2 - Mărci cu risc mediu de confuzie/asociere [RM]:",   rm_count, "mediu",   "medium"),
+            ("Nivelul 3 - Mărcile cu risc scăzut de confuzie/asociere [RS]:", rs_count, "scăzut",  "low"),
         ):
             p_t = doc.add_paragraph()
             r_t = p_t.add_run(title)
-            r_t.bold = True; r_t.font.size = Pt(9); r_t.font.name = "Arial"; r_t.font.color.rgb = BLUE
+            r_t.bold = True; r_t.font.size = Pt(9); r_t.font.name = "Arial"
+            r_t.font.color.rgb = RGBColor(*_RISK_RGB[risk_key])
             p_t.paragraph_format.space_after = Pt(2)
 
             p_c = doc.add_paragraph(
