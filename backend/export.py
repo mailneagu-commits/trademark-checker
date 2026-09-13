@@ -1602,24 +1602,54 @@ def _add_protectmark_header(doc: Document, query: str = "", offices: List[str] =
     p_empty.paragraph_format.space_before = Pt(0)
     p_empty.paragraph_format.space_after  = Pt(0)
 
-    # ── First-page footer: empty (no page number on cover) ───────────────
+    # ── First-page footer: address only, no page number on cover ─────────
     fpf = sec.first_page_footer
     fpf.is_linked_to_previous = False
     for el in list(fpf._element):
         fpf._element.remove(el)
-    p_fpf = fpf.add_paragraph()
-    p_fpf.paragraph_format.space_before = Pt(0)
-    p_fpf.paragraph_format.space_after  = Pt(0)
+    _add_footer_address(fpf)
+
+    # ── Regular footer (pages 2+ of section 1, before the results section)
+    reg_ftr = sec.footer
+    reg_ftr.is_linked_to_previous = False
+    for el in list(reg_ftr._element):
+        reg_ftr._element.remove(el)
+    _add_footer_address(reg_ftr)
 
     sec.header_distance = Cm(0.4)
 
 
+_FOOTER_ADDRESS_LINES = (
+    "Sediu Social: Iasi, Str. Petre Tutea, nr 5, Bl. 909, Tr. 1, Et. 3, Ap. 11, cam. 3, 700730",
+    "Punct de lucru: Iasi, B-dul Stefan cel Mare nr. 26, Casa Orest Tafrali , / CIF: 44229325 / "
+    "+40 721 514 264 / Fax: +40 371 600 923 / e-mail: office@protectmark.ro / www.protectmark.ro",
+)
+
+
+def _add_footer_address(footer):
+    """Add centered company address block (Helvetica Neue, small) to a footer."""
+    p = footer.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after  = Pt(0)
+    for i, line in enumerate(_FOOTER_ADDRESS_LINES):
+        r = p.add_run(line)
+        r.font.name = "Helvetica Neue"
+        r.font.size = Pt(6.5)
+        r.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+        if i < len(_FOOTER_ADDRESS_LINES) - 1:
+            r.add_break()
+    return p
+
+
 def _add_page_number_footer(section):
-    """Add right-aligned page number (Arial 8pt gray) to the section's footer."""
+    """Add centered address block + right-aligned page number to the section's footer."""
     footer = section.footer
     footer.is_linked_to_previous = False
     for el in list(footer._element):
         footer._element.remove(el)
+
+    _add_footer_address(footer)
 
     p = footer.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -1645,7 +1675,7 @@ def _add_page_number_footer(section):
     fc2 = OxmlElement("w:fldChar"); fc2.set(qn("w:fldCharType"), "end")
     r3._r.append(fc2)
 
-    section.footer_distance = Cm(0.7)
+    section.footer_distance = Cm(0.5)
 
 
 def _p(cell, text, bold=False, size=8, color=None, align=WD_ALIGN_PARAGRAPH.LEFT, first=False, italic=False):
@@ -2110,9 +2140,10 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         sec.page_width    = Cm(21.0)
         sec.page_height   = Cm(29.7)
         sec.top_margin    = Cm(3.0)   # extra space for logo header (0.4 dist + 2.25 logo + 0.35 gap)
-        sec.bottom_margin = MARGIN
+        sec.bottom_margin = Cm(1.8)   # extra room for the two-line address footer
         sec.left_margin   = MARGIN
         sec.right_margin  = MARGIN
+        sec.footer_distance = Cm(0.5)
 
     _add_protectmark_header(doc, query, offices, page_w_cm=PAGE_W_CM)
 
@@ -2329,7 +2360,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     results_sec.page_width    = Cm(21.0)
     results_sec.page_height   = Cm(29.7)
     results_sec.top_margin    = Cm(1.5)
-    results_sec.bottom_margin = MARGIN
+    results_sec.bottom_margin = Cm(1.8)   # extra room for the two-line address footer
     results_sec.left_margin   = MARGIN
     results_sec.right_margin  = MARGIN
     results_sec.different_first_page_header_footer = False
