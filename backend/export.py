@@ -1521,7 +1521,8 @@ def _add_section_title(doc, text: str):
     return p
 
 
-def _add_protectmark_header(doc: Document, query: str = "", offices: List[str] = None, page_w_cm: float = 27.1):
+def _build_protectmark_header_table(container, query: str = "", offices: List[str] = None, page_w_cm: float = 27.1):
+    """Populeaza un container (header/first_page_header) cu tabelul cu cele doua sigle + titlu."""
     _LOGO_H    = Cm(2.25)
     _LOGO_COL  = 2.8  # logo-uri patrate 2.25cm — coloana fixa, restul merge la titlu
     _TITLE_COL = page_w_cm - 2 * _LOGO_COL
@@ -1532,16 +1533,11 @@ def _add_protectmark_header(doc: Document, query: str = "", offices: List[str] =
     _ps_bytes = (open(os.path.join(_fe, "ProSearch-logo.png"), "rb").read()
                  if os.path.exists(os.path.join(_fe, "ProSearch-logo.png")) else None)
 
-    sec = doc.sections[0]
-    sec.different_first_page_header_footer = True
+    container.is_linked_to_previous = False
+    for el in list(container._element):
+        container._element.remove(el)
 
-    # ── First-page header: logo table (cover page only) ──────────────────
-    fph = sec.first_page_header
-    fph.is_linked_to_previous = False
-    for el in list(fph._element):
-        fph._element.remove(el)
-
-    table = fph.add_table(rows=1, cols=3, width=Cm(page_w_cm))
+    table = container.add_table(rows=1, cols=3, width=Cm(page_w_cm))
     _fix_table_layout(table, [_LOGO_COL, _TITLE_COL, _LOGO_COL])
     _clear_table_borders(table)
     row = table.rows[0]
@@ -1589,18 +1585,20 @@ def _add_protectmark_header(doc: Document, query: str = "", offices: List[str] =
         r.font.name = "Arial"; r.font.size = Pt(14)
         r.font.color.rgb = RGBColor(0xE6, 0x7E, 0x22)
 
-    p_end = fph.add_paragraph()
+    p_end = container.add_paragraph()
     p_end.paragraph_format.space_before = Pt(0)
     p_end.paragraph_format.space_after  = Pt(0)
 
-    # ── Regular header (pages 2+ of section 1): empty ────────────────────
-    reg_hdr = sec.header
-    reg_hdr.is_linked_to_previous = False
-    for el in list(reg_hdr._element):
-        reg_hdr._element.remove(el)
-    p_empty = reg_hdr.add_paragraph()
-    p_empty.paragraph_format.space_before = Pt(0)
-    p_empty.paragraph_format.space_after  = Pt(0)
+
+def _add_protectmark_header(doc: Document, query: str = "", offices: List[str] = None, page_w_cm: float = 27.1):
+    sec = doc.sections[0]
+    sec.different_first_page_header_footer = True
+
+    # ── First-page header: logo table (cover page) ────────────────────────
+    _build_protectmark_header_table(sec.first_page_header, query, offices, page_w_cm)
+
+    # ── Regular header (pages 2+ of section 1): same logo table ───────────
+    _build_protectmark_header_table(sec.header, query, offices, page_w_cm)
 
     # ── First-page footer: address only, no page number on cover ─────────
     fpf = sec.first_page_footer
@@ -2353,23 +2351,19 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         _fix_table_layout(geo_tbl_w, geo_fit)
         doc.add_paragraph()
 
-    # New section for results pages — smaller top margin (no header → saves space)
+    # New section for results pages — keeps the same logo header as page 2+
     from docx.enum.section import WD_SECTION
     results_sec = doc.add_section(WD_SECTION.NEW_PAGE)
     results_sec.orientation   = WD_ORIENT.PORTRAIT
     results_sec.page_width    = Cm(21.0)
     results_sec.page_height   = Cm(29.7)
-    results_sec.top_margin    = Cm(1.5)
+    results_sec.top_margin    = Cm(3.0)   # extra space for logo header (0.4 dist + 2.25 logo + 0.35 gap)
     results_sec.bottom_margin = Cm(1.8)   # extra room for the two-line address footer
     results_sec.left_margin   = MARGIN
     results_sec.right_margin  = MARGIN
+    results_sec.header_distance = Cm(0.4)
     results_sec.different_first_page_header_footer = False
-    results_sec.header.is_linked_to_previous = False
-    for el in list(results_sec.header._element):
-        results_sec.header._element.remove(el)
-    p_no_hdr = results_sec.header.add_paragraph()
-    p_no_hdr.paragraph_format.space_before = Pt(0)
-    p_no_hdr.paragraph_format.space_after  = Pt(0)
+    _build_protectmark_header_table(results_sec.header, query, offices, page_w_cm=PAGE_W_CM)
     _add_page_number_footer(results_sec)
     # Force numbering to start at 2 (cover = page 1, results = page 2+)
     sectPr = results_sec._sectPr
