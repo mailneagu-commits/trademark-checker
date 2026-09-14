@@ -1988,7 +1988,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
         r.font.color.rgb = RGBColor(0xBB,0xBB,0xBB)
 
     # Info column
-    _p(ic, tm.get("tmName") or "—", bold=True, size=13, color=RGBColor(0x1a,0x1a,0x2e), first=True)
+    _p(ic, tm.get("tmName") or "—", bold=True, size=13, color=fg, first=True)
 
     p_meta = ic.add_paragraph()
     r_off = p_meta.add_run(f" {office} ")
@@ -2194,7 +2194,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         results, similar, ended_marks or [], terminated_marks or [], expired_conflicts or [], expired_similar or []
     )
     if not include_expired:
-        expired_conflicts, expired_similar = [], []
+        ended_marks, terminated_marks, expired_conflicts, expired_similar = [], [], [], []
 
     _RISK_ORDER = {"very_high": 0, "high": 1, "medium": 2, "low": 3, "small": 4}
 
