@@ -1870,7 +1870,7 @@ def _set_left_accent(cell, color_hex="0F3460"):
     tcPr.append(tcBorders)
 
 
-def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False):
+def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False, index: int = None):
     # Dacă ultimul element la nivel body este un paragraf, setăm keepNext pe el
     # → cardul se mută pe pagina următoare dacă nu mai încape pe cea curentă
     _body = doc.element.body
@@ -1990,7 +1990,8 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
         r.font.color.rgb = RGBColor(0xBB,0xBB,0xBB)
 
     # Info column
-    _p(ic, tm.get("tmName") or "—", bold=True, size=13, color=fg, first=True)
+    name_prefix = f"{index}. " if index is not None else ""
+    _p(ic, f"{name_prefix}{tm.get('tmName') or '—'}", bold=True, size=13, color=fg, first=True)
 
     p_meta = ic.add_paragraph()
     r_off = p_meta.add_run(f" {office} ")
@@ -2434,8 +2435,8 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         p_empty = doc.add_paragraph("Niciun conflict activ detectat.")
         p_empty.runs[0].font.color.rgb = RGBColor(0x1E,0x84,0x49)
     else:
-        for tm in active_conflicts:
-            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM)
+        for i, tm in enumerate(active_conflicts, 1):
+            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, index=i)
 
     if active_similar:
         doc.add_paragraph()
@@ -2446,8 +2447,8 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         r_sim.font.name = "Arial"
         r_sim.font.color.rgb = RGBColor(0x85, 0x64, 0x04)
         p_sim.paragraph_format.space_after = Pt(5)
-        for tm in active_similar:
-            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM)
+        for i, tm in enumerate(active_similar, 1):
+            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, index=i)
 
     if ended_marks:
         doc.add_page_break()
@@ -2456,8 +2457,8 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         r_end.bold = True; r_end.font.size = Pt(11); r_end.font.name = "Arial"
         r_end.font.color.rgb = RGBColor(0xE6, 0x7E, 0x22)
         p_end.paragraph_format.space_after = Pt(6)
-        for tm in ended_marks:
-            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
+        for i, tm in enumerate(ended_marks, 1):
+            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True, index=i)
 
     if expired_count:
         doc.add_page_break()
@@ -2468,8 +2469,8 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         r_exp.font.name = "Arial"
         r_exp.font.color.rgb = RGBColor(0x6C, 0x34, 0x83)
         p_exp.paragraph_format.space_after = Pt(6)
-        for tm in expired_conflicts + expired_similar:
-            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
+        for i, tm in enumerate(expired_conflicts + expired_similar, 1):
+            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True, index=i)
 
     if terminated_marks:
         doc.add_page_break()
@@ -2478,8 +2479,8 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         r_ter.bold = True; r_ter.font.size = Pt(11); r_ter.font.name = "Arial"
         r_ter.font.color.rgb = RGBColor(0xC0, 0x39, 0x2B)
         p_ter.paragraph_format.space_after = Pt(6)
-        for tm in terminated_marks:
-            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True)
+        for i, tm in enumerate(terminated_marks, 1):
+            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, expired=True, index=i)
 
     # ─── CONCLUZII ───────────────────────────────────────────────────────
     scope_text = _conclusions_scope_text(offices)
