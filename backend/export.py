@@ -877,13 +877,15 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         badge_cell("Data raport",   date.today().strftime("%d.%m.%Y"),  "#F2F3F4", "#566573", bold_val=False),
     ]
 
-    row3 = [
-        badge_cell("Ended",           len(ended_marks or []),                                   "#FEF5E7", "#E67E22"),
-        badge_cell("Anulate/Retrase", len(terminated_marks or []),                              "#FDEDEC", "#C0392B"),
-        badge_cell("Expirate",        len((expired_conflicts or []) + (expired_similar or [])), "#F4ECF7", "#6C3483"),
-    ]
+    rows = [row1, row2]
+    if include_expired:
+        rows.append([
+            badge_cell("Ended",           len(ended_marks or []),                                   "#FEF5E7", "#E67E22"),
+            badge_cell("Anulate/Retrase", len(terminated_marks or []),                              "#FDEDEC", "#C0392B"),
+            badge_cell("Expirate",        len((expired_conflicts or []) + (expired_similar or [])), "#F4ECF7", "#6C3483"),
+        ])
 
-    for row in [row1, row2, row3]:
+    for row in rows:
         bt = Table([row], colWidths=[W/3, W/3, W/3])
         bt.setStyle(GAP)
         story.append(bt)
