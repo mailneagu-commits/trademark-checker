@@ -2538,6 +2538,19 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
             r_t.font.color.rgb = risk_rgb
             p_t.paragraph_format.space_after = Pt(6)
 
+        expired_total = len(ended_marks or []) + len(terminated_marks or []) + len(expired_conflicts or []) + len(expired_similar or [])
+        if expired_total:
+            EXPIRED_RGB = RGBColor(0x6C, 0x34, 0x83)
+            p_ex = doc.add_paragraph()
+            r_ex_sq = p_ex.add_run("■ ")
+            r_ex_sq.font.size = Pt(9); r_ex_sq.font.name = "Arial"; r_ex_sq.font.color.rgb = EXPIRED_RGB
+            r_ex = p_ex.add_run(
+                f"Mărci expirate / anulate / retrase / încheiate: {_ro_count_noun(expired_total)}"
+            )
+            r_ex.bold = True; r_ex.font.size = Pt(9); r_ex.font.name = "Arial"
+            r_ex.font.color.rgb = EXPIRED_RGB
+            p_ex.paragraph_format.space_after = Pt(6)
+
         p_dist = doc.add_paragraph()
         r_dist = p_dist.add_run(
             f"În ceea ce priveşte condiţia distinctivităţii mărcii, considerăm că denumirea "
