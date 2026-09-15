@@ -2431,12 +2431,34 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     sub_p.runs[0].font.name = "Arial"
     sub_p.paragraph_format.space_after = Pt(8)
 
+    RISK_CATEGORY_LABELS_W = {
+        "very_high": "Mărci cu risc foarte ridicat",
+        "high":      "Mărci cu risc ridicat",
+        "medium":    "Mărci cu risc mediu",
+        "low":       "Mărci cu risc scăzut",
+    }
+
+    def _risk_category_header(risk_key, count):
+        p = doc.add_paragraph()
+        r = p.add_run(f"{RISK_CATEGORY_LABELS_W[risk_key]} ({count})")
+        r.bold = True; r.font.size = Pt(10); r.font.name = "Arial"
+        r.font.color.rgb = RGBColor(*_RISK_RGB[risk_key])
+        p.paragraph_format.space_before = Pt(6)
+        p.paragraph_format.space_after = Pt(5)
+
+    def _render_risk_group(risk_key, marks):
+        if not marks:
+            return
+        _risk_category_header(risk_key, len(marks))
+        for i, tm in enumerate(marks, 1):
+            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, index=i)
+
     if not active_conflicts:
         p_empty = doc.add_paragraph("Niciun conflict activ detectat.")
         p_empty.runs[0].font.color.rgb = RGBColor(0x1E,0x84,0x49)
     else:
-        for i, tm in enumerate(active_conflicts, 1):
-            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, index=i)
+        _render_risk_group("very_high", very_high)
+        _render_risk_group("high", high)
 
     if active_similar:
         doc.add_paragraph()
@@ -2447,8 +2469,8 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         r_sim.font.name = "Arial"
         r_sim.font.color.rgb = RGBColor(0x85, 0x64, 0x04)
         p_sim.paragraph_format.space_after = Pt(5)
-        for i, tm in enumerate(active_similar, 1):
-            _word_trademark_card(doc, tm, page_w_cm=PAGE_W_CM, index=i)
+        _render_risk_group("medium", medium)
+        _render_risk_group("low", low)
 
     if ended_marks:
         doc.add_page_break()
