@@ -589,8 +589,9 @@ async def check_trademark_status(job_id: str):
     return job
 
 
-@app.post("/api/export")
-async def export_report(request: ExportRequest):
+async def _run_export(request: ExportRequest):
+    """Construiește fișierul de export. Poate dura zeci de secunde — vezi
+    enrich_marks_with_detail (un round-trip TMview + Translate per marcă unică)."""
     name    = request.trademark_name
     classes = request.nice_classes
     offices = request.offices
@@ -651,10 +652,68 @@ async def export_report(request: ExportRequest):
         print(f"[EXPORT ERROR] {fmt.upper()}:\n{err}")
         raise HTTPException(status_code=500, detail=f"Eroare generare {fmt.upper()}: {type(e).__name__}: {e}")
 
+    return data, filename, media_type
+
+
+@app.post("/api/export")
+async def export_report(request: ExportRequest):
+    data, filename, media_type = await _run_export(request)
     return StreamingResponse(
         io.BytesIO(data),
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── Export asincron ──────────────────────────────────────────────────────────
+# Exporturile mari (multe mărci → multe round-trip-uri de detail-fetch TMview
+# + traducere per marcă) pot dura peste un minut — peste timeout-ul de gateway
+# al Railway-ului, care întrerupe cererea sincronă și o arată ca "Export eșuat"
+# în frontend chiar dacă backend-ul ar fi terminat cu succes. La fel ca la
+# căutare, pornim generarea în fundal și frontend-ul verifică periodic status-ul.
+_export_jobs: dict = {}
+
+
+@app.post("/api/export/start")
+async def export_start(request: ExportRequest):
+    import uuid
+    job_id = uuid.uuid4().hex
+    _export_jobs[job_id] = {"status": "running", "error": None}
+
+    async def _bg():
+        try:
+            data, filename, media_type = await _run_export(request)
+            _export_jobs[job_id] = {
+                "status": "done", "error": None,
+                "data": data, "filename": filename, "media_type": media_type,
+            }
+        except HTTPException as e:
+            _export_jobs[job_id] = {"status": "error", "error": e.detail}
+        except Exception as e:
+            _export_jobs[job_id] = {"status": "error", "error": str(e)}
+
+    asyncio.ensure_future(_bg())
+    return {"job_id": job_id, "status": "started"}
+
+
+@app.get("/api/export/status")
+async def export_status(job_id: str):
+    job = _export_jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job de export negăsit — a expirat sau ID invalid.")
+    return {"status": job["status"], "error": job.get("error")}
+
+
+@app.get("/api/export/download")
+async def export_download(job_id: str):
+    job = _export_jobs.get(job_id)
+    if not job or job["status"] != "done":
+        raise HTTPException(404, "Fișierul de export nu este (încă) disponibil.")
+    data = _export_jobs.pop(job_id)  # eliberăm memoria imediat după download
+    return StreamingResponse(
+        io.BytesIO(data["data"]),
+        media_type=data["media_type"],
+        headers={"Content-Disposition": f'attachment; filename="{data["filename"]}"'},
     )
 
 
