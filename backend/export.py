@@ -4,6 +4,11 @@ import requests
 from typing import List, Dict, Optional
 from datetime import date
 
+try:
+    from curl_cffi import requests as _cffi_requests
+except ImportError:
+    _cffi_requests = None
+
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -468,8 +473,13 @@ def _fetch_image_bytes(url: str, size=(60, 60), _cache: dict = {}) -> Optional[b
                 cookies_dict = cookies
                 print(f"[IMG] Using browser session cookies")
         
-        # Try with requests first
-        r = requests.get(url, timeout=8, headers=hdrs, cookies=cookies_dict)
+        # TMview e protejat de Imperva (detectare pe fingerprint TLS) — requests
+        # simplu e blocat des; curl_cffi cu impersonate="chrome120" trece la fel
+        # ca restul cererilor TMview din search_agent.py.
+        if _cffi_requests is not None:
+            r = _cffi_requests.get(url, timeout=8, headers=hdrs, cookies=cookies_dict, impersonate="chrome120")
+        else:
+            r = requests.get(url, timeout=8, headers=hdrs, cookies=cookies_dict)
         ct = r.headers.get("Content-Type", "")
         print(f"[IMG] Response: status={r.status_code}, type={ct}, size={len(r.content)}")
         
