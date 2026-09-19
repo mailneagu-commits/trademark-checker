@@ -120,7 +120,7 @@
     /* Risk badge */
     .risk-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:6px; font-size:.72rem; font-weight:800; letter-spacing:.5px; }
     .risk-badge-very_high { background:#fdecea; color:#c0392b; border:1px solid #f5b7b1; }
-    .risk-badge-high      { background:#fdecea; color:#c0392b; border:1px solid #f5b7b1; }
+    .risk-badge-high      { background:#fdecea; color:#e74c3c; border:1px solid #f5b7b1; }
     .risk-badge-medium    { background:#fff9db; color:#9a7600; border:1px solid #f9e79f; }
     .risk-badge-low       { background:#eafaf1; color:#1e8449; border:1px solid #a9dfbf; }
 
@@ -132,7 +132,7 @@
     .seg-labels { display:flex; justify-content:space-between; font-size:.66rem; color:#aaa; }
     .score-main { font-size:.95rem; font-weight:800; }
     .score-very_high { color:#c0392b; }
-    .score-high      { color:#c0392b; }
+    .score-high      { color:#e74c3c; }
     .score-medium    { color:#9a7600; }
     .score-low       { color:#1e8449; }
 
@@ -201,7 +201,7 @@
       width:4px; border-radius:12px 0 0 12px;
     }
     .tm-card.risk-very_high::before { background:#c0392b; }
-    .tm-card.risk-high::before      { background:#c0392b; }
+    .tm-card.risk-high::before      { background:#e74c3c; }
     .tm-card.risk-medium::before    { background:#f1c40f; }
     .tm-card.risk-low::before       { background:#27ae60; }
     .tm-card:hover { box-shadow:0 4px 20px rgba(0,0,0,0.1); border-color:#b0c4de; }
@@ -2471,7 +2471,7 @@ function _renderBulletinCompare(data) {
     const bImg = r.bulletin_image
       ? `<img src="${r.bulletin_image}" alt="" style="max-height:64px;max-width:120px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
       : "—";
-    const riskColor = { very_high:"#c0392b", high:"#c0392b", medium:"#e67e22", low:"#e67e22" }[r.risk_level] || "#888";
+    const riskColor = { very_high:"#c0392b", high:"#e74c3c", medium:"#e67e22", low:"#e67e22" }[r.risk_level] || "#888";
     return `<tr>
       <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;font-weight:700;color:${riskColor};white-space:nowrap;">${r.similarity_percent}%</td>
       <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;white-space:nowrap;">${r.bulletin_app_number || "—"}</td>

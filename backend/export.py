@@ -110,7 +110,7 @@ def _translate_to_ro(text: str) -> str:
 
 # ── Risk thresholds ────────────────────────────────────────────────────
 # VERY HIGH ≥ 91%  →  roșu
-# HIGH      76–90% →  roșu
+# HIGH      76–90% →  roșu deschis
 # MEDIUM    51–75% →  galben
 # LOW       20–50% →  verde
 
@@ -228,7 +228,7 @@ def _risk_label_ro(score: float) -> str:
 # RGB foreground colors
 _RISK_RGB = {
     "very_high": (192,  57,  43),   # roșu       #C0392B
-    "high":      (192,  57,  43),   # roșu        #C0392B
+    "high":      (231,  76,  60),   # roșu deschis #E74C3C
     "medium":    (154, 118,   0),   # galben      #9A7600
     "low":       ( 30, 132,  73),   # verde       #1E8449
 }
@@ -784,7 +784,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
 
     RISK_PDF_COLORS = {
         "very_high": (colors.HexColor("#FDECEA"), colors.HexColor("#C0392B")),
-        "high":      (colors.HexColor("#FDECEA"), colors.HexColor("#C0392B")),
+        "high":      (colors.HexColor("#FDECEA"), colors.HexColor("#E74C3C")),
         "medium":    (colors.HexColor("#FFF9DB"), colors.HexColor("#9A7600")),
         "low":       (colors.HexColor("#EAFAF1"), colors.HexColor("#1E8449")),
     }
@@ -1376,7 +1376,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
 
     sum_groups = [
         (very_high, "Risc foarte ridicat  (>= 90%)", "#C0392B", "#FDECEA"),
-        (high,      "Risc ridicat  (75-89%)",         "#C0392B", "#FDECEA"),
+        (high,      "Risc ridicat  (75-89%)",         "#E74C3C", "#FDECEA"),
         (medium,    "Risc mediu  (60-74%)",            "#9A7600", "#FFF9DB"),
         (low,       "Risc scazut  (45-59%)",           "#1E8449", "#EAFAF1"),
     ]
@@ -1845,7 +1845,7 @@ def _word_strategy_page(doc: Document):
 
     level_colors = {
         "very_high": (RGBColor(0xC0,0x39,0x2B), "FDECEA"),
-        "high":      (RGBColor(0xC0,0x39,0x2B), "FDECEA"),
+        "high":      (RGBColor(0xE7,0x4C,0x3C), "FDECEA"),
         "medium":    (RGBColor(0x9A,0x76,0x00), "FFF9DB"),
         "low":       (RGBColor(0x1E,0x84,0x49), "EAFAF1"),
     }
