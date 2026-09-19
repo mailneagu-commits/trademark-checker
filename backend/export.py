@@ -2241,7 +2241,14 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
     for tm in all_results:
         o = tm.get("office") or tm.get("tmOffice") or "?"
         geo_counts[o] = geo_counts.get(o, 0) + 1
+    # Teritoriile verificate apar mereu în tabel, chiar și fără mărci găsite (0):
+    # oficiile selectate + WIPO (căutarea Madrid rulează la fiecare verificare).
     _uo_set = {o.upper() for o in offices}
+    _checked = {c for c in _uo_set if c != "EU_FULL"} | {"WO"}
+    if "EU_FULL" in _uo_set:
+        _checked.add("EM")
+    for _c in _checked:
+        geo_counts.setdefault(_c, 0)
     def _geo_key(item):
         code, cnt = item
         c = code.upper()
@@ -2249,7 +2256,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         elif c == "EM":    tier = 1
         elif c == "WO":    tier = 2
         else:              tier = 3
-        return (tier, -cnt)
+        return (tier, -cnt, c)
     geo_sorted = sorted(geo_counts.items(), key=_geo_key)
 
     # Pre-fetch imagini în paralel → populează cache-ul _fetch_image_bytes
@@ -2366,7 +2373,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
             "SE":"PRV Suedia","DK":"DKPTO Danemarca","GB":"UKIPO Marea Britanie",
             "VN":"IP Vietnam", "CN":"CNIPA China",
         }
-        geo_max = geo_sorted[0][1] if geo_sorted else 1
+        geo_max = max((c for _, c in geo_sorted), default=0)
         geo_tbl_w = doc.add_table(rows=1, cols=3)
         geo_tbl_w.style = "Table Grid"; geo_tbl_w.autofit = False
         geo_fit = _scale_widths([2.0, PAGE_W_CM - 5.5, 3.5], PAGE_W_CM)
@@ -2386,7 +2393,7 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         for ri, (code, cnt) in enumerate(geo_sorted, 1):
             row_w = geo_tbl_w.add_row()
             row_w.height = Cm(0.8)
-            is_max = cnt == geo_max
+            is_max = cnt > 0 and cnt == geo_max
             fg_w = RED if is_max else BLUE
             c0 = row_w.cells[0]
             _set_cell_bg(c0, "FDECEA" if is_max else "F7F9FC")

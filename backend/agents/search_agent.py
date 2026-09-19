@@ -522,6 +522,9 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
     return collected
 
 
+WO_MAX_CANDIDATES = 60  # mărci WIPO verificate prin detail fetch pentru desemnarea teritoriului
+
+
 async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[str], proxy_url: str = _PROXY_URL, include_expired: bool = True, extra_terms: Optional[List[str]] = None, wildcard_patterns: Optional[List[str]] = None) -> List[Dict]:
     if _cb_is_open():
         print("[CIRCUIT BREAKER] Circuit deschis — TMview requests oprite")
@@ -634,13 +637,29 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         if _non_eu_codes and not many_territories and not _cb_is_open():
             wo_seen: set = set()
             wo_candidates: List[Dict] = []
-            for crit, term in [("E", upper), ("C", f"*{upper}*")]:
-                if len(wo_candidates) >= 30 or _cb_is_open():
+            # Aceleași variante ca la căutarea națională (exact, prefix, fonetice, wildcard,
+            # termeni extra), altfel mărci Madrid apropiate (ex. ADEFAS, ADEFAZT) ar fi ratate.
+            _wo_searches: List[tuple] = [("E", upper, None), ("C", f"*{upper}*", None), ("C", f"{upper}*", None)]
+            for _pt in _phon_plain[:2]:
+                _wo_searches.append(("E", _pt, "_phonetic"))
+                _wo_searches.append(("C", f"*{_pt}*", "_phonetic"))
+            _wo_searches += [("C", t, "_phonetic") for t in phonetic_terms]
+            _wo_searches += [("C", t, "_risk_high") for t in (wildcard_patterns or [])]
+            _wo_searches += [(c, t, None) for c, t in extra_searches]
+            _wo_done: set = set()
+            for crit, term, flag in _wo_searches:
+                if (crit, term) in _wo_done:
+                    continue
+                _wo_done.add((crit, term))
+                if len(wo_candidates) >= WO_MAX_CANDIDATES or _cb_is_open():
                     break
                 marks = await _search_term(session, term, nice_classes, ["WO"], [], crit, wo_seen, max_pages=1)
+                if flag:
+                    for m in marks:
+                        m[flag] = True
                 wo_candidates.extend(marks)
                 await asyncio.sleep(random.uniform(*inter_search_delay))
-            wo_candidates = wo_candidates[:30]
+            wo_candidates = wo_candidates[:WO_MAX_CANDIDATES]
             if wo_candidates:
                 _sem = asyncio.Semaphore(5)
 
