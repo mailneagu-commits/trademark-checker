@@ -110,7 +110,7 @@ def _translate_to_ro(text: str) -> str:
 
 # ── Risk thresholds ────────────────────────────────────────────────────
 # VERY HIGH ≥ 91%  →  roșu
-# HIGH      76–90% →  portocaliu
+# HIGH      76–90% →  roșu
 # MEDIUM    51–75% →  galben
 # LOW       20–50% →  verde
 
@@ -228,14 +228,14 @@ def _risk_label_ro(score: float) -> str:
 # RGB foreground colors
 _RISK_RGB = {
     "very_high": (192,  57,  43),   # roșu       #C0392B
-    "high":      (175,  77,   0),   # portocaliu  #AF4D00
+    "high":      (192,  57,  43),   # roșu        #C0392B
     "medium":    (154, 118,   0),   # galben      #9A7600
     "low":       ( 30, 132,  73),   # verde       #1E8449
 }
 # RGB background (tint)
 _RISK_BG_RGB = {
     "very_high": (253, 236, 234),   # #FDECEA
-    "high":      (254, 235, 210),   # #FEEBCF
+    "high":      (253, 236, 234),   # #FDECEA
     "medium":    (255, 249, 219),   # #FFF9DB
     "low":       (234, 250, 241),   # #EAFAF1
 }
@@ -784,7 +784,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
 
     RISK_PDF_COLORS = {
         "very_high": (colors.HexColor("#FDECEA"), colors.HexColor("#C0392B")),
-        "high":      (colors.HexColor("#FEEBCF"), colors.HexColor("#AF4D00")),
+        "high":      (colors.HexColor("#FDECEA"), colors.HexColor("#C0392B")),
         "medium":    (colors.HexColor("#FFF9DB"), colors.HexColor("#9A7600")),
         "low":       (colors.HexColor("#EAFAF1"), colors.HexColor("#1E8449")),
     }
@@ -1376,7 +1376,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
 
     sum_groups = [
         (very_high, "Risc foarte ridicat  (>= 90%)", "#C0392B", "#FDECEA"),
-        (high,      "Risc ridicat  (75-89%)",         "#AF4D00", "#FEEBCF"),
+        (high,      "Risc ridicat  (75-89%)",         "#C0392B", "#FDECEA"),
         (medium,    "Risc mediu  (60-74%)",            "#9A7600", "#FFF9DB"),
         (low,       "Risc scazut  (45-59%)",           "#1E8449", "#EAFAF1"),
     ]
@@ -1845,7 +1845,7 @@ def _word_strategy_page(doc: Document):
 
     level_colors = {
         "very_high": (RGBColor(0xC0,0x39,0x2B), "FDECEA"),
-        "high":      (RGBColor(0xAF,0x4D,0x00), "FEEBCF"),
+        "high":      (RGBColor(0xC0,0x39,0x2B), "FDECEA"),
         "medium":    (RGBColor(0x9A,0x76,0x00), "FFF9DB"),
         "low":       (RGBColor(0x1E,0x84,0x49), "EAFAF1"),
     }
