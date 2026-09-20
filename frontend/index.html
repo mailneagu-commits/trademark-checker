@@ -2373,7 +2373,7 @@ async function watchBulletinEnrich(source, date, data) {
       _bulletinMarksCache[key] = fresh;
       const missing = (fresh.total || 0) - (fresh.enriched || 0);
       _setEnrichBar(source, missing > 0
-        ? `<span style="color:#e67e22;">⚠ Detalii aduse pentru ${fresh.enriched}/${fresh.total} mărci — ${missing} încă nu sunt în TMview (se reîncearcă automat) · ⏱ ${dur}</span>`
+        ? `<span style="color:#e67e22;">⚠ Detalii aduse pentru ${fresh.enriched}/${fresh.total} mărci — pentru ${missing} TMview nu a răspuns sau nu le are încă; se reîncearcă automat (sau redeschide „Vezi mărci” peste câteva minute) · ⏱ ${dur}</span>`
         : `<span style="color:#1e8449;">✅ Detalii complete din TMview: ${fresh.total}/${fresh.total} mărci · ⏱ ${dur}</span>`);
       const panel = document.getElementById(source + "MarksPanel");
       if (panel && panel.style.display !== "none") renderBulletinMarks(source, fresh);

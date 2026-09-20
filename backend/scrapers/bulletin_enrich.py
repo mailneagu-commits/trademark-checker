@@ -167,6 +167,8 @@ async def enrich_bulletin_marks(source: str, marks: List[Dict], progress: Option
 
     sem = asyncio.Semaphore(CONCURRENCY)
     found = missing = 0
+    empty_batches = 0     # grupuri consecutive fără niciun răspuns — TMview ne limitează cererile
+    blocked = False
 
     async def _one(session, st13):
         async with sem:
@@ -188,6 +190,7 @@ async def enrich_bulletin_marks(source: str, marks: List[Dict], progress: Option
             # Dacă niciun răspuns din grup n-a adus detaliu, e probabil TMview blocat/instabil,
             # nu mărci absente — nu le marcăm ca „lipsă”, ca să fie reîncercate la următorul tick.
             batch_reachable = any(d for _, d in ok)
+            empty_batches = 0 if batch_reachable else empty_batches + 1
             for st13, detail in ok:
                 if detail:
                     cache[st13] = {"detail": detail, "at": now}
@@ -197,5 +200,12 @@ async def enrich_bulletin_marks(source: str, marks: List[Dict], progress: Option
                     missing += 1
             _save_cache(source, cache)
             progress.update({"done": min(i + CHUNK, len(todo)), "found": found})
+            if empty_batches >= 2 and i + CHUNK < len(todo):
+                # Continuarea ar lovi degeaba un TMview care refuză; restul rămân necache-uite
+                # și sunt reîncercate la următoarea rulare (programator sau deschidere tabel).
+                blocked = True
+                progress["blocked"] = True
+                print(f"[BULLETIN-ENRICH] {source}: TMview nu răspunde — opresc la {i + CHUNK}/{len(todo)}")
+                break
 
-    return {**enrichment_stats(source, marks), "fetched": found, "missing": missing}
+    return {**enrichment_stats(source, marks), "fetched": found, "missing": missing, "blocked": blocked}

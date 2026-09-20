@@ -123,6 +123,13 @@ async def _prefetch_bulletins():
     if new_osim or new_euipo:
         await _auto_run_all_watches()
 
+    # Reia aducerea detaliilor pentru buletinele recente rămase incomplete (TMview limitează
+    # uneori cererile). Pentru cele complete e un no-op instant — nu se face nicio cerere.
+    for src, processed_fn, ok_fn in (("osim", _osim_processed, _ok_osim_slugs),
+                                     ("euipo", _euipo_processed, _ok_euipo_slugs)):
+        for slug in sorted(ok_fn(processed_fn()), reverse=True)[:2]:
+            await _auto_enrich(src, slug.removeprefix(f"{src}-"))
+
 
 async def _run_all_due(frequency: str):
     from db import SessionLocal
