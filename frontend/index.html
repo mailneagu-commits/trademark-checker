@@ -279,6 +279,11 @@
     .detail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-bottom:14px; }
     .detail-item label { font-size:.69rem; font-weight:700; color:#999; text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px; }
     .detail-item span  { font-size:.85rem; font-weight:600; color:#1a1a2e; }
+    /* Tabele de buletin: încap în pagină (fără scroll lateral), conținut centrat și echilibrat */
+    .bm-table { width:100%; table-layout:fixed; border-collapse:collapse; }
+    .bm-table th, .bm-table td { text-align:center; vertical-align:middle; overflow-wrap:anywhere; word-break:break-word; }
+    .bm-table td .goods-block { text-align:left; }
+    @media (max-width: 900px) { .bm-table { min-width: 900px; } }
     .goods-block { margin-bottom:10px; padding:10px 12px; background:#fff; border-radius:7px; border-left:3px solid #0f3460; }
     .goods-block .cls-title { font-weight:700; color:#0f3460; font-size:.78rem; margin-bottom:3px; }
     .goods-block .cls-text  { font-size:.76rem; color:#444; line-height:1.5; }
@@ -2446,7 +2451,7 @@ function renderBulletinMarks(source, data) {
 
   const filterId = source + "MarksFilter";
   const tableId  = source + "MarksTable";
-  const td = "padding:8px 10px;border-bottom:1px solid #eef1f6;vertical-align:top;";
+  const td = "padding:8px 6px;border-bottom:1px solid #eef1f6;";
 
   const rows = data.marks.map(m => {
     const img = m.markImageURI
@@ -2461,14 +2466,14 @@ function renderBulletinMarks(source, data) {
       <td style="${td}font-size:.8rem;white-space:nowrap;">${_bEsc(_bD10(m.applicationDate)) || "—"}</td>
       <td style="${td}font-size:.8rem;white-space:nowrap;">${_bEsc(_bD10(m.publicationDate)) || "—"}</td>
       <td style="${td}font-weight:600;"><a href="${_bEsc(bulletinMarkUrl(source, data.date, m.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca cu toate datele și clasele descrise" style="color:#0f3460;text-decoration:none;border-bottom:1px dashed #0f3460;">${_bEsc(m.tmName) || "—"} ↗</a></td>
-      <td style="${td}font-size:.8rem;min-width:200px;">${bulletinApplicantsHtml(m)}</td>
-      <td style="${td}font-size:.8rem;min-width:180px;">${bulletinRepsHtml(m)}</td>
-      <td style="${td}font-size:.85rem;font-weight:600;white-space:nowrap;">${_bEsc(bulletinClassNumbers(m))}</td>
+      <td style="${td}font-size:.78rem;">${bulletinApplicantsHtml(m)}</td>
+      <td style="${td}font-size:.78rem;">${bulletinRepsHtml(m)}</td>
+      <td style="${td}font-size:.85rem;font-weight:600;">${_bEsc(bulletinClassNumbers(m))}</td>
     </tr>${extra}`;
   }).join("");
 
-  const th = (label, title, align = "left") =>
-    `<th style="padding:7px 10px;text-align:${align};color:#0f3460;font-size:.75rem;" title="${title}">${label}</th>`;
+  const th = (label, title, w) =>
+    `<th style="padding:7px 6px;width:${w}%;color:#0f3460;font-size:.72rem;" title="${title}">${label}</th>`;
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
       <span style="font-size:.8rem;color:#0f3460;font-weight:600;">${data.total} mărci în buletin</span>
@@ -2478,17 +2483,17 @@ function renderBulletinMarks(source, data) {
     </div>
     <div id="${source}EnrichBar" style="font-size:.78rem;font-weight:600;margin-bottom:8px;">${_enrichState[source] || ""}</div>
     <div style="max-height:620px;overflow-y:auto;overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;">
-      <table id="${tableId}" style="width:100%;min-width:1100px;border-collapse:collapse;font-size:.82rem;">
+      <table id="${tableId}" class="bm-table" style="font-size:.8rem;">
         <thead style="position:sticky;top:0;background:#f0f4fa;z-index:1;">
           <tr>
-            ${th("(210) Nr. depozit", "Serial number of the application")}
-            ${th("Imagine", "Reproduction of the mark", "center")}
-            ${th("(220) Dată depunere", "Date of filing of the application")}
-            ${th("(442) Dată publicare", "Date of making available to the public")}
-            ${th("(541) Denumire marcă", "Mark in standard characters")}
-            ${th("(731) Solicitant", "Name and address of the applicant")}
-            ${th("(740) Reprezentant", "Name and address of the representative")}
-            ${th("(511) Clase", "Nice Classification — numerele claselor; descrierea completă se deschide pe pagina mărcii")}
+            ${th("(210) Nr. depozit", "Serial number of the application", 10)}
+            ${th("Imagine", "Reproduction of the mark", 10)}
+            ${th("(220) Dată depunere", "Date of filing of the application", 9)}
+            ${th("(442) Dată publicare", "Date of making available to the public", 9)}
+            ${th("(541) Denumire marcă", "Mark in standard characters", 16)}
+            ${th("(731) Solicitant", "Name and address of the applicant", 20)}
+            ${th("(740) Reprezentant", "Name of the representative", 16)}
+            ${th("(511) Clase", "Nice Classification — numerele claselor; descrierea completă se deschide pe pagina mărcii", 10)}
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -2589,7 +2594,7 @@ function _renderBulletinCompare(data) {
 
   // Partea „din buletin” pe coduri INID: 210 · IMG · 220 · 442 · 541 · 731 · 740 · 511,
   // apoi marca monitorizată și scorul de asemănare.
-  const td = "padding:9px 12px;border-bottom:1px solid #eef1f6;vertical-align:top;";
+  const td = "padding:8px 5px;border-bottom:1px solid #eef1f6;font-size:.78rem;";
   const rows = data.rows.map(r => {
     const bm = r.bulletin_mark || {};
     const img = (bm.markImageURI || r.bulletin_image)
@@ -2600,45 +2605,49 @@ function _renderBulletinCompare(data) {
       ? `<tr style="display:none;"><td colspan="14" style="padding:4px 12px 12px;border-bottom:2px solid #d0d9ea;"><div style="background:#f7f9fc;border-radius:8px;padding:12px 14px;">${bulletinExtraFieldsHtml(bm)}</div></td></tr>`
       : "";
     return `<tr>
-      <td style="${td}font-weight:700;color:${riskColor};white-space:nowrap;">${r.similarity_percent}%</td>
-      <td style="${td}white-space:nowrap;">${_bEsc(bm.applicationNumber || r.bulletin_app_number) || "—"}</td>
+      <td style="${td}font-weight:700;color:${riskColor};">${r.similarity_percent}%</td>
+      <td style="${td}">${_bEsc(bm.applicationNumber || r.bulletin_app_number) || "—"}</td>
       <td style="${td}text-align:center;">${img}</td>
-      <td style="${td}white-space:nowrap;">${_bEsc(_bD10(bm.applicationDate)) || "—"}</td>
-      <td style="${td}white-space:nowrap;">${_bEsc(_bD10(bm.publicationDate)) || "—"}</td>
-      <td style="${td}font-weight:700;background:#f5faff;font-size:1rem;">${bm.applicationNumber
+      <td style="${td}">${_bEsc(_bD10(bm.applicationDate)) || "—"}</td>
+      <td style="${td}">${_bEsc(_bD10(bm.publicationDate)) || "—"}</td>
+      <td style="${td}font-weight:700;background:#f5faff;font-size:.82rem;">${bm.applicationNumber
         ? `<a href="${_bEsc(bulletinMarkUrl(data.source, data.date, bm.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca cu toate datele și clasele descrise" style="color:#0f3460;text-decoration:none;border-bottom:1px dashed #0f3460;">${_bEsc(r.bulletin_name) || "—"} ↗</a>`
         : (_bEsc(r.bulletin_name) || "—")}</td>
-      <td style="${td}font-size:.82rem;min-width:190px;">${r.bulletin_mark ? bulletinApplicantsHtml(bm) : (_bEsc(r.bulletin_holder) || "—")}</td>
-      <td style="${td}font-size:.82rem;min-width:170px;">${r.bulletin_mark ? bulletinRepsHtml(bm) : (_bEsc(r.bulletin_representative) || "—")}</td>
-      <td style="${td}font-size:.85rem;font-weight:600;white-space:nowrap;">${r.bulletin_mark ? _bEsc(bulletinClassNumbers(bm)) : _bEsc((r.bulletin_classes||[]).join(", ") || "—")}</td>
-      <td style="${td}border-left:2px solid #d0d9ea;font-weight:700;background:#f6f4fb;font-size:1rem;">${_bEsc(r.watch_item_name) || "—"}</td>
-      <td style="${td}white-space:nowrap;">${_bEsc((r.watch_item_classes||[]).join(", ")) || "—"}</td>
+      <td style="${td}font-size:.74rem;">${r.bulletin_mark ? bulletinApplicantsHtml(bm) : (_bEsc(r.bulletin_holder) || "—")}</td>
+      <td style="${td}font-size:.74rem;">${r.bulletin_mark ? bulletinRepsHtml(bm) : (_bEsc(r.bulletin_representative) || "—")}</td>
+      <td style="${td}font-size:.8rem;font-weight:600;">${r.bulletin_mark ? _bEsc(bulletinClassNumbers(bm)) : _bEsc((r.bulletin_classes||[]).join(", ") || "—")}</td>
+      <td style="${td}border-left:2px solid #d0d9ea;font-weight:700;background:#f6f4fb;font-size:.82rem;">${_bEsc(r.watch_item_name) || "—"}</td>
+      <td style="${td}">${_bEsc((r.watch_item_classes||[]).join(", ")) || "—"}</td>
       <td style="${td}">${_bEsc(r.watch_item_holder) || "—"}</td>
-      <td style="${td}font-weight:700;color:${riskColor};white-space:nowrap;">${r.similarity_percent}%</td>
-      <td style="${td}white-space:nowrap;">${extra ? `<button class="btn-sm" style="white-space:nowrap;" onclick="const d=this.closest('tr').nextElementSibling;const o=d.style.display==='none';d.style.display=o?'':'none';this.textContent=o?'▲ Alte date':'▼ Alte date';">▼ Alte date</button>` : ""}</td>
+      <td style="${td}font-weight:700;color:${riskColor};">${r.similarity_percent}%</td>
+      <td style="${td}">${extra ? `<button class="btn-sm" style="padding:2px 6px;font-size:.66rem;" onclick="const d=this.closest('tr').nextElementSibling;const o=d.style.display==='none';d.style.display=o?'':'none';this.textContent=o?'▲ Alte date':'▼ Alte date';">▼ Alte date</button>` : ""}</td>
     </tr>${extra}`;
   }).join("");
 
   const th = (label, extra = "") =>
-    `<th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;${extra}">${label}</th>`;
+    `<th style="padding:6px 4px;color:#666;font-size:.68rem;${extra}">${label}</th>`;
+  // lățimile pe coloane (în %) — table-layout:fixed le ia din <colgroup>, nu din rândul cu colspan
+  const widths = [4, 9, 5, 6, 6, 11, 14, 10, 5, 9, 4, 6, 4, 7];
+  const colgroup = "<colgroup>" + widths.map(w => `<col style="width:${w}%">`).join("") + "</colgroup>";
   el.innerHTML = `
     <div style="font-size:.85rem;color:#888;margin-bottom:10px;">
       ${data.total_matches} potriviri găsite din ${data.total_bulletin_marks} mărci în buletin
       (sortate după nivel de risc și procent de asemănare).
     </div>
     <div style="overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;">
-      <table style="width:100%;min-width:1500px;border-collapse:collapse;font-size:.9rem;">
+      <table class="bm-table" style="font-size:.78rem;">
+        ${colgroup}
         <thead style="position:sticky;top:0;background:#f0f4fa;">
           <tr>
-            <th style="padding:8px 12px;"></th>
-            <th style="padding:8px 12px;text-align:left;color:#0f3460;font-size:.8rem;" colspan="8">🗞 Marcă din buletin</th>
-            <th style="padding:8px 12px;text-align:left;color:#0f3460;font-size:.8rem;border-left:2px solid #d0d9ea;" colspan="4">👁 Marcă monitorizată</th>
-            <th style="padding:8px 12px;"></th>
+            <th style="padding:8px 4px;"></th>
+            <th style="padding:8px 4px;color:#0f3460;font-size:.78rem;" colspan="8">🗞 Marcă din buletin</th>
+            <th style="padding:8px 4px;color:#0f3460;font-size:.78rem;border-left:2px solid #d0d9ea;" colspan="4">👁 Marcă monitorizată</th>
+            <th style="padding:8px 4px;"></th>
           </tr>
           <tr>
             ${th("%")}
             ${th("(210) Nr. depozit")}
-            ${th("Imagine", "text-align:center;")}
+            ${th("Imagine")}
             ${th("(220) Dată depunere")}
             ${th("(442) Dată publicare")}
             ${th("(541) Denumire marcă")}
@@ -2648,7 +2657,7 @@ function _renderBulletinCompare(data) {
             ${th("Denumire marcă", "border-left:2px solid #d0d9ea;")}
             ${th("Clase")}
             ${th("Titular")}
-            ${th("% Asemănare")}
+            ${th("Scor")}
             ${th("")}
           </tr>
         </thead>
