@@ -2078,6 +2078,34 @@ function showPage(page) {
 
 // ── Bulletin fetch ────────────────────────────────────────────────────────
 
+// Cronometru pentru descărcarea buletinului: arată cât timp a trecut, în timp real
+const _timers = {};
+function _fmtElapsed(ms) {
+  const sec = Math.floor(ms / 1000);
+  return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+}
+function _startTimer(source, label) {
+  _stopTimer(source);
+  const t = { t0: Date.now(), label };
+  // Doar textul de stare — fără _setBulletinResult, care ascunde panoul de mărci
+  const paint = () => {
+    const el = document.getElementById(source + "BulletinResult");
+    if (el) el.innerHTML = `<span style="color:#2471a3;">⏳ ${t.label} <b>⏱ ${_fmtElapsed(Date.now() - t.t0)}</b></span>`;
+  };
+  t.iv = setInterval(paint, 1000);
+  _timers[source] = t;
+  paint();
+}
+function _setTimerLabel(source, label) { if (_timers[source]) _timers[source].label = label; }
+function _stopTimer(source) {                       // întoarce durata formatată (sau "")
+  const t = _timers[source];
+  if (!t) return "";
+  clearInterval(t.iv);
+  delete _timers[source];
+  return _fmtElapsed(Date.now() - t.t0);
+}
+const _dur = d => (d ? ` · <span style="color:#888;">⏱ ${d}</span>` : "");
+
 async function fetchBulletin(source) {
   const isOsim  = source === "osim"  || source === "both";
   const isEuipo = source === "euipo" || source === "both";
@@ -2095,11 +2123,19 @@ async function fetchBulletin(source) {
   const params = new URLSearchParams({ source });
   if (targetDate) params.set("target_date", targetDate);
 
+  if (isOsim)  _startTimer("osim",  "Se descarcă buletinul OSIM…");
+  if (isEuipo) _startTimer("euipo", "Se descarcă buletinul EUIPO…");
+
   try {
     const r    = await fetch("/api/monitor/bulletin-fetch?" + params.toString(), { method: "POST" });
     const data = await r.json();
+    const dOsim  = isOsim  ? _stopTimer("osim")  : "";
+    // EUIPO poate continua în fundal ("processing") — cronometrul lui rămâne pornit
+    const euipoBg = isEuipo && data.euipo && data.euipo.status === "processing";
+    const dEuipo = (isEuipo && !euipoBg) ? _stopTimer("euipo") : "";
 
     if (!r.ok) {
+      _stopTimer("osim"); _stopTimer("euipo");
       const err = data.detail || "Eroare";
       if (isOsim)  _setBulletinResult("osim",  `<span style="color:#c0392b;">❌ ${err}</span>`);
       if (isEuipo) _setBulletinResult("euipo", `<span style="color:#c0392b;">❌ ${err}</span>`);
@@ -2111,7 +2147,7 @@ async function fetchBulletin(source) {
       const ok   = info.status === "ok" || info.status === "ok_api" || info.status === "ok_xml";
       const day  = info.working_day || info.bopi_date || targetDate;
       _setBulletinResult("osim", ok
-        ? `<span style="color:#1e8449;">✅ ${info.marks} mărci · BOPI ${day}</span>
+        ? `<span style="color:#1e8449;">✅ ${info.marks} mărci · BOPI ${day}</span>${_dur(dOsim)}
            <button onclick="toggleBulletinMarks('osim','${day}')"
              style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
              id="osimToggleBtn">▼ Vezi mărci</button>
@@ -2127,13 +2163,11 @@ async function fetchBulletin(source) {
       const day  = info.bulletin_date || info.working_day || targetDate;
       const src  = info.source === "copla_bulletin" ? "buletin oficial PDF" : "API";
       if (info.status === "processing") {
-        _setBulletinResult("euipo",
-          `<span style="color:#2471a3;">⏳ ${info.message || "Descărcare în curs..."}</span>`
-        );
+        _setTimerLabel("euipo", "Buletinul EUIPO se descarcă în fundal (1-3 minute)…");
         _pollEuipoBulletin(targetDate, 0);
       } else if (ok) {
         _setBulletinResult("euipo",
-          `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>
+          `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>${_dur(dEuipo)}
            <button onclick="toggleBulletinMarks('euipo','${day}')"
              style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
              id="euipoToggleBtn">▼ Vezi mărci</button>
@@ -2148,6 +2182,7 @@ async function fetchBulletin(source) {
       }
     }
   } catch(e) {
+    _stopTimer("osim"); _stopTimer("euipo");
     if (isOsim)  _setBulletinResult("osim",  `<span style="color:#c0392b;">❌ ${e.message}</span>`);
     if (isEuipo) _setBulletinResult("euipo", `<span style="color:#c0392b;">❌ ${e.message}</span>`);
   } finally {
@@ -2158,6 +2193,7 @@ async function fetchBulletin(source) {
 async function _pollEuipoBulletin(targetDate, attempt) {
   const MAX_ATTEMPTS = 18;   // ~18 × 10s ≈ 3 minute
   if (attempt >= MAX_ATTEMPTS) {
+    _stopTimer("euipo");
     _setBulletinResult("euipo",
       `<span style="color:#e67e22;">⚠ Descărcarea durează neobișnuit de mult — reîncercați "Descarcă" peste câteva minute.</span>`
     );
@@ -2171,16 +2207,17 @@ async function _pollEuipoBulletin(targetDate, attempt) {
       const data = await r.json();
       const info = data.euipo || {};
       if (info.status === "processing") {
-        _setBulletinResult("euipo", `<span style="color:#2471a3;">⏳ Încă se descarcă... (verificare ${attempt + 1}/${MAX_ATTEMPTS})</span>`);
+        _setTimerLabel("euipo", `Buletinul EUIPO se descarcă în fundal… (verificare ${attempt + 1}/${MAX_ATTEMPTS})`);
         _pollEuipoBulletin(targetDate, attempt + 1);
         return;
       }
+      const dEuipo = _stopTimer("euipo");
       const ok  = info.status === "ok_api" || info.status === "ok_bulletin";
       const day = info.bulletin_date || info.working_day || targetDate;
       const src = info.source === "copla_bulletin" ? "buletin oficial PDF" : "API";
       if (ok) {
         _setBulletinResult("euipo",
-          `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>
+          `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>${_dur(dEuipo)}
            <button onclick="toggleBulletinMarks('euipo','${day}')"
              style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
              id="euipoToggleBtn">▼ Vezi mărci</button>
@@ -2192,6 +2229,7 @@ async function _pollEuipoBulletin(targetDate, attempt) {
         _setBulletinResult("euipo", `<span style="color:#e67e22;">⚠ ${info.error || "Nicio marcă pentru această dată"}</span>`);
       }
     } catch (e) {
+      _stopTimer("euipo");
       _setBulletinResult("euipo", `<span style="color:#c0392b;">❌ ${e.message}</span>`);
     }
   }, 10000);
@@ -2274,6 +2312,79 @@ function _setBulletinResult(source, html) {
 // ── Vizualizare mărci buletin ─────────────────────────────────────────────
 
 const _bulletinMarksCache = {};
+
+// ── Progres aducere detalii din TMview (produse/servicii, solicitanți etc.) ────
+const _enrichState = {};      // source -> html-ul barei de progres (rămâne la re-randare)
+const _enrichWatching = {};   // "source:date" -> true cât timp rulează
+
+function _setEnrichBar(source, html) {
+  _enrichState[source] = html;
+  const el = document.getElementById(source + "EnrichBar");
+  if (el) el.innerHTML = html;
+}
+
+async function watchBulletinEnrich(source, date, data) {
+  const key = `${source}:${date}`;
+  if (_enrichWatching[key]) return;
+  const total = data.total || (data.marks || []).length;
+  if (total && (data.enriched || 0) >= total) {
+    _setEnrichBar(source, `<span style="color:#1e8449;">✅ Detalii complete din TMview: ${total}/${total} mărci</span>`);
+    return;
+  }
+  _enrichWatching[key] = true;
+  const t0 = Date.now();
+  let cur = "Se pornește aducerea detaliilor din TMview…";
+  const paint = () => _setEnrichBar(source,
+    `<span style="color:#2471a3;">⏳ ${cur} <b>⏱ ${_fmtElapsed(Date.now() - t0)}</b></span>`);
+  const tick = setInterval(paint, 1000);
+  paint();
+  try {
+    const r = await fetch(`/api/monitor/bulletin-enrich/start?source=${source}&date=${date}`, { method: "POST" });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      clearInterval(tick);
+      _setEnrichBar(source, `<span style="color:#c0392b;">❌ Detaliile nu au putut fi aduse: ${_bEsc(e.detail || r.status)}</span>`);
+      return;
+    }
+    await new Promise(res => setTimeout(res, 1200));
+    let last = null;
+    for (let i = 0; i < 400; i++) {                       // ~15 min maxim
+      const st = await (await fetch(`/api/monitor/bulletin-enrich/status?source=${source}&date=${date}`)).json();
+      last = st;
+      if (st.status === "running") {
+        const pr = st.progress || {};
+        cur = `Se aduc detaliile din TMview: ${pr.done || 0}/${pr.total || "…"} mărci` + (pr.found ? ` (${pr.found} găsite)` : "");
+      } else if (st.status === "done" || st.status === "error") {
+        break;
+      }
+      await new Promise(res => setTimeout(res, 2500));
+    }
+    clearInterval(tick);
+    const dur = _fmtElapsed(Date.now() - t0);
+    if (last && last.status === "error") {
+      _setEnrichBar(source, `<span style="color:#c0392b;">❌ Eroare la aducerea detaliilor: ${_bEsc(last.error)}</span>`);
+      return;
+    }
+    // Reîncarcă mărcile cu detaliile aduse și redesenează tabelul
+    const r2 = await fetch(`/api/monitor/bulletin-marks?source=${source}&date=${date}`);
+    if (r2.ok) {
+      const fresh = await r2.json();
+      _bulletinMarksCache[key] = fresh;
+      const missing = (fresh.total || 0) - (fresh.enriched || 0);
+      _setEnrichBar(source, missing > 0
+        ? `<span style="color:#e67e22;">⚠ Detalii aduse pentru ${fresh.enriched}/${fresh.total} mărci — ${missing} încă nu sunt în TMview (se reîncearcă automat) · ⏱ ${dur}</span>`
+        : `<span style="color:#1e8449;">✅ Detalii complete din TMview: ${fresh.total}/${fresh.total} mărci · ⏱ ${dur}</span>`);
+      const panel = document.getElementById(source + "MarksPanel");
+      if (panel && panel.style.display !== "none") renderBulletinMarks(source, fresh);
+    }
+  } catch (e) {
+    clearInterval(tick);
+    _setEnrichBar(source, `<span style="color:#c0392b;">❌ ${_bEsc(e.message)}</span>`);
+  } finally {
+    clearInterval(tick);
+    _enrichWatching[key] = false;
+  }
+}
 
 function _bEsc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -2381,6 +2492,49 @@ function bulletinMarkDetailHtml(m) {
   </div>`;
 }
 
+async function toggleBulletinMarks(source, date) {
+  const panel  = document.getElementById(source + "MarksPanel");
+  const btnId  = source + "ToggleBtn";
+
+  if (panel.style.display !== "none") {
+    panel.style.display = "none";
+    const btn = document.getElementById(btnId);
+    if (btn) btn.textContent = "▼ Vezi mărci";
+    return;
+  }
+
+  panel.style.display = "block";
+  const btn = document.getElementById(btnId);
+  if (btn) btn.textContent = "▲ Ascunde";
+
+  const cacheKey = `${source}:${date}`;
+  if (_bulletinMarksCache[cacheKey]) {
+    renderBulletinMarks(source, _bulletinMarksCache[cacheKey]);
+    watchBulletinEnrich(source, date, _bulletinMarksCache[cacheKey]);
+    return;
+  }
+
+  document.getElementById(source + "MarksContent").innerHTML =
+    '<em style="color:#aaa;font-size:.82rem;">Se încarcă mărcile...</em>';
+
+  try {
+    const r    = await fetch(`/api/monitor/bulletin-marks?source=${source}&date=${date}`);
+    if (!r.ok) {
+      const e = await r.json();
+      document.getElementById(source + "MarksContent").innerHTML =
+        `<span style="color:#c0392b;font-size:.82rem;">❌ ${e.detail || "Eroare"}</span>`;
+      return;
+    }
+    const data = await r.json();
+    _bulletinMarksCache[cacheKey] = data;
+    renderBulletinMarks(source, data);
+    watchBulletinEnrich(source, date, data);
+  } catch(e) {
+    document.getElementById(source + "MarksContent").innerHTML =
+      `<span style="color:#c0392b;font-size:.82rem;">❌ ${e.message}</span>`;
+  }
+}
+
 // Tabelul mărcilor din buletin, pe coduri INID: 210 · IMG · 220 · 442 · 541 · 731 · 740 · 511
 function renderBulletinMarks(source, data) {
   const el = document.getElementById(source + "MarksContent");
@@ -2421,6 +2575,7 @@ function renderBulletinMarks(source, data) {
         oninput="filterBulletinMarks('${source}')"
         style="flex:1;padding:5px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.8rem;max-width:320px;" />
     </div>
+    <div id="${source}EnrichBar" style="font-size:.78rem;font-weight:600;margin-bottom:8px;">${_enrichState[source] || ""}</div>
     <div style="max-height:620px;overflow-y:auto;overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;">
       <table id="${tableId}" style="width:100%;min-width:1100px;border-collapse:collapse;font-size:.82rem;">
         <thead style="position:sticky;top:0;background:#f0f4fa;z-index:1;">
