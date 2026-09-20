@@ -440,8 +440,7 @@ def get_bulletin_marks(source: str, date: str):
     """
     marks = _load_bulletin_marks(source, date)
     return {"source": source, "date": date, "total": len(marks), "marks": marks,
-            "enriched": sum(1 for m in marks if m.get("_detail_enriched")),
-            "with_address": sum(1 for m in marks if m.get("applicants") and any(a.get("address") for a in m["applicants"]))}
+            "enriched": sum(1 for m in marks if m.get("_detail_enriched"))}
 
 
 @router.get("/bulletin-mark")

@@ -2330,10 +2330,8 @@ async function watchBulletinEnrich(source, date, data) {
   const total = data.total || (data.marks || []).length;
   const isEuipo   = source === "euipo";
   const srcName   = isEuipo ? "API-ul EUIPO" : "TMview";
-  const addrNote  = d => (isEuipo && d.with_address !== undefined) ? ` · adrese solicitanți (TMview): ${d.with_address}/${d.total}` : "";
-  const complete  = d => (d.enriched || 0) >= (d.total || 0) && (!isEuipo || (d.with_address || 0) >= (d.total || 0));
-  if (total && complete(data)) {
-    _setEnrichBar(source, `<span style="color:#1e8449;">✅ Detalii complete din ${srcName}: ${total}/${total} mărci${addrNote(data)}</span>`);
+  if (total && (data.enriched || 0) >= total) {
+    _setEnrichBar(source, `<span style="color:#1e8449;">✅ Detalii complete din ${srcName}: ${total}/${total} mărci</span>`);
     return;
   }
   _enrichWatching[key] = true;
@@ -2358,9 +2356,7 @@ async function watchBulletinEnrich(source, date, data) {
       last = st;
       if (st.status === "running") {
         const pr = st.progress || {};
-        const what = (isEuipo && pr.phase === "tmview") ? "adresele solicitanților din TMview"
-                   : `detaliile din ${srcName}`;
-        cur = `Se aduc ${what}: ${pr.done || 0}/${pr.total || "…"} mărci` + (pr.found ? ` (${pr.found} găsite)` : "");
+        cur = `Se aduc detaliile din ${srcName}: ${pr.done || 0}/${pr.total || "…"} mărci` + (pr.found ? ` (${pr.found} găsite)` : "");
       } else if (st.status === "done" || st.status === "error") {
         break;
       }
@@ -2368,6 +2364,10 @@ async function watchBulletinEnrich(source, date, data) {
     }
     clearInterval(tick);
     const dur = _fmtElapsed(Date.now() - t0);
+    if (last && last.status === "done" && last.error) {
+      _setEnrichBar(source, `<span style="color:#c0392b;">❌ ${_bEsc(last.error)}</span>`);
+      return;
+    }
     if (last && last.status === "error") {
       _setEnrichBar(source, `<span style="color:#c0392b;">❌ Eroare la aducerea detaliilor: ${_bEsc(last.error)}</span>`);
       return;
@@ -2378,12 +2378,9 @@ async function watchBulletinEnrich(source, date, data) {
       const fresh = await r2.json();
       _bulletinMarksCache[key] = fresh;
       const missing = (fresh.total || 0) - (fresh.enriched || 0);
-      const noAddr  = isEuipo ? (fresh.total || 0) - (fresh.with_address || 0) : 0;
       _setEnrichBar(source, missing > 0
         ? `<span style="color:#e67e22;">⚠ Detalii aduse pentru ${fresh.enriched}/${fresh.total} mărci — pentru ${missing} ${srcName} nu a răspuns sau nu le are încă; se reîncearcă automat (sau redeschide „Vezi mărci” peste câteva minute) · ⏱ ${dur}</span>`
-        : (noAddr > 0
-          ? `<span style="color:#1e8449;">✅ Detalii complete din ${srcName}: ${fresh.total}/${fresh.total} mărci</span> <span style="color:#e67e22;">· adrese solicitanți: ${fresh.with_address}/${fresh.total} (TMview le limitează, se completează automat)</span> <span style="color:#888;">· ⏱ ${dur}</span>`
-          : `<span style="color:#1e8449;">✅ Detalii complete din ${srcName}: ${fresh.total}/${fresh.total} mărci${addrNote(fresh)} · ⏱ ${dur}</span>`));
+        : `<span style="color:#1e8449;">✅ Detalii complete din ${srcName}: ${fresh.total}/${fresh.total} mărci · ⏱ ${dur}</span>`);
       const panel = document.getElementById(source + "MarksPanel");
       if (panel && panel.style.display !== "none") renderBulletinMarks(source, fresh);
     }

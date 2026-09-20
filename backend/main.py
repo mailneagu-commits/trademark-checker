@@ -110,14 +110,15 @@ async def debug_euipo_raw(query: str = "", size: int = 3, page: int = 0):
 
 
 @app.get("/api/debug-euipo-detail")
-async def debug_euipo_detail(app_num: str):
+async def debug_euipo_detail(app_num: str, sub: str = ""):
     """Răspunsul brut al API-ului EUIPO pentru o singură marcă (detaliu complet)."""
     from agents.euipo_agent import EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, euipo_available, _get_access_token
     if not euipo_available():
         return {"error": "EUIPO not configured"}
     import requests as _rq
     hdrs = {"Authorization": f"Bearer {_get_access_token()}", "X-IBM-Client-Id": EUIPO_CLIENT_ID, "Accept": "application/json"}
-    r = _rq.get(f"{EUIPO_SEARCH_URL}/{app_num}", headers=hdrs, timeout=30)
+    url = f"{EUIPO_SEARCH_URL}/{app_num}" if not sub else f"{EUIPO_SEARCH_URL.rsplit('/trademarks', 1)[0]}/{sub}"
+    r = _rq.get(url, headers=hdrs, timeout=30)
     try:
         return {"status": r.status_code, "body": r.json()}
     except Exception:
