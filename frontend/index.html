@@ -2275,6 +2275,96 @@ function _setBulletinResult(source, html) {
 
 const _bulletinMarksCache = {};
 
+function _bEsc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// Toate datele unei mărci din buletin (OSIM/EUIPO), în aceeași formă ca în cardul din
+// aplicația de verificare: identificare, status, date, natură, Viena, solicitanți,
+// reprezentanți și clasele descrise (titlu NISA + produse/servicii + descriere generică).
+function bulletinMarkDetailHtml(m) {
+  const d10  = v => (v ? String(v).slice(0, 10) : "");
+  const item = (label, val) =>
+    `<div class="detail-item"><label style="display:block;">${label}</label><span>${val ? val : "—"}</span></div>`;
+
+  const status  = m.markCurrentStatusCode || m.tradeMarkStatus || "";
+  const opp     = (m.oppositionStartDate || m.oppositionEndDate)
+    ? `${_bEsc(d10(m.oppositionStartDate)) || "?"} → ${_bEsc(d10(m.oppositionEndDate)) || "?"}` : "";
+  const _arr    = v => (Array.isArray(v) ? v : (v ? [v] : []));   // OSIM dă viennaClasses ca text
+  const vienna  = [..._arr(m.viennaCodes), ..._arr(m.viennaClasses)].filter(Boolean);
+  const nature  = [m.markFeature, m.kindMark].filter(Boolean).join(" · ");
+  const officeUrl = /^https?:\/\//i.test(m.officeUrl || "")
+    ? `<a href="${_bEsc(m.officeUrl)}" target="_blank" rel="noopener">Deschide dosarul</a>` : "";
+
+  const grid = [
+    item("(210) Nr. cerere",        _bEsc(m.applicationNumber)),
+    item("(111) Nr. înregistrare",  _bEsc(m.registrationNumber)),
+    item("Birou",                   _bEsc(m.tmOffice)),
+    item("Status",                  _bEsc(status)),
+    item("Dată status",             _bEsc(d10(m.markCurrentStatusDate))),
+    item("(220) Data depunere",     _bEsc(d10(m.applicationDate))),
+    item("(450) Data publicare",    _bEsc(d10(m.publicationDate))),
+    item("(151) Data înregistrare", _bEsc(d10(m.registrationDate))),
+    item("(180) Data expirare",     _bEsc(d10(m.expiryDate))),
+    item("Perioadă opoziție",       opp),
+    item("(550) Natura mărcii",     _bEsc(nature)),
+    item("(531) Coduri Viena",      _bEsc(vienna.join(", "))),
+    item("Culori revendicate",      _bEsc(Array.isArray(m.colorsClaimed) ? m.colorsClaimed.join(", ") : m.colorsClaimed)),
+    item("Țări desemnate",          _bEsc((m.designatedCountries || []).join(", "))),
+    item("Dosar oficial",           officeUrl),
+  ].join("");
+
+  const applicants = (m.applicants || []).length
+    ? m.applicants.map(a =>
+        `<div style="margin-bottom:4px;"><strong>${_bEsc(a.name) || "—"}</strong>${a.address ? '<br><span style="font-size:.75rem;color:#777;">' + _bEsc(a.address) + '</span>' : ''}${a.country ? ' <span style="font-size:.72rem;color:#aaa;">(' + _bEsc(a.country) + ')</span>' : ''}</div>`
+      ).join("")
+    : ((m.applicantName || []).map(n => `<div><strong>${_bEsc(n)}</strong></div>`).join("") +
+       (m.applicantAddress ? `<div style="font-size:.75rem;color:#777;">${_bEsc(m.applicantAddress)}</div>` : ""));
+
+  const reps = (m.representatives || []).length
+    ? m.representatives.map(r =>
+        `<div style="margin-bottom:4px;"><strong>${_bEsc(r.fullName || r.name || r.organizationName) || "—"}</strong>${(r.fullAddress || r.address) ? '<br><span style="font-size:.75rem;color:#777;">' + _bEsc(r.fullAddress || r.address) + '</span>' : ''}</div>`
+      ).join("")
+    : (m.representative
+        ? `<div><strong>${_bEsc(m.representative)}</strong>${m.representativeAddress ? '<br><span style="font-size:.75rem;color:#777;">' + _bEsc(m.representativeAddress) + '</span>' : ''}</div>`
+        : "");
+
+  // Clase descrise: fiecare clasă din depunere, cu lista de produse/servicii când o avem
+  const goods = m.goodAndServices || [];
+  const seen  = new Set();
+  const block = (nc, short, text, desc) =>
+    `<div class="goods-block">
+       <div class="cls-title">Clasa ${_bEsc(nc)}${short ? " — " + _bEsc(short) : ""}</div>
+       ${text ? `<div class="cls-text">${_bEsc(text)}</div>` : ""}
+       ${desc ? `<div class="cls-desc">${_bEsc(desc)}</div>` : ""}
+     </div>`;
+  let classesHtml = (m.niceDetailed || []).map(nd => {
+    seen.add(String(nd.class));
+    const g = goods.filter(x => String(x.niceClassInt || x.niceClass) === String(nd.class));
+    return g.length
+      ? g.map(x => block(nd.class, nd.short, x.goodsAndServices, nd.description)).join("")
+      : block(nd.class, nd.short, "", nd.description);
+  }).join("");
+  classesHtml += goods.filter(x => !seen.has(String(x.niceClassInt || x.niceClass)))
+    .map(x => block(x.niceClass, x.niceShort, x.goodsAndServices, x.niceDescription)).join("");
+  if (!classesHtml) classesHtml = '<span style="color:#aaa;">—</span>';
+
+  const hasGoods = goods.some(x => x.goodsAndServices);
+  return `<div style="background:#f7f9fc;border-radius:8px;padding:12px 14px;">
+    <div class="detail-grid">${grid}</div>
+    <div class="detail-grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));">
+      ${item("(731) Solicitant", applicants)}
+      ${item("(740) Reprezentant", reps)}
+    </div>
+    <div style="margin-top:6px;">
+      <div style="font-size:.69rem;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">
+        (511) Clase descrise${hasGoods ? "" : ' <span style="text-transform:none;font-weight:400;">— lista de produse/servicii încă indisponibilă în TMview</span>'}
+      </div>
+      ${classesHtml}
+    </div>
+  </div>`;
+}
+
 async function toggleBulletinMarks(source, date) {
   const panel  = document.getElementById(source + "MarksPanel");
   const btnId  = source + "ToggleBtn";
@@ -2338,16 +2428,17 @@ function renderBulletinMarks(source, data) {
     const img      = m.markImageURI
       ? `<img src="${m.markImageURI}" alt="" style="max-height:52px;max-width:110px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
       : "—";
-    return `<tr>
+    const detailRow = `<tr class="bm-detail"><td colspan="8" style="padding:4px 10px 12px;border-bottom:2px solid #d0d9ea;">${bulletinMarkDetailHtml(m)}</td></tr>`;
+    return `<tr class="bm-main">
       <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${m.applicationNumber || "—"}</td>
       <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${date}</td>
       <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${classes}</td>
       <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;text-align:center;">${img}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-weight:600;">${m.tmName || "—"}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${holder}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${reps}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${feature}</td>
-    </tr>`;
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-weight:600;">${_bEsc(m.tmName) || "—"}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${_bEsc(holder)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${_bEsc(reps)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:.8rem;">${_bEsc(feature)}</td>
+    </tr>${detailRow}`;
   }).join("");
 
   el.innerHTML = `
@@ -2472,6 +2563,9 @@ function _renderBulletinCompare(data) {
       ? `<img src="${r.bulletin_image}" alt="" style="max-height:64px;max-width:120px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
       : "—";
     const riskColor = { very_high:"#c0392b", high:"#e74c3c", medium:"#e67e22", low:"#e67e22" }[r.risk_level] || "#888";
+    const cmpDetail = r.bulletin_mark
+      ? `<tr class="bc-detail" style="display:none;"><td colspan="12" style="padding:4px 12px 12px;border-bottom:2px solid #d0d9ea;">${bulletinMarkDetailHtml(r.bulletin_mark)}</td></tr>`
+      : "";
     return `<tr>
       <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;font-weight:700;color:${riskColor};white-space:nowrap;">${r.similarity_percent}%</td>
       <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;white-space:nowrap;">${r.bulletin_app_number || "—"}</td>
@@ -2484,7 +2578,8 @@ function _renderBulletinCompare(data) {
       <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;white-space:nowrap;">${(r.watch_item_classes||[]).join(", ") || "—"}</td>
       <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;">${r.watch_item_holder || "—"}</td>
       <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;font-weight:700;color:${riskColor};white-space:nowrap;">${r.similarity_percent}%</td>
-    </tr>`;
+      <td style="padding:9px 12px;border-bottom:1px solid #eef1f6;">${cmpDetail ? `<button class="btn-sm" onclick="const d=this.closest('tr').nextElementSibling;const o=d.style.display==='none';d.style.display=o?'':'none';this.textContent=o?'▲ Ascunde':'▼ Detalii';">▼ Detalii</button>` : ""}</td>
+    </tr>${cmpDetail}`;
   }).join("");
 
   el.innerHTML = `
@@ -2499,6 +2594,7 @@ function _renderBulletinCompare(data) {
             <th style="padding:8px 12px;text-align:left;color:#0f3460;font-size:.78rem;"></th>
             <th style="padding:8px 12px;text-align:left;color:#0f3460;font-size:.8rem;" colspan="6">🗞 Marcă din buletin</th>
             <th style="padding:8px 12px;text-align:left;color:#0f3460;font-size:.8rem;border-left:2px solid #d0d9ea;" colspan="4">👁 Marcă monitorizată</th>
+            <th style="padding:8px 12px;"></th>
           </tr>
           <tr>
             <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">%</th>
@@ -2512,6 +2608,7 @@ function _renderBulletinCompare(data) {
             <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">Clase</th>
             <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">Titular</th>
             <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">% Asemănare</th>
+            <th style="padding:6px 12px;text-align:left;color:#888;font-size:.75rem;">Toate datele</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -2521,9 +2618,12 @@ function _renderBulletinCompare(data) {
 
 function filterBulletinMarks(source) {
   const q    = document.getElementById(source + "MarksFilter").value.toLowerCase();
-  const rows = document.querySelectorAll(`#${source}MarksTable tbody tr`);
+  const rows = document.querySelectorAll(`#${source}MarksTable tbody tr.bm-main`);
   rows.forEach(tr => {
-    tr.style.display = tr.textContent.toLowerCase().includes(q) ? "" : "none";
+    const det = tr.nextElementSibling;   // rândul cu detalii — filtrat împreună cu marca
+    const hit = (tr.textContent + " " + (det ? det.textContent : "")).toLowerCase().includes(q);
+    tr.style.display = hit ? "" : "none";
+    if (det) det.style.display = hit ? "" : "none";
   });
 }
 

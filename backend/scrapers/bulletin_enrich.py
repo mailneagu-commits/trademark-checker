@@ -89,17 +89,46 @@ def _merge(mark: Dict, detail: Dict) -> Dict:
     return merged
 
 
-def apply_cached_detail(source: str, marks: List[Dict]) -> List[Dict]:
-    """Combină mărcile din buletin cu detaliile deja aduse (doar din cache, fără rețea)."""
+def _describe_classes(mark: Dict) -> Dict:
+    """Clasele descrise, ca în cardul din aplicația de verificare: pentru fiecare clasă
+    NISA — titlul scurt și descrierea generică în română (nice_classes_ro), plus lista de
+    produse/servicii a mărcii când o avem. `niceDetailed` acoperă și clasele fără listă."""
+    from nice_classes_ro import get_nice_description, get_nice_short
+
+    goods = []
+    for g in mark.get("goodAndServices") or []:
+        nc = str(g.get("niceClass", "")).strip()
+        n = int(nc) if nc.isdigit() else 0
+        goods.append({
+            "niceClass":        nc,
+            "niceClassInt":     n,
+            "niceShort":        get_nice_short(n) if n else "",
+            "niceDescription":  get_nice_description(n) if n else "",
+            "goodsAndServices": g.get("goodsAndServices", ""),
+        })
+    goods.sort(key=lambda g: g["niceClassInt"])
+    nice = sorted({int(c) for c in (mark.get("niceClass") or []) if str(c).isdigit()})
+    mark["goodAndServices"] = goods
+    mark["niceDetailed"] = [
+        {"class": c, "short": get_nice_short(c), "description": get_nice_description(c)} for c in nice
+    ]
+    return mark
+
+
+def apply_cached_detail(source: str, marks: List[Dict], bulletin_date: Optional[str] = None) -> List[Dict]:
+    """Combină mărcile din buletin cu detaliile deja aduse (doar din cache, fără rețea) și
+    adaugă descrierea claselor. `bulletin_date` (YYYY-MM-DD) devine data publicării când
+    buletinul nu o dă pe marcă (OSIM: BOPI-ul e publicat chiar în data lui)."""
     cache = _load_cache(source)
-    if not cache:
-        return marks
     out = []
     for m in marks:
         st13 = tmview_st13(source, m)
         entry = cache.get(st13) if st13 else None
         detail = entry.get("detail") if entry else None
-        out.append(_merge(m, detail) if detail else m)
+        merged = _merge(m, detail) if detail else dict(m)
+        if bulletin_date and not merged.get("publicationDate"):
+            merged["publicationDate"] = bulletin_date
+        out.append(_describe_classes(merged))
     return out
 
 

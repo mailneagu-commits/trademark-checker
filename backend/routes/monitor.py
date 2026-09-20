@@ -411,7 +411,7 @@ def _load_bulletin_marks(source: str, date: str) -> List[Dict]:
         pdf     = os.path.join(CACHE_DIR, f"{slug}.pdf")
         if not os.path.exists(pdf):
             raise HTTPException(404, "Buletinul OSIM pentru această dată nu a fost descărcat încă.")
-        return apply_cached_detail("osim", parse_pdf_cached(pdf, slug))
+        return apply_cached_detail("osim", parse_pdf_cached(pdf, slug), bulletin_date=working.isoformat())
 
     elif source == "euipo":
         from scrapers.euipo_bulletin import is_bulletin_cached, should_run_sync, fetch_euipo_for_date
@@ -510,6 +510,9 @@ def _compute_bulletin_compare(source: str, date: str) -> Dict:
     from db import SessionLocal
 
     marks = _load_bulletin_marks(source, date)
+    # Analizatorul de similaritate renormalizează câmpurile (ex. solicitanții), deci pentru
+    # afișarea completă în tabel trimitem marca originală din buletin, îmbogățită.
+    marks_by_app = {str(m.get("applicationNumber", "")): m for m in marks}
 
     db = SessionLocal()
     try:
@@ -536,6 +539,7 @@ def _compute_bulletin_compare(source: str, date: str) -> Dict:
                     "bulletin_representative": rep_str,
                     "bulletin_classes":    bulletin_classes,
                     "bulletin_image":      entry.get("markImageURI"),
+                    "bulletin_mark":       marks_by_app.get(str(entry.get("applicationNumber", ""))) or entry,
                     "watch_item_id":       item.id,
                     "watch_item_name":     item.trademark_name,
                     "watch_item_classes":  classes,
