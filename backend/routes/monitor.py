@@ -443,6 +443,28 @@ def get_bulletin_marks(source: str, date: str):
             "enriched": sum(1 for m in marks if m.get("_detail_enriched"))}
 
 
+@router.get("/bulletin-mark")
+async def get_bulletin_mark(source: str, date: str, app_num: str):
+    """O singură marcă din buletin, cu toate datele — pentru pagina ei proprie. Dacă
+    detaliile din TMview nu au fost aduse încă, le aduce acum (doar pentru această marcă)."""
+    import asyncio
+
+    def _find():
+        return next((m for m in _load_bulletin_marks(source, date)
+                     if str(m.get("applicationNumber", "")) == app_num), None)
+
+    mark = _find()
+    if not mark:
+        raise HTTPException(404, f"Marca {app_num} nu există în acest buletin.")
+    if not mark.get("_detail_enriched"):
+        try:
+            await asyncio.wait_for(enrich_bulletin_marks(source, [mark]), timeout=25)
+        except Exception:
+            pass
+        mark = _find() or mark
+    return mark
+
+
 _enrich_jobs: dict = {}   # "source:date" -> {"running": bool, "progress": dict, "result": dict|None, "error": str|None}
 
 

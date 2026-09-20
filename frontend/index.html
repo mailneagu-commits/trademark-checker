@@ -849,6 +849,7 @@
   </div>
 </div>
 
+<script src="bulletin-view.js"></script>
 <script>
 const NICE_CLASSES = [
   [1,"Produse chimice pentru industrie, știință"],[2,"Vopsele, lacuri, coloranți"],
@@ -2386,112 +2387,6 @@ async function watchBulletinEnrich(source, date, data) {
   }
 }
 
-function _bEsc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-}
-
-// ── Blocuri reutilizabile pentru o marcă din buletin (OSIM/EUIPO) ─────────────
-const _bD10 = v => (v ? String(v).slice(0, 10) : "");
-
-// (731) Solicitant — nume + adresă (+ țară) per solicitant
-function bulletinApplicantsHtml(m) {
-  if ((m.applicants || []).length) {
-    return m.applicants.map(a =>
-      `<div style="margin-bottom:4px;"><strong>${_bEsc(a.name) || "—"}</strong>${a.address ? '<br><span style="font-size:.75rem;color:#777;">' + _bEsc(a.address) + '</span>' : ''}${a.country ? ' <span style="font-size:.72rem;color:#aaa;">(' + _bEsc(a.country) + ')</span>' : ''}</div>`
-    ).join("");
-  }
-  const names = (m.applicantName || []).map(n => `<div><strong>${_bEsc(n)}</strong></div>`).join("");
-  return (names + (m.applicantAddress ? `<div style="font-size:.75rem;color:#777;">${_bEsc(m.applicantAddress)}</div>` : "")) || "—";
-}
-
-// (740) Reprezentant — nume + adresă
-function bulletinRepsHtml(m) {
-  if ((m.representatives || []).length) {
-    return m.representatives.map(r =>
-      `<div style="margin-bottom:4px;"><strong>${_bEsc(r.fullName || r.name || r.organizationName) || "—"}</strong>${(r.fullAddress || r.address) ? '<br><span style="font-size:.75rem;color:#777;">' + _bEsc(r.fullAddress || r.address) + '</span>' : ''}</div>`
-    ).join("");
-  }
-  return m.representative
-    ? `<div><strong>${_bEsc(m.representative)}</strong>${m.representativeAddress ? '<br><span style="font-size:.75rem;color:#777;">' + _bEsc(m.representativeAddress) + '</span>' : ''}</div>`
-    : "—";
-}
-
-// (511) Clase descrise: fiecare clasă din depunere, cu titlul NISA, lista de
-// produse/servicii a mărcii (când o avem) și descrierea generică a clasei.
-function bulletinClassesHtml(m) {
-  const goods = m.goodAndServices || [];
-  const seen  = new Set();
-  const block = (nc, short, text, desc) =>
-    `<div class="goods-block" style="margin-bottom:6px;padding:7px 9px;">
-       <div class="cls-title">Clasa ${_bEsc(nc)}${short ? " — " + _bEsc(short) : ""}</div>
-       ${text ? `<div class="cls-text">${_bEsc(text)}</div>` : ""}
-       ${desc ? `<div class="cls-desc">${_bEsc(desc)}</div>` : ""}
-     </div>`;
-  let html = (m.niceDetailed || []).map(nd => {
-    seen.add(String(nd.class));
-    const g = goods.filter(x => String(x.niceClassInt || x.niceClass) === String(nd.class));
-    return g.length
-      ? g.map(x => block(nd.class, nd.short, x.goodsAndServices, nd.description)).join("")
-      : block(nd.class, nd.short, "", nd.description);
-  }).join("");
-  html += goods.filter(x => !seen.has(String(x.niceClassInt || x.niceClass)))
-    .map(x => block(x.niceClass, x.niceShort, x.goodsAndServices, x.niceDescription)).join("");
-  return html || '<span style="color:#aaa;">—</span>';
-}
-
-// Restul datelor care nu au coloană proprie în tabel
-function bulletinExtraFieldsHtml(m) {
-  const item = (label, val) =>
-    `<div class="detail-item"><label style="display:block;">${label}</label><span>${val ? val : "—"}</span></div>`;
-  const opp    = (m.oppositionStartDate || m.oppositionEndDate)
-    ? `${_bEsc(_bD10(m.oppositionStartDate)) || "?"} → ${_bEsc(_bD10(m.oppositionEndDate)) || "?"}` : "";
-  const _arr   = v => (Array.isArray(v) ? v : (v ? [v] : []));   // OSIM dă viennaClasses ca text
-  const vienna = [..._arr(m.viennaCodes), ..._arr(m.viennaClasses)].filter(Boolean);
-  const nature = [m.markFeature, m.kindMark].filter(Boolean).join(" · ");
-  const officeUrl = /^https?:\/\//i.test(m.officeUrl || "")
-    ? `<a href="${_bEsc(m.officeUrl)}" target="_blank" rel="noopener">Deschide dosarul</a>` : "";
-  return `<div class="detail-grid">${[
-    item("Status",                  _bEsc(m.markCurrentStatusCode || m.tradeMarkStatus)),
-    item("Dată status",             _bEsc(_bD10(m.markCurrentStatusDate))),
-    item("(111) Nr. înregistrare",  _bEsc(m.registrationNumber)),
-    item("(151) Data înregistrare", _bEsc(_bD10(m.registrationDate))),
-    item("(180) Data expirare",     _bEsc(_bD10(m.expiryDate))),
-    item("Perioadă opoziție",       opp),
-    item("(550) Natura mărcii",     _bEsc(nature)),
-    item("(531) Coduri Viena",      _bEsc(vienna.join(", "))),
-    item("Culori revendicate",      _bEsc(Array.isArray(m.colorsClaimed) ? m.colorsClaimed.join(", ") : m.colorsClaimed)),
-    item("Țări desemnate",          _bEsc((m.designatedCountries || []).join(", "))),
-    item("Birou",                   _bEsc(m.tmOffice)),
-    item("Dosar oficial",           officeUrl),
-  ].join("")}</div>`;
-}
-
-// Toate datele unei mărci (folosit la comparație): identificare + solicitant/reprezentant
-// + restul câmpurilor + clasele descrise.
-function bulletinMarkDetailHtml(m) {
-  const item = (label, val) =>
-    `<div class="detail-item"><label style="display:block;">${label}</label><span>${val ? val : "—"}</span></div>`;
-  const hasGoods = (m.goodAndServices || []).some(x => x.goodsAndServices);
-  return `<div style="background:#f7f9fc;border-radius:8px;padding:12px 14px;">
-    <div class="detail-grid">${[
-      item("(210) Nr. cerere",     _bEsc(m.applicationNumber)),
-      item("(220) Data depunere",  _bEsc(_bD10(m.applicationDate))),
-      item("(442) Data publicare", _bEsc(_bD10(m.publicationDate))),
-    ].join("")}</div>
-    ${bulletinExtraFieldsHtml(m)}
-    <div class="detail-grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));">
-      ${item("(731) Solicitant", bulletinApplicantsHtml(m))}
-      ${item("(740) Reprezentant", bulletinRepsHtml(m))}
-    </div>
-    <div style="margin-top:6px;">
-      <div style="font-size:.69rem;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">
-        (511) Clase descrise${hasGoods ? "" : ' <span style="text-transform:none;font-weight:400;">— lista de produse/servicii încă indisponibilă în TMview</span>'}
-      </div>
-      ${bulletinClassesHtml(m)}
-    </div>
-  </div>`;
-}
-
 async function toggleBulletinMarks(source, date) {
   const panel  = document.getElementById(source + "MarksPanel");
   const btnId  = source + "ToggleBtn";
@@ -2559,10 +2454,10 @@ function renderBulletinMarks(source, data) {
       <td style="${td}text-align:center;">${img}</td>
       <td style="${td}font-size:.8rem;white-space:nowrap;">${_bEsc(_bD10(m.applicationDate)) || "—"}</td>
       <td style="${td}font-size:.8rem;white-space:nowrap;">${_bEsc(_bD10(m.publicationDate)) || "—"}</td>
-      <td style="${td}font-weight:600;">${_bEsc(m.tmName) || "—"}</td>
+      <td style="${td}font-weight:600;"><a href="${_bEsc(bulletinMarkUrl(source, data.date, m.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca cu toate datele și clasele descrise" style="color:#0f3460;text-decoration:none;border-bottom:1px dashed #0f3460;">${_bEsc(m.tmName) || "—"} ↗</a></td>
       <td style="${td}font-size:.8rem;min-width:200px;">${bulletinApplicantsHtml(m)}</td>
       <td style="${td}font-size:.8rem;min-width:180px;">${bulletinRepsHtml(m)}</td>
-      <td style="${td}font-size:.8rem;min-width:320px;">${bulletinClassesHtml(m)}</td>
+      <td style="${td}font-size:.85rem;font-weight:600;white-space:nowrap;">${_bEsc(bulletinClassNumbers(m))}</td>
     </tr>${extra}`;
   }).join("");
 
@@ -2587,7 +2482,7 @@ function renderBulletinMarks(source, data) {
             ${th("(541) Denumire marcă", "Mark in standard characters")}
             ${th("(731) Solicitant", "Name and address of the applicant")}
             ${th("(740) Reprezentant", "Name and address of the representative")}
-            ${th("(511) Clase descrise", "Nice Classification — clase, produse și servicii")}
+            ${th("(511) Clase", "Nice Classification — numerele claselor; descrierea completă se deschide pe pagina mărcii")}
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -2704,10 +2599,12 @@ function _renderBulletinCompare(data) {
       <td style="${td}text-align:center;">${img}</td>
       <td style="${td}white-space:nowrap;">${_bEsc(_bD10(bm.applicationDate)) || "—"}</td>
       <td style="${td}white-space:nowrap;">${_bEsc(_bD10(bm.publicationDate)) || "—"}</td>
-      <td style="${td}font-weight:700;background:#f5faff;font-size:1rem;">${_bEsc(r.bulletin_name) || "—"}</td>
+      <td style="${td}font-weight:700;background:#f5faff;font-size:1rem;">${bm.applicationNumber
+        ? `<a href="${_bEsc(bulletinMarkUrl(data.source, data.date, bm.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca cu toate datele și clasele descrise" style="color:#0f3460;text-decoration:none;border-bottom:1px dashed #0f3460;">${_bEsc(r.bulletin_name) || "—"} ↗</a>`
+        : (_bEsc(r.bulletin_name) || "—")}</td>
       <td style="${td}font-size:.82rem;min-width:190px;">${r.bulletin_mark ? bulletinApplicantsHtml(bm) : (_bEsc(r.bulletin_holder) || "—")}</td>
       <td style="${td}font-size:.82rem;min-width:170px;">${r.bulletin_mark ? bulletinRepsHtml(bm) : (_bEsc(r.bulletin_representative) || "—")}</td>
-      <td style="${td}font-size:.8rem;min-width:300px;">${r.bulletin_mark ? bulletinClassesHtml(bm) : _bEsc((r.bulletin_classes||[]).join(", ") || "—")}</td>
+      <td style="${td}font-size:.85rem;font-weight:600;white-space:nowrap;">${r.bulletin_mark ? _bEsc(bulletinClassNumbers(bm)) : _bEsc((r.bulletin_classes||[]).join(", ") || "—")}</td>
       <td style="${td}border-left:2px solid #d0d9ea;font-weight:700;background:#f6f4fb;font-size:1rem;">${_bEsc(r.watch_item_name) || "—"}</td>
       <td style="${td}white-space:nowrap;">${_bEsc((r.watch_item_classes||[]).join(", ")) || "—"}</td>
       <td style="${td}">${_bEsc(r.watch_item_holder) || "—"}</td>
@@ -2724,7 +2621,7 @@ function _renderBulletinCompare(data) {
       (sortate după nivel de risc și procent de asemănare).
     </div>
     <div style="overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;">
-      <table style="width:100%;min-width:1700px;border-collapse:collapse;font-size:.9rem;">
+      <table style="width:100%;min-width:1500px;border-collapse:collapse;font-size:.9rem;">
         <thead style="position:sticky;top:0;background:#f0f4fa;">
           <tr>
             <th style="padding:8px 12px;"></th>
@@ -2741,7 +2638,7 @@ function _renderBulletinCompare(data) {
             ${th("(541) Denumire marcă")}
             ${th("(731) Solicitant")}
             ${th("(740) Reprezentant")}
-            ${th("(511) Clase descrise")}
+            ${th("(511) Clase")}
             ${th("Denumire marcă", "border-left:2px solid #d0d9ea;")}
             ${th("Clase")}
             ${th("Titular")}

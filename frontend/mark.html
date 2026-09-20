@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marcă din buletin</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#f0f2f5; color:#1a1a2e; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px 16px 48px; }
+  .head { background:#fff; border-radius:12px; padding:20px 24px; display:flex; gap:24px; align-items:center; flex-wrap:wrap;
+          box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px; }
+  .head img { max-width:200px; max-height:140px; object-fit:contain; border:1px solid #e3e8f0; border-radius:8px; padding:6px; background:#fff; }
+  .head .noimg { width:120px; height:90px; display:flex; align-items:center; justify-content:center; font-size:2rem; background:#f0f2f5; border-radius:8px; }
+  .name { font-size:1.9rem; font-weight:800; color:#0f3460; word-break:break-word; }
+  .sub  { color:#666; font-size:.9rem; margin-top:4px; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:12px; background:#e8f0fb; color:#0f3460; font-size:.75rem; font-weight:700; margin-right:6px; }
+  .card { background:#fff; border-radius:12px; padding:18px 22px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .state { text-align:center; color:#888; padding:60px 20px; }
+  .err { color:#c0392b; }
+  /* aceleași stiluri ca în cardul din aplicație */
+  .detail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-bottom:14px; }
+  .detail-item label { font-size:.69rem; font-weight:700; color:#999; text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px; }
+  .detail-item span  { font-size:.85rem; font-weight:600; color:#1a1a2e; }
+  .goods-block { margin-bottom:10px; padding:10px 12px; background:#fff; border-radius:7px; border-left:3px solid #0f3460; }
+  .goods-block .cls-title { font-weight:700; color:#0f3460; font-size:.85rem; margin-bottom:3px; }
+  .goods-block .cls-text  { font-size:.82rem; color:#444; line-height:1.55; }
+  .goods-block .cls-desc  { font-size:.74rem; color:#999; margin-top:4px; font-style:italic; }
+</style>
+</head>
+<body>
+<div class="wrap" id="root"><div class="state">⏳ Se încarcă marca… <span id="t"></span></div></div>
+<script src="bulletin-view.js"></script>
+<script>
+(async function () {
+  const q = new URLSearchParams(location.search);
+  const source = q.get("source"), date = q.get("date"), app = q.get("app");
+  const root = document.getElementById("root");
+  const t0 = Date.now();
+  const tick = setInterval(() => {
+    const el = document.getElementById("t");
+    if (el) el.textContent = "⏱ " + Math.floor((Date.now() - t0) / 1000) + "s";
+  }, 1000);
+  try {
+    const r = await fetch(`/api/monitor/bulletin-mark?source=${encodeURIComponent(source)}&date=${encodeURIComponent(date)}&app_num=${encodeURIComponent(app)}`);
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      throw new Error(e.detail || ("Eroare " + r.status));
+    }
+    const m = await r.json();
+    document.title = (m.tmName || app) + " — marcă din buletin";
+    const src = source === "osim" ? "BOPI OSIM" : "Buletin EUIPO";
+    const status = m.markCurrentStatusCode || m.tradeMarkStatus || "";
+    const img = m.markImageURI
+      ? `<img src="${_bEsc(m.markImageURI)}" alt="">`
+      : `<div class="noimg">™</div>`;
+    root.innerHTML = `
+      <div class="head">
+        ${img}
+        <div>
+          <div class="name">${_bEsc(m.tmName) || "—"}</div>
+          <div class="sub">
+            <span class="badge">${src} · ${_bEsc(date)}</span>
+            <span class="badge">Nr. ${_bEsc(m.applicationNumber)}</span>
+            ${status ? `<span class="badge">${_bEsc(status)}</span>` : ""}
+            <span class="badge">Clase: ${_bEsc(bulletinClassNumbers(m))}</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">${bulletinMarkDetailHtml(m)}</div>`;
+  } catch (e) {
+    root.innerHTML = `<div class="state err">❌ ${_bEsc(e.message)}</div>`;
+  } finally {
+    clearInterval(tick);
+  }
+})();
+</script>
+</body>
+</html>
