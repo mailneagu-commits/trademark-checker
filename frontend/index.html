@@ -2465,7 +2465,7 @@ function renderBulletinMarks(source, data) {
       <td style="${td}text-align:center;">${img}</td>
       <td style="${td}font-size:.8rem;white-space:nowrap;">${_bEsc(_bD10(m.applicationDate)) || "—"}</td>
       <td style="${td}font-size:.8rem;white-space:nowrap;">${_bEsc(_bD10(m.publicationDate)) || "—"}</td>
-      <td style="${td}font-weight:600;"><a href="${_bEsc(bulletinMarkUrl(source, data.date, m.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca într-o pagină nouă" style="color:#0f3460;text-decoration:none;border-bottom:1px dashed #0f3460;">${_bEsc(m.tmName) || "—"}</a></td>
+      <td style="${td}font-weight:600;"><a href="${_bEsc(bulletinMarkUrl(source, data.date, m.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca într-o pagină nouă" style="color:inherit;text-decoration:none;cursor:pointer;">${_bEsc(m.tmName) || "—"}</a></td>
       <td style="${td}font-size:.78rem;">${bulletinApplicantsHtml(m)}</td>
       <td style="${td}font-size:.78rem;">${bulletinRepsHtml(m)}</td>
       <td style="${td}font-size:.85rem;font-weight:600;">${_bEsc(bulletinClassNumbers(m))}</td>
@@ -2611,7 +2611,7 @@ function _renderBulletinCompare(data) {
       <td style="${td}">${_bEsc(_bD10(bm.applicationDate)) || "—"}</td>
       <td style="${td}">${_bEsc(_bD10(bm.publicationDate)) || "—"}</td>
       <td style="${td}font-weight:700;background:#f5faff;font-size:.82rem;">${bm.applicationNumber
-        ? `<a href="${_bEsc(bulletinMarkUrl(data.source, data.date, bm.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca într-o pagină nouă" style="color:#0f3460;text-decoration:none;border-bottom:1px dashed #0f3460;">${_bEsc(r.bulletin_name) || "—"}</a>`
+        ? `<a href="${_bEsc(bulletinMarkUrl(data.source, data.date, bm.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca într-o pagină nouă" style="color:inherit;text-decoration:none;cursor:pointer;">${_bEsc(r.bulletin_name) || "—"}</a>`
         : (_bEsc(r.bulletin_name) || "—")}</td>
       <td style="${td}font-size:.74rem;">${r.bulletin_mark ? bulletinApplicantsHtml(bm) : (_bEsc(r.bulletin_holder) || "—")}</td>
       <td style="${td}font-size:.74rem;">${r.bulletin_mark ? bulletinRepsHtml(bm) : (_bEsc(r.bulletin_representative) || "—")}</td>
