@@ -366,7 +366,10 @@ def _parse_bulletin_pdf(path: str) -> List[Dict]:
 # ── EUIPO Search API fallback ─────────────────────────────────────────────────
 
 def _fetch_via_api(target: date) -> Tuple[List[Dict], Optional[str]]:
-    """Fallback: returnează mărci via EUIPO Search API cu filtru pe applicationDate.
+    """Mărcile publicate în buletinul EUIPO din `target` (secțiunea A.1 — cereri publicate,
+    deschise la opoziție), prin EUIPO Search API, filtrat pe data publicării. Verificat
+    live: 701 mărci pe 2026-09-18 față de 700 în PDF-ul aceluiași buletin — același conținut,
+    dar în câteva secunde în loc de 1-4 minute de descărcare PDF.
     Returnează (marks, error) — error e None dacă totul a mers bine (chiar și cu 0 marks)."""
     try:
         from agents.euipo_agent import euipo_available, _get_access_token, EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, _to_internal
@@ -381,8 +384,7 @@ def _fetch_via_api(target: date) -> Tuple[List[Dict], Optional[str]]:
     except Exception as e:
         return [], f"token_error: {e}"
 
-    date_from = (target - timedelta(days=1)).isoformat()
-    date_to   = (target + timedelta(days=1)).isoformat()
+    pub_date = target.isoformat()
 
     headers = {
         "X-IBM-Client-Id": EUIPO_CLIENT_ID,
@@ -395,12 +397,14 @@ def _fetch_via_api(target: date) -> Tuple[List[Dict], Optional[str]]:
     page = 0
 
     while True:
-        query = f"applicationDate>={date_from};applicationDate<={date_to}"
+        # Fără filtrul pe status ar veni și mărcile înregistrate/modificate publicate în aceeași zi
+        # (secțiunile B/C/D ale buletinului — peste 4000 de rezultate), nu doar cererile noi.
+        query = f"publicationDate=={pub_date};status==APPLICATION_PUBLISHED"
         try:
             resp = requests.get(
                 EUIPO_SEARCH_URL,
                 headers=headers,
-                params={"query": query, "size": 100, "page": page, "sort": "applicationDate:desc"},
+                params={"query": query, "size": 100, "page": page, "sort": "applicationNumber:asc"},
                 timeout=REQUEST_TIMEOUT,
             )
             if resp.status_code != 200:
@@ -413,7 +417,8 @@ def _fetch_via_api(target: date) -> Tuple[List[Dict], Optional[str]]:
                 if key and key not in seen:
                     seen.add(key)
                     internal = _to_internal(tm)
-                    internal["_source"] = "euipo_api_daily"
+                    internal["_source"] = "euipo_api_published"
+                    internal["publicationDate"] = pub_date
                     all_marks.append(internal)
             if len(batch) < 100:
                 break
@@ -421,7 +426,7 @@ def _fetch_via_api(target: date) -> Tuple[List[Dict], Optional[str]]:
         except Exception as e:
             return all_marks, f"request_error: {type(e).__name__}: {e}"
 
-    print(f"[EUIPO API] {len(all_marks)} marks for {target.isoformat()}")
+    print(f"[EUIPO API] {len(all_marks)} mărci publicate pe {pub_date}")
     return all_marks, None
 
 
@@ -455,6 +460,12 @@ def should_run_sync(target: date, cooldown_seconds: int = 300) -> bool:
     infinit, pentru că is_bulletin_cached() singur nu vede fallback-ul API."""
     if is_bulletin_cached(target):
         return True
+    try:
+        from agents.euipo_agent import euipo_available
+        if euipo_available():
+            return True     # API-ul EUIPO răspunde în secunde — nu e nevoie de job de fundal
+    except ImportError:
+        pass
     working = _prev_working_day(target)
     slug    = _date_slug(working)
     entry   = _load_processed().get(slug)
@@ -498,6 +509,21 @@ def fetch_euipo_for_date(target: date, skip_pdf_download: bool = False) -> Tuple
         "working_day": working.isoformat(),
     }
 
+    # API-ul EUIPO întâi (secunde, date structurate); PDF-ul din COPLA doar dacă API-ul nu
+    # e configurat sau nu întoarce nimic (ex. buletinul nu e încă publicat).
+    api_marks, api_error = _fetch_via_api(working)
+    if api_marks:
+        _save_marks_cache(slug, api_marks)
+        info.update({
+            "bulletin_date": working.isoformat(),
+            "status": "ok_api", "source": "api",
+            "marks":  len(api_marks),
+            "at":     datetime.utcnow().isoformat(),
+        })
+        processed[slug] = info
+        _save_processed(processed)
+        return api_marks, info
+
     # Încearcă COPLA bulletin (sau folosește direct PDF-ul deja în cache)
     bulletin = _find_bulletin_for_date(working)
     if bulletin and (not skip_pdf_download or is_bulletin_cached(target)):
@@ -525,12 +551,7 @@ def fetch_euipo_for_date(target: date, skip_pdf_download: bool = False) -> Tuple
     # Fallback: EUIPO Search API — la fel ca la PDF, cache-uim rezultatul, altfel
     # fiecare cerere ulterioară repetă interogarea paginată live (~15-16 pagini
     # pentru buletinul EUIPO), inutil de lent pentru date deja rezolvate.
-    api_error = None
-    marks = _load_marks_cache(slug)
-    if marks is None:
-        marks, api_error = _fetch_via_api(working)
-        if marks:
-            _save_marks_cache(slug, marks)
+    marks = _load_marks_cache(slug) or []
     if api_error:
         info["api_error"] = api_error
     if marks:
