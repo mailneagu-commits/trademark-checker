@@ -71,7 +71,7 @@ def _save_cache(source: str, cache: Dict[str, Dict]) -> None:
     os.replace(tmp, _cache_path(source))
 
 
-def _merge(mark: Dict, detail: Dict) -> Dict:
+def _merge(mark: Dict, detail: Dict, addr: Optional[Dict] = None) -> Dict:
     """Aceeași regulă ca enrich_marks_with_detail din aplicația de verificare, dar
     cu buletinul ca sursă autoritară: valorile lui nu sunt suprascrise cu goluri."""
     merged = dict(mark)
@@ -85,6 +85,16 @@ def _merge(mark: Dict, detail: Dict) -> Dict:
         merged["applicants"] = detail["applicants_detail"]
     if not merged.get("markImageURI") and detail.get("markImageURI"):
         merged["markImageURI"] = detail["markImageURI"]
+    if addr:
+        # Adrese/țări din TMview (API-ul EUIPO dă doar nume) — înlocuiesc numele simple
+        if addr.get("applicants_detail"):
+            merged["applicants"] = addr["applicants_detail"]
+            merged["applicants_detail"] = addr["applicants_detail"]
+        if addr.get("representatives"):
+            merged["representatives"] = addr["representatives"]
+        for k in ("officeUrl", "designatedCountries"):
+            if addr.get(k) and not merged.get(k):
+                merged[k] = addr[k]
     merged["_detail_enriched"] = True
     return merged
 
@@ -125,87 +135,234 @@ def apply_cached_detail(source: str, marks: List[Dict], bulletin_date: Optional[
         st13 = tmview_st13(source, m)
         entry = cache.get(st13) if st13 else None
         detail = entry.get("detail") if entry else None
-        merged = _merge(m, detail) if detail else dict(m)
+        merged = _merge(m, detail, (entry or {}).get("addr")) if detail else dict(m)
         if bulletin_date and not merged.get("publicationDate"):
             merged["publicationDate"] = bulletin_date
         out.append(_describe_classes(merged))
     return out
 
 
+def _has_address(entry: Optional[Dict]) -> bool:
+    return bool(entry and (entry.get("addr") or (entry.get("detail") or {}).get("applicants_detail")))
+
+
 def enrichment_stats(source: str, marks: List[Dict]) -> Dict:
     cache = _load_cache(source)
-    have = sum(1 for m in marks if (cache.get(tmview_st13(source, m) or "") or {}).get("detail"))
-    return {"total": len(marks), "enriched": have}
+    entries = [cache.get(tmview_st13(source, m) or "") or {} for m in marks]
+    return {
+        "total": len(marks),
+        "enriched": sum(1 for e in entries if e.get("detail")),
+        "with_address": sum(1 for e in entries if _has_address(e)),
+    }
+
+
+# ── API-ul EUIPO (Trademark Search API) — sursa principală pentru mărcile EUIPO ─────────
+
+def _euipo_api_to_detail(b: Dict) -> Dict:
+    """Detaliul unei mărci EUIPO, în aceeași formă ca `_fetch_detail` din verificare. Produsele și
+    serviciile vin în toate limbile UE; le luăm pe cele în română, cu engleza ca rezervă."""
+    goods = []
+    for g in b.get("goodsAndServices") or []:
+        langs = {d.get("language"): d.get("terms") or [] for d in g.get("description") or []}
+        terms = next((langs[l] for l in ("ro", "en") if langs.get(l)), None) or next(iter(langs.values()), [])
+        goods.append({
+            "niceClass": str(g.get("classNumber", "")),
+            "goodsAndServices": "; ".join(t.strip() for t in terms if t and t.strip()),
+        })
+    return {
+        "goodAndServices":       goods,
+        "publicationDate":       b.get("publicationDate") or "",
+        "markCurrentStatusCode": b.get("status") or "",
+        "markCurrentStatusDate": b.get("statusDate") or "",
+        "markFeature":           b.get("markFeature") or "",
+        "kindMark":              b.get("markKind") or "",
+        "oppositionStartDate":   b.get("oppositionPeriodStartDate") or "",
+        "oppositionEndDate":     b.get("oppositionPeriodEndDate") or "",
+        "viennaCodes":           (b.get("markImage") or {}).get("viennaClasses") or [],
+    }
+
+
+def _euipo_api_detail(app_num: str):
+    """Detaliul unei mărci din API-ul EUIPO. Întoarce dict (găsită), {} (404 — nu există) sau
+    None (eroare trecătoare: rețea, 429, 5xx — se reîncearcă mai târziu)."""
+    import requests
+    from agents.euipo_agent import EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, _get_access_token
+
+    for attempt in range(3):
+        try:
+            r = requests.get(
+                f"{EUIPO_SEARCH_URL}/{app_num}",
+                headers={"Authorization": f"Bearer {_get_access_token()}",
+                         "X-IBM-Client-Id": EUIPO_CLIENT_ID, "Accept": "application/json"},
+                timeout=20,
+            )
+        except Exception:
+            time.sleep(1.5 * (attempt + 1))
+            continue
+        if r.status_code == 200:
+            try:
+                return _euipo_api_to_detail(r.json())
+            except Exception:
+                return None
+        if r.status_code == 404:
+            return {}
+        if r.status_code == 401:
+            try:
+                _get_access_token(force_refresh=True)
+            except Exception:
+                pass
+            continue
+        if r.status_code in (429, 500, 502, 503, 504):
+            time.sleep(2 * (attempt + 1))
+            continue
+        return None
+    return None
+
+
+async def _enrich_euipo_from_api(cache: Dict, marks: List[Dict], progress: Dict) -> Dict:
+    loop = asyncio.get_event_loop()
+    now = time.time()
+    todo = []
+    for m in marks:
+        st13 = tmview_st13("euipo", m)
+        app = str(m.get("applicationNumber") or "").strip()
+        entry = cache.get(st13) if st13 else None
+        if not st13 or not app or (entry and entry.get("detail")):
+            continue
+        if entry and now - entry.get("missing_at", 0) < RETRY_MISSING_AFTER:
+            continue
+        todo.append((st13, app))
+    todo = list(dict.fromkeys(todo))
+    progress.update({"phase": "api", "total": len(todo), "done": 0, "found": 0})
+    sem = asyncio.Semaphore(CONCURRENCY)
+    found = missing = failed = 0
+
+    async def _one(st13, app):
+        async with sem:
+            return st13, await loop.run_in_executor(None, _euipo_api_detail, app)
+
+    for i in range(0, len(todo), CHUNK):
+        results = await asyncio.gather(*(_one(st, a) for st, a in todo[i:i + CHUNK]), return_exceptions=True)
+        for res in results:
+            if isinstance(res, Exception):
+                failed += 1
+                continue
+            st13, detail = res
+            if detail:
+                # păstrăm `addr` dacă exista deja (adrese aduse înainte din TMview)
+                cache[st13] = {**(cache.get(st13) or {}), "detail": detail, "at": now}
+                found += 1
+            elif detail == {}:
+                cache[st13] = {"missing_at": time.time()}
+                missing += 1
+            else:
+                failed += 1
+        _save_cache("euipo", cache)
+        progress.update({"done": min(i + CHUNK, len(todo)), "found": found})
+    return {"fetched": found, "missing": missing, "failed": failed}
 
 
 async def enrich_bulletin_marks(source: str, marks: List[Dict], progress: Optional[Dict] = None) -> Dict:
-    """Aduce din TMview detaliul mărcilor care încă nu-l au (sau care au lipsit acum >6h)
-    și îl salvează în cache. Întoarce statistici; nu aruncă excepții."""
+    """Aduce detaliile mărcilor din buletin și le salvează în cache. Nu aruncă excepții.
+
+    OSIM: din TMview (produse/servicii, solicitanți cu adresă, reprezentanți etc.).
+    EUIPO: din API-ul EUIPO (produse/servicii în română, status, perioadă de opoziție, Viena) —
+    rapid și fără limitările TMview; apoi, pe cât se poate, adresele solicitanților și
+    reprezentanților din TMview (API-ul dă doar numele lor)."""
     from agents.search_agent import (
         AsyncSession, HAS_CURL_CFFI, TMVIEW_HOME, _build_headers, _fetch_detail, _PROXIES,
     )
     progress = progress if progress is not None else {}
     cache = _load_cache(source)
-    now = time.time()
+    stats = {"fetched": 0, "missing": 0}
+    use_api = False
+    if source == "euipo":
+        try:
+            from agents.euipo_agent import euipo_available
+            use_api = euipo_available()
+        except ImportError:
+            pass
+    if use_api:
+        stats = await _enrich_euipo_from_api(cache, marks, progress)
+        cache = _load_cache(source)
 
+    # ── TMview: detaliul complet (OSIM) sau doar adresele (EUIPO, după API) ───────────────
+    now = time.time()
     todo = []
     for m in marks:
         st13 = tmview_st13(source, m)
         if not st13:
             continue
         entry = cache.get(st13)
-        if entry and entry.get("detail"):
-            continue
-        if entry and now - entry.get("missing_at", 0) < RETRY_MISSING_AFTER:
-            continue
+        if use_api:
+            if not (entry and entry.get("detail")) or _has_address(entry):
+                continue
+            if now - entry.get("addr_missing_at", 0) < RETRY_MISSING_AFTER:
+                continue
+        else:
+            if entry and entry.get("detail"):
+                continue
+            if entry and now - entry.get("missing_at", 0) < RETRY_MISSING_AFTER:
+                continue
         todo.append(st13)
     todo = list(dict.fromkeys(todo))
 
-    progress.update({"total": len(todo), "done": 0, "found": 0})
-    if not todo or not HAS_CURL_CFFI:
-        return {**enrichment_stats(source, marks), "fetched": 0, "missing": 0}
-
-    sem = asyncio.Semaphore(CONCURRENCY)
-    found = missing = 0
-    empty_batches = 0     # grupuri consecutive fără niciun răspuns — TMview ne limitează cererile
+    progress.update({"phase": "tmview", "total": len(todo), "done": 0, "found": 0})
     blocked = False
+    found = missing = 0
+    if todo and HAS_CURL_CFFI:
+        sem = asyncio.Semaphore(CONCURRENCY)
+        empty_batches = 0   # grupuri consecutive fără niciun răspuns — TMview ne limitează cererile
 
-    async def _one(session, st13):
-        async with sem:
-            return st13, await _fetch_detail(session, st13)
+        async def _one(session, st13):
+            async with sem:
+                return st13, await _fetch_detail(session, st13)
 
-    async with AsyncSession(impersonate="chrome120", proxies=_PROXIES,
-                            verify=not bool(_PROXIES)) as session:
-        for _try in range(2):
-            try:
-                await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
-                break
-            except Exception:
-                await asyncio.sleep(1.5)
+        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES,
+                                verify=not bool(_PROXIES)) as session:
+            for _try in range(2):
+                try:
+                    await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
+                    break
+                except Exception:
+                    await asyncio.sleep(1.5)
 
-        for i in range(0, len(todo), CHUNK):
-            batch = todo[i:i + CHUNK]
-            results = await asyncio.gather(*(_one(session, s) for s in batch), return_exceptions=True)
-            ok = [r for r in results if not isinstance(r, Exception)]
-            # Dacă niciun răspuns din grup n-a adus detaliu, e probabil TMview blocat/instabil,
-            # nu mărci absente — nu le marcăm ca „lipsă”, ca să fie reîncercate la următorul tick.
-            batch_reachable = any(d for _, d in ok)
-            empty_batches = 0 if batch_reachable else empty_batches + 1
-            for st13, detail in ok:
-                if detail:
-                    cache[st13] = {"detail": detail, "at": now}
-                    found += 1
-                elif batch_reachable:
-                    cache[st13] = {"missing_at": time.time()}
-                    missing += 1
-            _save_cache(source, cache)
-            progress.update({"done": min(i + CHUNK, len(todo)), "found": found})
-            if empty_batches >= 2 and i + CHUNK < len(todo):
-                # Continuarea ar lovi degeaba un TMview care refuză; restul rămân necache-uite
-                # și sunt reîncercate la următoarea rulare (programator sau deschidere tabel).
-                blocked = True
-                progress["blocked"] = True
-                print(f"[BULLETIN-ENRICH] {source}: TMview nu răspunde — opresc la {i + CHUNK}/{len(todo)}")
-                break
+            for i in range(0, len(todo), CHUNK):
+                batch = todo[i:i + CHUNK]
+                results = await asyncio.gather(*(_one(session, st) for st in batch), return_exceptions=True)
+                ok = [r for r in results if not isinstance(r, Exception)]
+                # Dacă niciun răspuns din grup n-a adus detaliu, e probabil TMview blocat/instabil,
+                # nu mărci absente — nu le marcăm ca „lipsă”, ca să fie reîncercate la următorul tick.
+                batch_reachable = any(d for _, d in ok)
+                empty_batches = 0 if batch_reachable else empty_batches + 1
+                for st13, detail in ok:
+                    if detail and use_api:
+                        cache[st13] = {**cache[st13], "addr": {
+                            "applicants_detail":   detail.get("applicants_detail"),
+                            "representatives":     detail.get("representatives"),
+                            "officeUrl":           detail.get("officeUrl"),
+                            "designatedCountries": detail.get("designatedCountries"),
+                        }}
+                        found += 1
+                    elif detail:
+                        cache[st13] = {"detail": detail, "at": now}
+                        found += 1
+                    elif batch_reachable:
+                        if use_api:
+                            cache[st13] = {**cache[st13], "addr_missing_at": time.time()}
+                        else:
+                            cache[st13] = {"missing_at": time.time()}
+                        missing += 1
+                _save_cache(source, cache)
+                progress.update({"done": min(i + CHUNK, len(todo)), "found": found})
+                if empty_batches >= 2 and i + CHUNK < len(todo):
+                    # Continuarea ar lovi degeaba un TMview care refuză; restul rămân necache-uite
+                    # și sunt reîncercate la următoarea rulare (programator sau deschidere tabel).
+                    blocked = True
+                    progress["blocked"] = True
+                    print(f"[BULLETIN-ENRICH] {source}: TMview nu răspunde — opresc la {i + CHUNK}/{len(todo)}")
+                    break
 
+    if use_api:
+        return {**enrichment_stats(source, marks), **stats, "addresses_fetched": found, "blocked": blocked}
     return {**enrichment_stats(source, marks), "fetched": found, "missing": missing, "blocked": blocked}
