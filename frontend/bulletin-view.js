@@ -60,7 +60,9 @@ function bulletinExtraFieldsHtml(m) {
   const opp    = (m.oppositionStartDate || m.oppositionEndDate)
     ? `${_bEsc(_bD10(m.oppositionStartDate)) || "?"} → ${_bEsc(_bD10(m.oppositionEndDate)) || "?"}` : "";
   const _arr   = v => (Array.isArray(v) ? v : (v ? [v] : []));   // OSIM dă viennaClasses ca text
-  const vienna = [..._arr(m.viennaCodes), ..._arr(m.viennaClasses)].filter(Boolean);
+  // TMview și buletinul dau aceleași coduri Viena în forme diferite — le unificăm, fără dubluri
+  const vienna = [...new Set([..._arr(m.viennaCodes), ..._arr(m.viennaClasses)]
+    .flatMap(v => String(v).split(/[;,]\s*/)).map(v => v.trim()).filter(Boolean))];
   const nature = [m.markFeature, m.kindMark].filter(Boolean).join(" · ");
   const officeUrl = /^https?:\/\//i.test(m.officeUrl || "")
     ? `<a href="${_bEsc(m.officeUrl)}" target="_blank" rel="noopener">Deschide dosarul</a>` : "";
