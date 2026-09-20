@@ -18,6 +18,17 @@ def _get_scheduler() -> AsyncIOScheduler:
     return _scheduler
 
 
+async def _auto_enrich(source: str, date_str: str):
+    """Aduce din TMview detaliile complete ale mărcilor din buletin (ca în aplicația de
+    verificare) înainte de comparație, ca tabelul să le afișeze de la prima deschidere."""
+    from routes.monitor import run_bulletin_enrich
+    try:
+        res = await run_bulletin_enrich(source, date_str)
+        print(f"[SCHEDULER] Detalii buletin {source} {date_str}: {res}")
+    except Exception as e:
+        print(f"[SCHEDULER] Eroare detalii buletin ({source} {date_str}): {e}")
+
+
 async def _auto_compare(source: str, date_str: str):
     """Pornește automat comparația buletin↔monitorizare (ca tabelul să fie deja
     gata în UI, fără click pe „Compară"). Apelat doar când buletinul pentru
@@ -81,6 +92,7 @@ async def _prefetch_bulletins():
     # dura 1-4+ minute (uneori mai mult, pe conexiune instabilă); OSIM nu are de ce
     # să aștepte după el doar pentru că sunt în aceeași funcție.
     for slug in new_osim:
+        await _auto_enrich("osim", slug.removeprefix("osim-"))
         await _auto_compare("osim", slug.removeprefix("osim-"))
 
     # ── EUIPO ── (evită coliziunea cu un fetch pornit manual din UI — ambele
@@ -106,6 +118,7 @@ async def _prefetch_bulletins():
         new_euipo = sorted(_ok_euipo_slugs(_euipo_processed()) - before_euipo)
 
     for slug in new_euipo:
+        await _auto_enrich("euipo", slug.removeprefix("euipo-"))
         await _auto_compare("euipo", slug.removeprefix("euipo-"))
     if new_osim or new_euipo:
         await _auto_run_all_watches()

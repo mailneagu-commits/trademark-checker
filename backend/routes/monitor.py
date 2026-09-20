@@ -389,6 +389,9 @@ def bulletin_status():
     }
 
 
+from scrapers.bulletin_enrich import apply_cached_detail, enrich_bulletin_marks, enrichment_stats
+
+
 def _load_bulletin_marks(source: str, date: str) -> List[Dict]:
     """Încarcă mărcile dintr-un buletin deja descărcat (OSIM sau EUIPO), fără
     să pornească vreo descărcare — folosit atât de /bulletin-marks cât și de
@@ -408,7 +411,7 @@ def _load_bulletin_marks(source: str, date: str) -> List[Dict]:
         pdf     = os.path.join(CACHE_DIR, f"{slug}.pdf")
         if not os.path.exists(pdf):
             raise HTTPException(404, "Buletinul OSIM pentru această dată nu a fost descărcat încă.")
-        return parse_pdf_cached(pdf, slug)
+        return apply_cached_detail("osim", parse_pdf_cached(pdf, slug))
 
     elif source == "euipo":
         from scrapers.euipo_bulletin import is_bulletin_cached, should_run_sync, fetch_euipo_for_date
@@ -422,7 +425,7 @@ def _load_bulletin_marks(source: str, date: str) -> List[Dict]:
         marks, info = fetch_euipo_for_date(td, skip_pdf)
         if not marks and info.get("status") not in ("ok_api", "ok_bulletin"):
             raise HTTPException(404, info.get("error") or "Buletinul EUIPO pentru această dată nu a fost descărcat încă.")
-        return marks
+        return apply_cached_detail("euipo", marks)
 
     else:
         raise HTTPException(400, "source trebuie să fie 'osim' sau 'euipo'")
@@ -436,7 +439,54 @@ def get_bulletin_marks(source: str, date: str):
     date: 'YYYY-MM-DD'
     """
     marks = _load_bulletin_marks(source, date)
-    return {"source": source, "date": date, "total": len(marks), "marks": marks}
+    return {"source": source, "date": date, "total": len(marks), "marks": marks,
+            "enriched": sum(1 for m in marks if m.get("_detail_enriched"))}
+
+
+_enrich_jobs: dict = {}   # "source:date" -> {"running": bool, "progress": dict, "result": dict|None, "error": str|None}
+
+
+async def run_bulletin_enrich(source: str, date: str) -> Dict:
+    """Aduce din TMview detaliile complete ale mărcilor din buletin (produse/servicii,
+    date, solicitanți/reprezentanți structurați etc.), ca în aplicația de verificare."""
+    key = f"{source}:{date}"
+    job = _enrich_jobs.get(key)
+    if job and job.get("running"):
+        return {"status": "already_running", "progress": job["progress"]}
+    marks = _load_bulletin_marks(source, date)
+    progress: dict = {}
+    _enrich_jobs[key] = {"running": True, "progress": progress, "result": None, "error": None}
+    try:
+        result = await enrich_bulletin_marks(source, marks, progress)
+        _enrich_jobs[key] = {"running": False, "progress": progress, "result": result, "error": None}
+        return {"status": "done", **result}
+    except Exception as e:
+        _enrich_jobs[key] = {"running": False, "progress": progress, "result": None, "error": str(e)}
+        return {"status": "error", "error": str(e)}
+
+
+@router.post("/bulletin-enrich/start")
+async def start_bulletin_enrich(source: str, date: str):
+    import asyncio
+    key = f"{source}:{date}"
+    job = _enrich_jobs.get(key)
+    if job and job.get("running"):
+        return {"status": "already_running", "progress": job["progress"]}
+    _load_bulletin_marks(source, date)   # 404/425 imediat dacă buletinul nu e gata
+    asyncio.ensure_future(run_bulletin_enrich(source, date))
+    return {"status": "started"}
+
+
+@router.get("/bulletin-enrich/status")
+def bulletin_enrich_status(source: str, date: str):
+    job = _enrich_jobs.get(f"{source}:{date}")
+    if not job:
+        return {"status": "not_started", **enrichment_stats(source, _load_bulletin_marks(source, date))}
+    if job.get("running"):
+        return {"status": "running", "progress": job["progress"]}
+    if job.get("error"):
+        return {"status": "error", "error": job["error"]}
+    return {"status": "done", **job["result"]}
 
 
 def _compute_bulletin_compare(source: str, date: str) -> Dict:
