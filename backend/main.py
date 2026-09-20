@@ -82,6 +82,33 @@ async def set_curl(request: CurlRequest):
     return {"status": "ok", "message": "Sesiune TMview activată. Căutările vor folosi acum sesiunea ta de browser."}
 
 
+@app.get("/api/debug-euipo-raw")
+async def debug_euipo_raw(query: str = "", size: int = 3, page: int = 0):
+    """Rulează un query RSQL brut pe EUIPO Search API și arată câmpurile întoarse
+    (folosit ca să aflăm după ce câmpuri se poate filtra, ex. data publicării)."""
+    from agents.euipo_agent import EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, euipo_available, _get_access_token
+    if not euipo_available():
+        return {"error": "EUIPO not configured"}
+    import requests as _rq
+    hdrs = {"Authorization": f"Bearer {_get_access_token()}", "X-IBM-Client-Id": EUIPO_CLIENT_ID, "Accept": "application/json"}
+    params = {"size": size, "page": page}
+    if query:
+        params["query"] = query
+    r = _rq.get(EUIPO_SEARCH_URL, headers=hdrs, params=params, timeout=30)
+    out = {"status": r.status_code, "query": query}
+    try:
+        d = r.json()
+    except Exception:
+        out["body"] = r.text[:500]
+        return out
+    tms = d.get("trademarks") or []
+    out["count"] = len(tms)
+    out["top_level_keys"] = [k for k in d.keys() if k != "trademarks"]
+    out["meta"] = {k: d[k] for k in d.keys() if k != "trademarks"}
+    out["first"] = tms[0] if tms else d if r.status_code != 200 else None
+    return out
+
+
 @app.get("/api/debug-euipo-query")
 async def debug_euipo_query(name: str, nc: str = ""):
     """Testează mai multe variante de formatare RSQL pentru un nume cu spații —
