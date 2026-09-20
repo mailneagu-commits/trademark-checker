@@ -117,6 +117,16 @@ def _describe_classes(mark: Dict) -> Dict:
     return mark
 
 
+def _reps_names_only(mark: Dict) -> Dict:
+    """Reprezentanții se afișează doar cu numele (fără adrese), la ambele buletine."""
+    mark.pop("representativeAddress", None)
+    reps = mark.get("representatives") or []
+    if reps:
+        names = [(r.get("fullName") or r.get("name") or r.get("organizationName") or "").strip() for r in reps]
+        mark["representatives"] = [{"name": n} for n in dict.fromkeys(names) if n]
+    return mark
+
+
 def apply_cached_detail(source: str, marks: List[Dict], bulletin_date: Optional[str] = None) -> List[Dict]:
     """Combină mărcile din buletin cu detaliile deja aduse (doar din cache, fără rețea) și
     adaugă descrierea claselor. `bulletin_date` (YYYY-MM-DD) devine data publicării când
@@ -130,7 +140,7 @@ def apply_cached_detail(source: str, marks: List[Dict], bulletin_date: Optional[
         merged = _merge(m, detail) if detail else dict(m)
         if bulletin_date and not merged.get("publicationDate"):
             merged["publicationDate"] = bulletin_date
-        out.append(_describe_classes(merged))
+        out.append(_reps_names_only(_describe_classes(merged)))
     return out
 
 

@@ -18,16 +18,14 @@ function bulletinApplicantsHtml(m) {
   return (names + (m.applicantAddress ? `<div style="font-size:.75rem;color:#777;">${_bEsc(m.applicantAddress)}</div>` : "")) || "—";
 }
 
-// (740) Reprezentant — nume + adresă
+// (740) Reprezentant — doar numele (fără adresă)
 function bulletinRepsHtml(m) {
-  if ((m.representatives || []).length) {
-    return m.representatives.map(r =>
-      `<div style="margin-bottom:4px;"><strong>${_bEsc(r.fullName || r.name || r.organizationName) || "—"}</strong>${(r.fullAddress || r.address) ? '<br><span style="font-size:.75rem;color:#777;">' + _bEsc(r.fullAddress || r.address) + '</span>' : ''}</div>`
-    ).join("");
-  }
-  return m.representative
-    ? `<div><strong>${_bEsc(m.representative)}</strong>${m.representativeAddress ? '<br><span style="font-size:.75rem;color:#777;">' + _bEsc(m.representativeAddress) + '</span>' : ''}</div>`
-    : "—";
+  const names = (m.representatives || [])
+    .map(r => r.fullName || r.name || r.organizationName || "")
+    .concat(m.representative ? [m.representative] : [])
+    .map(n => String(n).trim()).filter(Boolean);
+  const uniq = [...new Set(names)];
+  return uniq.length ? uniq.map(n => `<div><strong>${_bEsc(n)}</strong></div>`).join("") : "—";
 }
 
 // (511) Clase descrise: fiecare clasă din depunere, cu titlul NISA, lista de
