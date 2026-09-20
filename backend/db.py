@@ -37,7 +37,23 @@ def get_db():
         db.close()
 
 
+def _ensure_columns():
+    """create_all nu adaugă coloane noi în tabele deja create — le adăugăm aici (SQLite/PostgreSQL),
+    ca o bază de date existentă să continue să funcționeze după ce modelul primește câmpuri noi."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "watch_items" not in insp.get_table_names():
+        return
+    have = {c["name"] for c in insp.get_columns("watch_items")}
+    for name in ("publication_date", "representative_name"):
+        if name not in have:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE watch_items ADD COLUMN {name} VARCHAR"))
+            print(f"[DB] Coloană adăugată: watch_items.{name}")
+
+
 def init_db():
     from monitor_models import WatchItem, SeenTrademark, AlertLog  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    _ensure_columns()
     print(f"[DB] Using: {'PostgreSQL' if _pg_url else 'SQLite'}")

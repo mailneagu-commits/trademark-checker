@@ -18,6 +18,8 @@ class WatchItem(Base):
     application_number = Column(String, nullable=True)  # (210) Nr. Depozit / Nr. Cerere
     registration_number = Column(String, nullable=True)  # (111) Nr. Înregistrare
     filing_date        = Column(String, nullable=True)  # (220) Data depunerii, "YYYY-MM-DD"
+    publication_date   = Column(String, nullable=True)  # (442) Data publicării, "YYYY-MM-DD"
+    representative_name = Column(String, nullable=True)  # (740) Reprezentant — doar numele
     active             = Column(Boolean, default=True)
     created_at         = Column(DateTime, default=datetime.utcnow)
     last_checked_at    = Column(DateTime, nullable=True)

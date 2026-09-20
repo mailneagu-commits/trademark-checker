@@ -32,6 +32,8 @@ class WatchItemCreate(BaseModel):
     application_number: str  = ""
     registration_number: str = ""
     filing_date:        str  = ""
+    publication_date:   str  = ""
+    representative_name: str = ""
 
 
 class WatchItemOut(BaseModel):
@@ -46,6 +48,8 @@ class WatchItemOut(BaseModel):
     application_number: Optional[str] = None
     registration_number: Optional[str] = None
     filing_date:        Optional[str] = None
+    publication_date:   Optional[str] = None
+    representative_name: Optional[str] = None
     active:             bool
     created_at:         datetime
     last_checked_at:    Optional[datetime]
@@ -235,21 +239,21 @@ def download_template():
     ws = wb.active
     ws.title = "Mărci de monitorizat"
 
-    # Ordinea coloanelor urmează codul INID (WIPO ST.60) numeric ascendent, pentru
-    # câmpurile care au un cod corespunzător: (511) Clase NICE, (540) Denumire Marcă
-    # + Imagine (aceeași reprezentare a mărcii, text și grafic), (731) Titular —
-    # apoi câmpurile specifice aplicației, fără cod INID.
+    # Aceeași ordine ca în tabelele cu rezultate din buletine: (210) · Imagine · (220) · (442) ·
+    # (541) · (731) · (740) · (511), apoi câmpurile specifice monitorizării, fără cod INID.
     headers = [
-        "(511) Clase NICE (separate prin virgulă)*",
-        "(540) Denumire Marcă*",
-        "(540) Imagine (opțional — logo de referință)",
+        "(210) Nr. Depozit (opțional)",
+        "Imagine (opțional — logo de referință)",
+        "(220) Data depunerii (opțional)",
+        "(442) Data publicării (opțional)",
+        "(541) Denumire Marcă*",
         "(731) Titular",
+        "(740) Reprezentant (doar numele)",
+        "(511) Clase NICE (separate prin virgulă)*",
         "Teritorii (separate prin virgulă)*",
         "Email notificare*",
         "Frecvență (daily/weekly/monthly)",
-        "(210) Nr. Depozit (opțional)",
         "(111) Nr. Înregistrare (opțional)",
-        "(220) Data depunerii (opțional)",
     ]
 
     header_fill   = PatternFill("solid", fgColor="1A3C5E")
@@ -258,7 +262,7 @@ def download_template():
         left=Side(style="thin"), right=Side(style="thin"),
         top=Side(style="thin"), bottom=Side(style="thin"),
     )
-    col_widths = [35, 30, 30, 30, 30, 35, 30, 24, 24, 24]
+    col_widths = [22, 30, 22, 22, 30, 30, 30, 26, 26, 32, 22, 24]
 
     for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
         cell            = ws.cell(row=1, column=col_idx, value=header)
@@ -272,8 +276,8 @@ def download_template():
     ws.row_dimensions[2].height = 60   # loc pentru o imagine mică în celula exemplu
 
     # Example row
-    example = ["35, 42", "ACME", "", "ACME România SRL", "RO, EM", "office@firma.ro", "weekly",
-               "019301780", "", "2025-03-12"]
+    example = ["019301780", "", "2025-03-12", "2025-06-18", "ACME", "ACME România SRL", "Cabinet Avocat SRL",
+               "35, 42", "RO, EM", "office@firma.ro", "weekly", ""]
     example_fill = PatternFill("solid", fgColor="EBF5FB")
     for col_idx, val in enumerate(example, start=1):
         cell           = ws.cell(row=2, column=col_idx, value=val)
@@ -282,19 +286,19 @@ def download_template():
         cell.alignment = Alignment(vertical="center")
 
     # Note row
-    ws.cell(row=3, column=1, value="* câmpuri obligatorii")
+    ws.cell(row=3, column=1, value="* câmpuri obligatorii (denumire, clase, teritorii, email)")
     ws.cell(row=3, column=1).font = Font(italic=True, color="888888")
     ws.cell(row=4, column=1, value="Teritorii acceptate: RO, EM, EU, DE, FR, IT, ES, UK, US, WO (sau orice cod de țară din TMview)")
     ws.cell(row=4, column=1).font = Font(italic=True, color="888888")
-    ws.merge_cells("A4:J4")
+    ws.merge_cells("A4:L4")
     ws.cell(row=5, column=1,
             value='Imagine: inserați logo-ul direct în celulă (Excel: Insert → Pictures → Place in Cell), în dreptul mărcii — folosit pentru comparație vizuală cu mărcile din buletine.')
     ws.cell(row=5, column=1).font = Font(italic=True, color="888888")
-    ws.merge_cells("A5:J5")
+    ws.merge_cells("A5:L5")
     ws.cell(row=6, column=1,
-            value='Nr. Depozit / Nr. Înregistrare / Data depunerii: opționale, dar recomandate — dacă două rânduri au aceeași denumire, aceleași clase și aceeași imagine, sunt considerate aceeași marcă și nu se importă de două ori, ÎN AFARĂ de cazul în care au numere de depozit/înregistrare diferite (atunci sunt tratate ca mărci distincte, chiar dacă arată identic).')
+            value='Notă: Nr. Depozit / Nr. Înregistrare / Data depunerii: opționale, dar recomandate — dacă două rânduri au aceeași denumire, aceleași clase și aceeași imagine, sunt considerate aceeași marcă și nu se importă de două ori, ÎN AFARĂ de cazul în care au numere de depozit/înregistrare diferite (atunci sunt tratate ca mărci distincte, chiar dacă arată identic).')
     ws.cell(row=6, column=1).font = Font(italic=True, color="888888")
-    ws.merge_cells("A6:J6")
+    ws.merge_cells("A6:L6")
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -307,6 +311,50 @@ def download_template():
 
 
 # ── Excel import ──────────────────────────────────────────────────────────────
+
+def _norm_header(h) -> str:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(h or "")).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"\s+", " ", t).strip()
+
+
+# câmp -> cuvinte cheie (cod INID sau denumire), în ordinea de verificare
+_HEADER_KEYS = [
+    ("image",               ("imagine",)),
+    ("application_number",  ("(210)", "nr. depozit", "nr depozit")),
+    ("registration_number", ("(111)", "nr. inregistrare", "nr inregistrare")),
+    ("filing_date",         ("(220)", "data depunerii")),
+    ("publication_date",    ("(442)", "data publicarii")),
+    ("name",                ("(541)", "(540)", "denumire")),
+    ("holder",              ("(731)", "titular")),
+    ("representative",      ("(740)", "reprezentant")),
+    ("classes",             ("(511)", "clase")),
+    ("offices",             ("teritorii",)),
+    ("email",               ("email",)),
+    ("frequency",           ("frecven",)),
+]
+
+# ordinea veche a fișierului (înainte de reordonare) — pentru fișiere fără antet recunoscut
+_LEGACY_COLUMNS = {"classes": 0, "name": 1, "image": 2, "holder": 3, "offices": 4, "email": 5,
+                   "frequency": 6, "application_number": 7, "registration_number": 8, "filing_date": 9}
+
+
+def _map_columns(header_row) -> dict:
+    """Câmp -> index de coloană, după antet (cod INID sau denumire), deci fișierul poate avea
+    coloanele în orice ordine. Dacă antetul nu conține câmpurile obligatorii, folosim ordinea veche."""
+    mapping: dict = {}
+    for idx, cell in enumerate(header_row or []):
+        h = _norm_header(cell)
+        if not h:
+            continue
+        for field, keys in _HEADER_KEYS:
+            if field not in mapping and any(k in h for k in keys):
+                mapping[field] = idx
+                break
+    if not {"name", "classes", "email"} <= set(mapping):
+        return dict(_LEGACY_COLUMNS)
+    return mapping
+
 
 def _parse_classes(raw: str) -> List[str]:
     return [c.strip() for c in re.split(r"[,;\s]+", str(raw)) if c.strip().isdigit()]
@@ -852,6 +900,12 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
         for w in db.query(WatchItem).all()
     ]
 
+    cols = _map_columns(next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ()))
+
+    def _cell(row, field):
+        i = cols.get(field)
+        return row[i] if i is not None and i < len(row) else None
+
     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         has_image = row_idx in images_by_row
         if (not row or all(v is None for v in row)) and not has_image:
@@ -859,20 +913,21 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
         # Skip note rows (first cell starts with "*" or is italic note)
         first = str(row[0] or "").strip()
-        if first.startswith("*") or first.startswith("Teritorii") or first.startswith("Imagine:") or first.startswith("câmp"):
+        if first.startswith(("*", "Teritorii", "Imagine:", "câmp", "Notă:", "Nr. Depozit /")):
             continue
 
-        # Ordinea coincide cu antetul: (511) Clase NICE, (540) Denumire Marcă,
-        # (540) Imagine, (731) Titular, apoi câmpurile fără cod INID.
-        nice_classes_raw   = str(row[0] or "").strip() if len(row) > 0 else ""
-        trademark_name     = str(row[1] or "").strip() if len(row) > 1 else ""
-        holder_name        = str(row[3] or "").strip() if len(row) > 3 else ""
-        offices_raw        = str(row[4] or "").strip() if len(row) > 4 else ""
-        notification_email = str(row[5] or "").strip() if len(row) > 5 else ""
-        frequency_raw      = str(row[6] or "").strip() if len(row) > 6 else "weekly"
-        application_number = str(row[7] or "").strip() if len(row) > 7 else ""
-        registration_number = str(row[8] or "").strip() if len(row) > 8 else ""
-        filing_date         = _parse_filing_date(row[9] if len(row) > 9 else None)
+        # Coloanele se găsesc după antet (vezi _map_columns), nu după poziție.
+        nice_classes_raw    = str(_cell(row, "classes") or "").strip()
+        trademark_name      = str(_cell(row, "name") or "").strip()
+        holder_name         = str(_cell(row, "holder") or "").strip()
+        representative_name = str(_cell(row, "representative") or "").strip()
+        offices_raw         = str(_cell(row, "offices") or "").strip()
+        notification_email  = str(_cell(row, "email") or "").strip()
+        frequency_raw       = str(_cell(row, "frequency") or "").strip() or "weekly"
+        application_number  = str(_cell(row, "application_number") or "").strip()
+        registration_number = str(_cell(row, "registration_number") or "").strip()
+        filing_date         = _parse_filing_date(_cell(row, "filing_date"))
+        publication_date    = _parse_filing_date(_cell(row, "publication_date"))
 
         if not trademark_name:
             skipped.append({"row": row_idx, "reason": "Denumire marcă lipsă"})
@@ -927,6 +982,8 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
             application_number  = application_number or None,
             registration_number = registration_number or None,
             filing_date         = filing_date or None,
+            publication_date    = publication_date or None,
+            representative_name = representative_name or None,
         )
         db.add(item)
         imported.append({"row": row_idx, "trademark": trademark_name, "email": notification_email})

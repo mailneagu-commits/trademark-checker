@@ -2874,7 +2874,7 @@ function renderWatches(items) {
     return `
       <tr>
         <td style="text-align:center;">${img}</td>
-        <td><strong>${it.trademark_name}</strong>${it.holder_name?'<br><span style="font-size:.75rem;color:#888;">'+it.holder_name+'</span>':''}</td>
+        <td><strong>${it.trademark_name}</strong>${it.holder_name?'<br><span style="font-size:.75rem;color:#888;">'+it.holder_name+'</span>':''}${it.representative_name?'<br><span style="font-size:.72rem;color:#aaa;">Repr.: '+it.representative_name+'</span>':''}</td>
         <td>${classes}</td>
         <td>${offices}</td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${it.notification_email}">${it.notification_email}</td>
