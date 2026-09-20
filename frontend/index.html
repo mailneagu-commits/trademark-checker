@@ -2457,15 +2457,15 @@ function renderBulletinMarks(source, data) {
     const img = m.markImageURI
       ? `<img src="${_bEsc(m.markImageURI)}" alt="" style="max-height:52px;max-width:110px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
       : "—";
-    const extra = `<tr class="bm-detail" style="display:none;"><td colspan="8" style="padding:4px 10px 12px;border-bottom:2px solid #d0d9ea;"><div style="background:#f7f9fc;border-radius:8px;padding:12px 14px;">${bulletinExtraFieldsHtml(m)}</div></td></tr>`;
+    const extra = `<tr class="bm-detail" style="display:none;"><td colspan="8" style="padding:4px 10px 12px;border-bottom:2px solid #d0d9ea;">${bulletinMarkDetailHtml(m)}</td></tr>`;
     return `<tr class="bm-main">
       <td style="${td}font-size:.8rem;white-space:nowrap;">${_bEsc(m.applicationNumber) || "—"}<br>
         <button class="btn-sm" style="margin-top:5px;padding:2px 7px;font-size:.68rem;"
-          onclick="const d=this.closest('tr').nextElementSibling;const o=d.style.display==='none';d.style.display=o?'':'none';this.textContent=o?'▲ Alte date':'▼ Alte date';">▼ Alte date</button></td>
+          onclick="const d=this.closest('tr').nextElementSibling;const o=d.style.display==='none';d.style.display=o?'':'none';this.textContent=o?'▲ Detalii':'▼ Detalii';">▼ Detalii</button></td>
       <td style="${td}text-align:center;">${img}</td>
       <td style="${td}font-size:.8rem;white-space:nowrap;">${_bEsc(_bD10(m.applicationDate)) || "—"}</td>
       <td style="${td}font-size:.8rem;white-space:nowrap;">${_bEsc(_bD10(m.publicationDate)) || "—"}</td>
-      <td style="${td}font-weight:600;"><a href="${_bEsc(bulletinMarkUrl(source, data.date, m.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca cu toate datele și clasele descrise" style="color:#0f3460;text-decoration:none;border-bottom:1px dashed #0f3460;">${_bEsc(m.tmName) || "—"} ↗</a></td>
+      <td style="${td}font-weight:600;"><a href="${_bEsc(bulletinMarkUrl(source, data.date, m.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca într-o pagină nouă" style="color:#0f3460;text-decoration:none;border-bottom:1px dashed #0f3460;">${_bEsc(m.tmName) || "—"}</a></td>
       <td style="${td}font-size:.78rem;">${bulletinApplicantsHtml(m)}</td>
       <td style="${td}font-size:.78rem;">${bulletinRepsHtml(m)}</td>
       <td style="${td}font-size:.85rem;font-weight:600;">${_bEsc(bulletinClassNumbers(m))}</td>
@@ -2602,7 +2602,7 @@ function _renderBulletinCompare(data) {
       : "—";
     const riskColor = { very_high:"#c0392b", high:"#e74c3c", medium:"#e67e22", low:"#e67e22" }[r.risk_level] || "#888";
     const extra = r.bulletin_mark
-      ? `<tr style="display:none;"><td colspan="14" style="padding:4px 12px 12px;border-bottom:2px solid #d0d9ea;"><div style="background:#f7f9fc;border-radius:8px;padding:12px 14px;">${bulletinExtraFieldsHtml(bm)}</div></td></tr>`
+      ? `<tr style="display:none;"><td colspan="14" style="padding:4px 12px 12px;border-bottom:2px solid #d0d9ea;">${bulletinMarkDetailHtml(bm)}</td></tr>`
       : "";
     return `<tr>
       <td style="${td}font-weight:700;color:${riskColor};">${r.similarity_percent}%</td>
@@ -2611,7 +2611,7 @@ function _renderBulletinCompare(data) {
       <td style="${td}">${_bEsc(_bD10(bm.applicationDate)) || "—"}</td>
       <td style="${td}">${_bEsc(_bD10(bm.publicationDate)) || "—"}</td>
       <td style="${td}font-weight:700;background:#f5faff;font-size:.82rem;">${bm.applicationNumber
-        ? `<a href="${_bEsc(bulletinMarkUrl(data.source, data.date, bm.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca cu toate datele și clasele descrise" style="color:#0f3460;text-decoration:none;border-bottom:1px dashed #0f3460;">${_bEsc(r.bulletin_name) || "—"} ↗</a>`
+        ? `<a href="${_bEsc(bulletinMarkUrl(data.source, data.date, bm.applicationNumber))}" target="_blank" rel="noopener" title="Deschide marca într-o pagină nouă" style="color:#0f3460;text-decoration:none;border-bottom:1px dashed #0f3460;">${_bEsc(r.bulletin_name) || "—"}</a>`
         : (_bEsc(r.bulletin_name) || "—")}</td>
       <td style="${td}font-size:.74rem;">${r.bulletin_mark ? bulletinApplicantsHtml(bm) : (_bEsc(r.bulletin_holder) || "—")}</td>
       <td style="${td}font-size:.74rem;">${r.bulletin_mark ? bulletinRepsHtml(bm) : (_bEsc(r.bulletin_representative) || "—")}</td>
@@ -2620,7 +2620,7 @@ function _renderBulletinCompare(data) {
       <td style="${td}">${_bEsc((r.watch_item_classes||[]).join(", ")) || "—"}</td>
       <td style="${td}">${_bEsc(r.watch_item_holder) || "—"}</td>
       <td style="${td}font-weight:700;color:${riskColor};">${r.similarity_percent}%</td>
-      <td style="${td}">${extra ? `<button class="btn-sm" style="padding:2px 6px;font-size:.66rem;" onclick="const d=this.closest('tr').nextElementSibling;const o=d.style.display==='none';d.style.display=o?'':'none';this.textContent=o?'▲ Alte date':'▼ Alte date';">▼ Alte date</button>` : ""}</td>
+      <td style="${td}">${extra ? `<button class="btn-sm" style="padding:2px 6px;font-size:.66rem;" onclick="const d=this.closest('tr').nextElementSibling;const o=d.style.display==='none';d.style.display=o?'':'none';this.textContent=o?'▲ Detalii':'▼ Detalii';">▼ Detalii</button>` : ""}</td>
     </tr>${extra}`;
   }).join("");
 
