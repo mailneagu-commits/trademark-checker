@@ -38,6 +38,7 @@ _DETAIL_FIELDS = (
     "markCurrentStatusCode", "markCurrentStatusDate", "markFeature", "kindMark",
     "oppositionStartDate", "oppositionEndDate", "viennaCodes", "designatedCountries",
     "applicants_detail", "representatives", "officeUrl",
+    "priorities", "seniorities",
 )
 
 
@@ -173,6 +174,21 @@ def _euipo_api_to_detail(b: Dict) -> Dict:
         "oppositionStartDate":   b.get("oppositionPeriodStartDate") or "",
         "oppositionEndDate":     b.get("oppositionPeriodEndDate") or "",
         "viennaCodes":           (b.get("markImage") or {}).get("viennaClasses") or [],
+        # (300) priorități revendicate și senioritățile naționale invocate (doar EUIPO)
+        "priorities": [
+            {"country": p.get("country", ""), "applicationNumber": p.get("applicationNumber", ""),
+             "applicationDate": p.get("applicationDate", ""), "partial": bool(p.get("partialIndicator")),
+             "status": p.get("status", "")}
+            for p in (b.get("priorities") or [])
+        ],
+        "seniorities": [
+            {"kind": q.get("seniorityKind", ""), "country": q.get("country", ""),
+             "applicationNumber": q.get("applicationNumber", ""),
+             "registrationNumber": q.get("registrationNumber", ""),
+             "registrationDate": q.get("registrationDate", ""), "priorityDate": q.get("priorityDate", ""),
+             "partial": bool(q.get("partialIndicator")), "status": q.get("status", "")}
+            for q in (b.get("seniorities") or [])
+        ],
     }
 
 

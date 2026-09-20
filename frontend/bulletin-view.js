@@ -51,6 +51,28 @@ function bulletinClassesHtml(m) {
   return html || '<span style="color:#aaa;">—</span>';
 }
 
+// (300) Prioritate revendicată — o linie per prioritate: țară · nr. cerere · dată
+function bulletinPrioritiesHtml(m) {
+  return (m.priorities || []).map(p => {
+    const bits = [p.country, p.applicationNumber ? "nr. " + p.applicationNumber : "", _bD10(p.applicationDate)]
+      .filter(Boolean).join(" · ");
+    return _bEsc(bits + (p.partial ? " (parțială)" : ""));
+  }).join("<br>");
+}
+
+// Senioritate invocată — o linie per senioritate: țară · tip · nr. · data înregistrării · data priorității
+function bulletinSenioritiesHtml(m) {
+  const kinds = { NATIONAL_REGISTRATION_IN_MEMBER_STATE: "înregistrare națională",
+                  INTERNATIONAL_REGISTRATION_WITH_EFFECT_IN_MEMBER_STATE: "înregistrare internațională" };
+  return (m.seniorities || []).map(q => {
+    const kind = kinds[q.kind] || String(q.kind || "").toLowerCase().replace(/_/g, " ");
+    const bits = [q.country, kind, q.registrationNumber || q.applicationNumber,
+                  q.registrationDate ? "înreg. " + _bD10(q.registrationDate) : "",
+                  q.priorityDate ? "prioritate " + _bD10(q.priorityDate) : ""].filter(Boolean).join(" · ");
+    return _bEsc(bits + (q.partial ? " (parțială)" : ""));
+  }).join("<br>");
+}
+
 // Restul datelor care nu au coloană proprie în tabel
 function bulletinExtraFieldsHtml(m) {
   const item = (label, val) =>
@@ -71,6 +93,8 @@ function bulletinExtraFieldsHtml(m) {
     item("(151) Data înregistrare", _bEsc(_bD10(m.registrationDate))),
     item("(180) Data expirare",     _bEsc(_bD10(m.expiryDate))),
     item("Perioadă opoziție",       opp),
+    item("(300) Prioritate revendicată", bulletinPrioritiesHtml(m)),
+    item("Senioritate invocată",    bulletinSenioritiesHtml(m)),
     item("(550) Natura mărcii",     _bEsc(nature)),
     item("(531) Coduri Viena",      _bEsc(vienna.join(", "))),
     item("Culori revendicate",      _bEsc(Array.isArray(m.colorsClaimed) ? m.colorsClaimed.join(", ") : m.colorsClaimed)),
