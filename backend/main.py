@@ -109,6 +109,21 @@ async def debug_euipo_raw(query: str = "", size: int = 3, page: int = 0):
     return out
 
 
+@app.get("/api/debug-euipo-detail")
+async def debug_euipo_detail(app_num: str):
+    """Răspunsul brut al API-ului EUIPO pentru o singură marcă (detaliu complet)."""
+    from agents.euipo_agent import EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, euipo_available, _get_access_token
+    if not euipo_available():
+        return {"error": "EUIPO not configured"}
+    import requests as _rq
+    hdrs = {"Authorization": f"Bearer {_get_access_token()}", "X-IBM-Client-Id": EUIPO_CLIENT_ID, "Accept": "application/json"}
+    r = _rq.get(f"{EUIPO_SEARCH_URL}/{app_num}", headers=hdrs, timeout=30)
+    try:
+        return {"status": r.status_code, "body": r.json()}
+    except Exception:
+        return {"status": r.status_code, "text": r.text[:800]}
+
+
 @app.get("/api/debug-euipo-query")
 async def debug_euipo_query(name: str, nc: str = ""):
     """Testează mai multe variante de formatare RSQL pentru un nume cu spații —
