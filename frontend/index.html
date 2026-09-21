@@ -453,8 +453,14 @@
     <div id="exportQuickBar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:14px; padding:12px 14px; border:1.5px solid #d9e3f1; border-radius:10px; background:#fbfcfe; opacity:.55; pointer-events:none;">
       <strong style="font-size:.9rem;color:#0f3460;">📤 Export și monitorizare</strong>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn-export" id="quickExportExcel" onclick="doExport('excel')">📥 Export Excel</button>
-        <button class="btn-export" id="quickExportPdf" onclick="doExport('pdf')">📄 Export PDF</button>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <button class="btn-export" id="quickExportExcel" onclick="doExport('excel')">📥 Export Excel</button>
+          <div id="excelExportDuration" style="font-size:.72rem;color:#888;min-height:14px;padding-left:2px;"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <button class="btn-export" id="quickExportPdf" onclick="doExport('pdf')">📄 Export PDF</button>
+          <div id="pdfExportDuration" style="font-size:.72rem;color:#888;min-height:14px;padding-left:2px;"></div>
+        </div>
         <div style="display:flex;flex-direction:column;gap:2px;">
           <div style="display:flex;align-items:center;gap:6px;">
             <button class="btn-export" id="quickExportWord" onclick="doExport('word')">📝 Export Word</button>
@@ -2172,11 +2178,18 @@ async function doExport(format) {
     exportEnded = allEnded; exportTerminated = allTerminated;
   }
 
-  const durationEl = format === "word" ? document.getElementById("wordExportDuration") : null;
-  const wordBtn    = format === "word" ? document.getElementById("quickExportWord") : null;
+  const durationEl = document.getElementById(`${format}ExportDuration`);
+  const btnEl      = document.getElementById({excel: "quickExportExcel", pdf: "quickExportPdf", word: "quickExportWord"}[format]);
+  const wordBtn    = btnEl;
   const t0 = performance.now();
-  if (durationEl) durationEl.textContent = "⏳ se generează...";
+  const elapsed = () => ((performance.now() - t0) / 1000);
+  const fmtT    = sec => sec >= 60 ? `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}` : `${sec.toFixed(1)}s`;
+  // cronometru în timp real sub buton, până la finalizare
+  const paint = () => { if (durationEl) { durationEl.style.color = "#2471a3"; durationEl.textContent = `⏳ se generează… ${fmtT(elapsed())}`; } };
+  const tick = setInterval(paint, 200);
+  paint();
   if (wordBtn) wordBtn.classList.remove("export-success");
+  const failed = () => { if (durationEl) { durationEl.style.color = "#c0392b"; durationEl.textContent = `❌ eșuat după ${fmtT(elapsed())}`; } };
 
   try {
     const startRes = await fetch("/api/export/start", {
@@ -2199,7 +2212,7 @@ async function doExport(format) {
     const startData = await startRes.json().catch(()=>({}));
     if (!startRes.ok) {
       showError("Export eșuat: " + (startData.detail || startRes.status));
-      if (durationEl) durationEl.textContent = "";
+      clearInterval(tick); failed();
       return;
     }
 
@@ -2211,7 +2224,7 @@ async function doExport(format) {
     if (!res.ok) {
       const e = await res.json().catch(()=>({}));
       showError("Export eșuat: " + (e.detail || res.status));
-      if (durationEl) durationEl.textContent = "";
+      clearInterval(tick); failed();
       return;
     }
     const blob = await res.blob();
@@ -2223,14 +2236,15 @@ async function doExport(format) {
     a.download = `raport_${lastResults.query.replace(/ /g,"_")}${sel}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
-    if (durationEl) durationEl.textContent = `⏱ ${((performance.now() - t0) / 1000).toFixed(1)}s`;
+    clearInterval(tick);
+    if (durationEl) { durationEl.style.color = "#1e8449"; durationEl.textContent = `✅ gata în ${fmtT(elapsed())}`; }
     if (wordBtn) {
       wordBtn.classList.add("export-success");
       setTimeout(() => wordBtn.classList.remove("export-success"), 4000);
     }
   } catch(e) {
     showError("Eroare la export: " + e.message);
-    if (durationEl) durationEl.textContent = "";
+    clearInterval(tick); failed();
   }
 }
 
