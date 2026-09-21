@@ -51,6 +51,31 @@ class BulletinMark(Base):
     updated_at         = Column(DateTime, default=datetime.utcnow)
 
 
+class SavedCheck(Base):
+    """O verificare de disponibilitate (denumire + clase + teritorii) cu rezultatele ei complete,
+    salvată automat ca s-o putem redeschide fără să repetăm căutarea, și ștearsă când nu mai e
+    nevoie de ea. La re-verificarea aceleiași combinații se actualizează înregistrarea existentă."""
+    __tablename__ = "saved_checks"
+
+    id             = Column(Integer, primary_key=True, index=True)
+    check_key      = Column(String, unique=True, index=True, nullable=False)  # DENUMIRE|clase|teritorii
+    trademark_name = Column(String, nullable=False, index=True)
+    nice_classes   = Column(JSON, default=list)
+    offices        = Column(JSON, default=list)
+    include_expired = Column(Boolean, default=True)
+    total_found    = Column(Integer, default=0)
+    risky_count    = Column(Integer, default=0)      # risc ridicat / foarte ridicat
+    similar_count  = Column(Integer, default=0)
+    ended_count    = Column(Integer, default=0)      # încheiate / anulate / respinse
+    expired_count  = Column(Integer, default=0)
+    source         = Column(String, default="")
+    note           = Column(String, default="")      # notă liberă (client, dosar etc.)
+    check_count    = Column(Integer, default=1)      # de câte ori a fost verificată combinația
+    data           = Column(JSON, default=dict)      # rezultatul complet, exact cum îl afișează pagina
+    created_at     = Column(DateTime, default=datetime.utcnow)
+    updated_at     = Column(DateTime, default=datetime.utcnow)
+
+
 class BulletinImage(Base):
     """Imaginea unei mărci din buletin — pentru OSIM fișierul extras din PDF dispare odată cu
     containerul, iar pentru EUIPO imaginea se cere altfel live din API."""

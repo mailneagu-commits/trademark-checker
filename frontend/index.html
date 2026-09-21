@@ -514,6 +514,16 @@
 
   <div id="errorBox" class="error-msg" style="display:none;"></div>
 
+  <!-- VERIFICĂRI SALVATE (baza de date) -->
+  <div class="card" id="savedChecksCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <h2 style="margin:0;cursor:pointer;" onclick="toggleSavedChecks()">🗂 Verificări salvate <span id="savedChecksCount" style="font-weight:400;color:#888;font-size:.85rem;"></span>
+        <span id="savedChecksArrow" style="font-size:.8rem;color:#888;">▼</span></h2>
+      <span style="font-size:.75rem;color:#999;">Fiecare verificare se salvează automat; o poți redeschide fără să repeți căutarea și o ștergi când nu mai ai nevoie de ea.</span>
+    </div>
+    <div id="savedChecksBody" style="display:none;margin-top:14px;"></div>
+  </div>
+
   <!-- VARIANTS PANEL -->
   <div class="card" id="variantsCard" style="display:none;">
     <h2>🔤 Variante de căutare generate</h2>
@@ -972,6 +982,7 @@ function updateInfo() {
 
 document.addEventListener("DOMContentLoaded", () => {
   buildNiceChips(); buildCountries(); updateInfo();
+  loadSavedChecks();
   document.getElementById("niceSearch").addEventListener("input", e => buildNiceChips(e.target.value));
   checkSessionStatus();
 });
@@ -1204,35 +1215,183 @@ async function doSearch() {
     // rulează în fundal, cu reîncercări mult mai generoase decât ar suporta o
     // singură cerere sincronă, iar aici doar verificăm periodic dacă s-a terminat.
     const data = await _pollCheckJob(startData.job_id);
-    lastResults = data;
-    allResults  = data.results || [];
-    activeTab    = "all";
-    activeStatus = "all";
-    renderVariants(data.variants);
-    renderResults(data);
-    renderSimilar(data.similar || []);
-    renderEnded(data.ended_marks || []);
-    renderTerminated(data.terminated_marks || []);
-    renderExpired(
-      (data.expired_conflicts || []).concat(data.expired_similar || [])
-    );
-    // Pre-fetch detalii (reprezentant) — doar în live mode, conservativ
-    const _isLive = data.source && !data.source.startsWith("demo");
-    _prefetchGen++;                   // anulează orice prefetch anterior încă în rulare
-    _detailFetchedST13s.clear();
-    _prefetchRepsFor([
-      ...(data.results || []).map((tm, i) => ({tm, idx: i})),
-      ...(data.similar || []).map((tm, i) => ({tm, idx: `s${i}`})),
-      ...(data.ended_marks || []).map((tm, i) => ({tm, idx: `end${i}`})),
-      ...(data.terminated_marks || []).map((tm, i) => ({tm, idx: `ter${i}`})),
-      ...((data.expired_conflicts||[]).concat(data.expired_similar||[])).map((tm,i) => ({tm, idx:`exp${i}`})),
-    ], _isLive, _prefetchGen);
+    applyCheckResult(data, { fresh: true });
+    loadSavedChecks();
   } catch(e) {
     setExportControlsEnabled(false);
     showError(e.message || "Nu s-a putut contacta serverul. Asigurați-vă că backend-ul rulează pe portul 8000.");
   } finally {
     setLoading(false);
   }
+}
+
+// Afișează un rezultat de verificare (proaspăt sau redeschis din baza de date).
+function applyCheckResult(data, opts = {}) {
+  lastResults = data;
+  allResults  = data.results || [];
+  activeTab    = "all";
+  activeStatus = "all";
+  exportSel.clear(); _allCardKeys = []; updateSelBar();
+  renderVariants(data.variants);
+  renderResults(data);
+  renderSimilar(data.similar || []);
+  renderEnded(data.ended_marks || []);
+  renderTerminated(data.terminated_marks || []);
+  renderExpired(
+    (data.expired_conflicts || []).concat(data.expired_similar || [])
+  );
+  // Pre-fetch detalii (reprezentant) — doar în live mode, conservativ. La un rezultat redeschis din
+  // baza de date detaliile sunt deja salvate, deci nu mai cerem nimic.
+  const _isLive = data.source && !data.source.startsWith("demo");
+  _prefetchGen++;                   // anulează orice prefetch anterior încă în rulare
+  _detailFetchedST13s.clear();
+  if (!opts.fresh) return;
+  const gen = _prefetchGen;
+  _prefetchRepsFor([
+    ...(data.results || []).map((tm, i) => ({tm, idx: i})),
+    ...(data.similar || []).map((tm, i) => ({tm, idx: `s${i}`})),
+    ...(data.ended_marks || []).map((tm, i) => ({tm, idx: `end${i}`})),
+    ...(data.terminated_marks || []).map((tm, i) => ({tm, idx: `ter${i}`})),
+    ...((data.expired_conflicts||[]).concat(data.expired_similar||[])).map((tm,i) => ({tm, idx:`exp${i}`})),
+  ], _isLive, gen).then(() => {
+    // detaliile aduse între timp (reprezentanți etc.) se salvează în baza de date
+    if (gen === _prefetchGen && lastResults === data && data.check_id) persistCheckDetails(data);
+  });
+}
+
+async function persistCheckDetails(data) {
+  try {
+    await fetch(`/api/checks/${data.check_id}/data`, {
+      method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data),
+    });
+  } catch (e) { /* salvarea detaliilor e un plus — nu afectăm pagina */ }
+}
+
+// ---- Verificări salvate (baza de date) ----
+let _savedChecks = [];
+
+function toggleSavedChecks() {
+  const body = document.getElementById("savedChecksBody");
+  const open = body.style.display === "none";
+  body.style.display = open ? "block" : "none";
+  document.getElementById("savedChecksArrow").textContent = open ? "▲" : "▼";
+  if (open) renderSavedChecks();
+}
+
+async function loadSavedChecks() {
+  try {
+    const q = (document.getElementById("savedChecksQ") || {}).value || "";
+    const d = await (await fetch("/api/checks?q=" + encodeURIComponent(q))).json();
+    _savedChecks = d.checks || [];
+    document.getElementById("savedChecksCount").textContent = d.total ? `(${d.total})` : "";
+    if (document.getElementById("savedChecksBody").style.display !== "none") renderSavedChecks();
+  } catch (e) { /* baza de date indisponibilă — pagina de verificare merge oricum */ }
+}
+
+function renderSavedChecks() {
+  const body = document.getElementById("savedChecksBody");
+  const hadFocus = document.activeElement && document.activeElement.id === "savedChecksQ";
+  const qVal = (document.getElementById("savedChecksQ") || {}).value || "";
+  const fmt = t => t ? new Date(t + "Z").toLocaleString("ro-RO", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+  const td = "padding:7px 8px;border-bottom:1px solid #eef1f6;vertical-align:middle;";
+  const rows = _savedChecks.map(c => {
+    const risk = c.risky > 0
+      ? `<span style="color:#c0392b;font-weight:700;">${c.risky} risc ridicat</span>`
+      : '<span style="color:#1e8449;font-weight:700;">fără risc ridicat</span>';
+    const off = (c.offices || []).join(", ");
+    return `<tr>
+      <td style="${td}width:28px;"><input type="checkbox" class="sc-sel" value="${c.id}" onchange="updateSavedChecksSel()"></td>
+      <td style="${td}font-weight:700;color:#0f3460;cursor:pointer;" onclick="openSavedCheck(${c.id})" title="Deschide rezultatele">${_bEsc(c.name)}</td>
+      <td style="${td}font-size:.78rem;">${_bEsc((c.classes || []).join(", "))}</td>
+      <td style="${td}font-size:.78rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_bEsc(off)}">${_bEsc(off)}</td>
+      <td style="${td}font-size:.78rem;">${risk}<br><span style="color:#888;">${c.similar} similare · ${c.total_found} găsite</span></td>
+      <td style="${td}font-size:.74rem;color:#888;white-space:nowrap;">${fmt(c.updated_at)}${c.check_count > 1 ? `<br>verificată de ${c.check_count}×` : ""}</td>
+      <td style="${td}font-size:.76rem;min-width:140px;"><input type="text" value="${_bEsc(c.note)}" placeholder="notă…" maxlength="500"
+            onchange="saveCheckNote(${c.id}, this.value)" style="width:100%;padding:3px 6px;border:1px solid #e0e6f0;border-radius:4px;font-size:.76rem;"></td>
+      <td style="${td}white-space:nowrap;text-align:right;">
+        <button class="btn-sm" onclick="openSavedCheck(${c.id})">Deschide</button>
+        <button class="btn-sm" style="color:#c0392b;" onclick="deleteSavedCheck(${c.id})">🗑</button></td>
+    </tr>`;
+  }).join("");
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+      <input type="text" id="savedChecksQ" value="${_bEsc(qVal)}" placeholder="🔍 Caută după denumire sau notă…"
+        oninput="clearTimeout(window._scT);window._scT=setTimeout(loadSavedChecks,300)"
+        style="flex:1;min-width:200px;max-width:340px;padding:6px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.82rem;">
+      <button class="btn-sm" id="scDelSelBtn" style="color:#c0392b;display:none;" onclick="deleteSelectedChecks()">🗑 Șterge selectate</button>
+      <button class="btn-sm" onclick="deleteOldChecks()">🧹 Șterge mai vechi de… zile</button>
+    </div>
+    ${rows ? `<div style="overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;"><table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+        <thead style="background:#f0f4fa;"><tr>
+          <th style="padding:6px 8px;width:28px;"><input type="checkbox" id="scSelAll" onchange="toggleAllSavedChecks(this.checked)"></th>
+          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Denumire</th>
+          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Clase</th>
+          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Teritorii</th>
+          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Rezultat</th>
+          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Ultima verificare</th>
+          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Notă</th>
+          <th style="padding:6px 8px;"></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`
+      : '<div style="color:#aaa;font-size:.84rem;">Nicio verificare salvată încă — se salvează automat după fiecare căutare.</div>'}`;
+  if (hadFocus) { const i = document.getElementById("savedChecksQ"); i.focus(); i.setSelectionRange(qVal.length, qVal.length); }
+}
+
+function updateSavedChecksSel() {
+  const n = document.querySelectorAll(".sc-sel:checked").length;
+  const b = document.getElementById("scDelSelBtn");
+  if (b) { b.style.display = n ? "" : "none"; b.textContent = `🗑 Șterge selectate (${n})`; }
+}
+function toggleAllSavedChecks(on) {
+  document.querySelectorAll(".sc-sel").forEach(c => c.checked = on);
+  updateSavedChecksSel();
+}
+
+async function openSavedCheck(id) {
+  try {
+    const r = await fetch(`/api/checks/${id}`);
+    const d = await r.json();
+    if (!r.ok) { showError(d.detail || "Verificarea nu mai există."); loadSavedChecks(); return; }
+    // refac formularul (denumire, clase, teritorii), ca o re-verificare să fie la un click distanță
+    document.getElementById("trademarkName").value = d.name;
+    selectedNice.clear();      (d.classes || []).forEach(c => selectedNice.add(String(c)));
+    selectedCountries.clear(); (d.offices || []).forEach(c => selectedCountries.add(c));
+    buildNiceChips(document.getElementById("niceSearch").value); buildCountries(); updateInfo();
+    document.getElementById("errorBox").style.display = "none";
+    applyCheckResult(d.result, { fresh: false });
+    setExportControlsEnabled(true);
+    const card = document.getElementById("resultsCard");
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { showError(e.message); }
+}
+
+async function saveCheckNote(id, note) {
+  try { await fetch(`/api/checks/${id}`, { method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({note}) }); }
+  catch (e) {}
+}
+
+async function deleteSavedCheck(id) {
+  const c = _savedChecks.find(x => x.id === id);
+  if (!confirm(`Ștergi verificarea „${c ? c.name : id}”? Nu se poate anula.`)) return;
+  await fetch(`/api/checks/${id}`, { method: "DELETE" });
+  loadSavedChecks();
+}
+
+async function deleteSelectedChecks() {
+  const ids = [...document.querySelectorAll(".sc-sel:checked")].map(c => parseInt(c.value, 10));
+  if (!ids.length || !confirm(`Ștergi ${ids.length} verificări? Nu se poate anula.`)) return;
+  await fetch("/api/checks/delete", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ids}) });
+  loadSavedChecks();
+}
+
+async function deleteOldChecks() {
+  const v = prompt("Șterge verificările care nu au mai fost actualizate de cel puțin câte zile?", "90");
+  const days = parseInt(v, 10);
+  if (!v || isNaN(days) || days < 0) return;
+  const n = _savedChecks.filter(c => c.updated_at && (Date.now() - new Date(c.updated_at + "Z").getTime()) > days * 86400000).length;
+  if (!n) { alert(`Nicio verificare mai veche de ${days} zile.`); return; }
+  if (!confirm(`Se șterg ${n} verificări nemodificate de peste ${days} zile. Continui?`)) return;
+  await fetch("/api/checks/delete", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({older_than_days: days}) });
+  loadSavedChecks();
 }
 
 function showError(msg) {

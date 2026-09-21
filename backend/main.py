@@ -17,6 +17,7 @@ from export import build_excel, build_pdf, build_word
 from db import init_db
 from scheduler import start_scheduler, stop_scheduler
 from routes.monitor import router as monitor_router
+from routes.checks import router as checks_router, save_check
 
 
 def _ensure_data_dirs():
@@ -44,6 +45,7 @@ app.add_middleware(
 )
 
 app.include_router(monitor_router)
+app.include_router(checks_router)
 
 search_agent    = SearchAgent()
 similarity_agent = SimilarityAgent(threshold_very_high=90.0, threshold_high=75.0, threshold_medium=60.0, threshold_small=35.0)
@@ -584,7 +586,9 @@ async def _run_check(request: "SearchRequest", max_tmview_attempts: int = 3) -> 
 
 @app.post("/api/check")
 async def check_trademark(request: SearchRequest):
-    return await _run_check(request)
+    result = await _run_check(request)
+    result["check_id"] = save_check(request, result)     # salvat în baza de date (vezi „Verificări salvate”)
+    return result
 
 
 # ── Căutare ca job de fundal ───────────────────────────────────────────────
@@ -614,6 +618,7 @@ async def check_trademark_start(request: SearchRequest):
     async def _bg():
         try:
             result = await _run_check(request, max_tmview_attempts=7)
+            result["check_id"] = save_check(request, result)     # salvat în baza de date
             _check_jobs[job_id] = {"status": "done", "result": result, "error": None}
         except HTTPException as e:
             _check_jobs[job_id] = {"status": "error", "result": None, "error": e.detail}

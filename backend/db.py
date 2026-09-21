@@ -70,7 +70,7 @@ def _ensure_columns_for(eng):
 
 
 def init_db():
-    from monitor_models import WatchItem, SeenTrademark, AlertLog, BulletinMark, BulletinImage  # noqa: F401
+    from monitor_models import WatchItem, SeenTrademark, AlertLog, BulletinMark, BulletinImage, SavedCheck  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _ensure_columns()
     print(f"[DB] Using: {'PostgreSQL' if _pg_url else 'SQLite'}")
