@@ -1310,7 +1310,10 @@ function renderSavedChecks() {
             onchange="saveCheckNote(${c.id}, this.value)" style="width:100%;padding:3px 6px;border:1px solid #e0e6f0;border-radius:4px;font-size:.76rem;"></td>
       <td style="${td}white-space:nowrap;text-align:right;">
         <button class="btn-sm" onclick="openSavedCheck(${c.id})">Deschide</button>
-        <button class="btn-sm" style="color:#c0392b;" onclick="deleteSavedCheck(${c.id})">🗑</button></td>
+        <button class="btn-sm" title="Export Word" onclick="exportSavedCheck(${c.id},'word')">📝</button>
+        <button class="btn-sm" title="Export PDF" onclick="exportSavedCheck(${c.id},'pdf')">📄</button>
+        <button class="btn-sm" title="Export Excel" onclick="exportSavedCheck(${c.id},'excel')">📥</button>
+        <button class="btn-sm" style="color:#c0392b;" onclick="deleteSavedCheck(${c.id})" title="Șterge">🗑</button></td>
     </tr>`;
   }).join("");
   body.innerHTML = `
@@ -1346,11 +1349,11 @@ function toggleAllSavedChecks(on) {
   updateSavedChecksSel();
 }
 
-async function openSavedCheck(id) {
+async function openSavedCheck(id, opts = {}) {
   try {
     const r = await fetch(`/api/checks/${id}`);
     const d = await r.json();
-    if (!r.ok) { showError(d.detail || "Verificarea nu mai există."); loadSavedChecks(); return; }
+    if (!r.ok) { showError(d.detail || "Verificarea nu mai există."); loadSavedChecks(); return false; }
     // refac formularul (denumire, clase, teritorii), ca o re-verificare să fie la un click distanță
     document.getElementById("trademarkName").value = d.name;
     selectedNice.clear();      (d.classes || []).forEach(c => selectedNice.add(String(c)));
@@ -1360,8 +1363,18 @@ async function openSavedCheck(id) {
     applyCheckResult(d.result, { fresh: false });
     setExportControlsEnabled(true);
     const card = document.getElementById("resultsCard");
+    if (card && !opts.noScroll) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    return true;
+  } catch (e) { showError(e.message); return false; }
+}
+
+// Export direct din listă: încarcă verificarea salvată și pornește exportul (același ca butoanele din rezultate)
+async function exportSavedCheck(id, format) {
+  if (await openSavedCheck(id, { noScroll: true })) {
+    const card = document.getElementById("resultsCard");
     if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (e) { showError(e.message); }
+    await doExport(format);
+  }
 }
 
 async function saveCheckNote(id, note) {
