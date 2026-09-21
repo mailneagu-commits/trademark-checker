@@ -35,8 +35,10 @@ def db_info() -> dict:
     volum Railway montat la DATA_DIR."""
     if _pg_url:
         return {"engine": "postgresql", "persistent": True}
-    persistent = bool(DATA_DIR) and DB_PATH.startswith(DATA_DIR)
-    return {"engine": "sqlite", "persistent": persistent, "path": DB_PATH}
+    # DATA_DIR setat nu e suficient: trebuie să fie un volum montat, altfel tot disc efemer
+    on_volume = bool(DATA_DIR) and DB_PATH.startswith(DATA_DIR) and os.path.ismount(DATA_DIR)
+    return {"engine": "sqlite", "persistent": on_volume, "path": DB_PATH,
+            "data_dir": DATA_DIR or None, "data_dir_is_mount": bool(DATA_DIR) and os.path.ismount(DATA_DIR)}
 
 
 def get_db():
