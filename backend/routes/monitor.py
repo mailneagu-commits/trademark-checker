@@ -603,6 +603,29 @@ apoi pornești aplicația local:  ./start.sh   (http://localhost:8000)
 """
 
 
+def _copy_all_tables(src_engine, dst_engine, replace: bool = False) -> dict:
+    """Copiază toate tabelele aplicației între două baze de date (SQLite sau PostgreSQL). Pentru
+    PostgreSQL ca destinație, resetează și secvențele id-urilor după inserare."""
+    from sqlalchemy import text
+    from db import Base
+    Base.metadata.create_all(dst_engine)
+    tables = Base.metadata.sorted_tables
+    counts = {}
+    with src_engine.connect() as s_conn, dst_engine.begin() as d_conn:
+        if replace:
+            for t in reversed(tables):
+                d_conn.execute(t.delete())
+        for t in tables:
+            rows = [dict(r) for r in s_conn.execute(t.select()).mappings().all()]
+            for i in range(0, len(rows), 500):
+                d_conn.execute(t.insert(), rows[i:i + 500])
+            counts[t.name] = len(rows)
+            if dst_engine.dialect.name == "postgresql" and "id" in t.c and rows:
+                d_conn.execute(text(
+                    f"SELECT setval(pg_get_serial_sequence('{t.name}', 'id'), (SELECT MAX(id) FROM {t.name}))"))
+    return counts
+
+
 @router.get("/db-export")
 def db_export(x_backup_token: Optional[str] = Header(None)):
     """Descarcă un backup complet (zip): baza de date + logo-urile de referință."""
@@ -613,16 +636,24 @@ def db_export(x_backup_token: Optional[str] = Header(None)):
     from db import db_info, SessionLocal
     _require_backup_token(x_backup_token)
     info = db_info()
-    if info["engine"] != "sqlite":
-        raise HTTPException(501, "Baza de date e PostgreSQL — folosește pg_dump (Railway → Postgres → Connect).")
 
     tmp  = tempfile.mkdtemp(prefix="backup_")
     snap = os.path.join(tmp, "monitor.db")
-    src, dst = sqlite3.connect(info["path"]), sqlite3.connect(snap)
-    try:
-        src.backup(dst)                      # copie consistentă, chiar dacă aplicația scrie în același timp
-    finally:
-        dst.close(); src.close()
+    if info["engine"] == "sqlite":
+        src, dst = sqlite3.connect(info["path"]), sqlite3.connect(snap)
+        try:
+            src.backup(dst)                  # copie consistentă, chiar dacă aplicația scrie în același timp
+        finally:
+            dst.close(); src.close()
+    else:
+        # PostgreSQL → fișier SQLite, ca backup-ul să se poată deschide direct pe calculator
+        from sqlalchemy import create_engine
+        from db import engine as _pg_engine
+        lite = create_engine(f"sqlite:///{snap}")
+        try:
+            _copy_all_tables(_pg_engine, lite)
+        finally:
+            lite.dispose()
 
     db = SessionLocal()
     try:
@@ -652,11 +683,9 @@ def db_export(x_backup_token: Optional[str] = Header(None)):
 async def db_import(file: UploadFile = File(...), x_backup_token: Optional[str] = Header(None)):
     """Restaurează dintr-un backup (zip creat de /db-export): ÎNLOCUIEȘTE conținutul bazei de date."""
     import shutil, sqlite3, tempfile, zipfile
-    from db import db_info, engine, _ensure_columns
+    from db import db_info, engine, _ensure_columns, _ensure_columns_for
     _require_backup_token(x_backup_token)
     info = db_info()
-    if info["engine"] != "sqlite":
-        raise HTTPException(501, "Restaurarea e disponibilă doar pentru SQLite.")
 
     tmp = tempfile.mkdtemp(prefix="restore_")
     try:
@@ -683,16 +712,27 @@ async def db_import(file: UploadFile = File(...), x_backup_token: Optional[str] 
             tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if "watch_items" not in tables:
                 raise HTTPException(400, "Backup-ul nu conține tabelele aplicației.")
-            dst = sqlite3.connect(info["path"])
-            try:
-                src.backup(dst)
-            finally:
-                dst.close()
+            if info["engine"] == "sqlite":
+                dst = sqlite3.connect(info["path"])
+                try:
+                    src.backup(dst)
+                finally:
+                    dst.close()
         finally:
             src.close()
+        counts = None
+        if info["engine"] != "sqlite":
+            # backup (SQLite) → PostgreSQL: înlocuiește conținutul tabelelor
+            from sqlalchemy import create_engine
+            lite = create_engine(f"sqlite:///{os.path.join(tmp, 'monitor.db')}")
+            try:
+                _ensure_columns_for(lite)
+                counts = _copy_all_tables(lite, engine, replace=True)
+            finally:
+                lite.dispose()
         engine.dispose()
         _ensure_columns()                     # backup mai vechi: adaugă coloanele apărute între timp
-        return {"status": "restored", "images": len(images)}
+        return {"status": "restored", "images": len(images), "rows": counts}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
