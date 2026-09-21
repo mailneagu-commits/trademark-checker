@@ -25,7 +25,12 @@ def _representative_text(m: Dict) -> str:
 
 
 def _classes(m: Dict) -> List[str]:
-    return sorted({str(c) for c in (m.get("niceClass") or [])}, key=lambda c: int(c) if c.isdigit() else 0)
+    """Toate clasele mărcii: cele din index (niceClass) + cele din lista de produse/servicii —
+    unele buletine (OSIM) dau în index doar prima clasă."""
+    cls = {str(c) for c in (m.get("niceClass") or [])}
+    cls |= {str(n.get("class")) for n in (m.get("niceDetailed") or []) if n.get("class") is not None}
+    cls |= {str(g.get("niceClass")) for g in (m.get("goodAndServices") or []) if g.get("niceClass")}
+    return sorted((c for c in cls if c), key=lambda c: int(c) if c.isdigit() else 0)
 
 
 def save_bulletin_marks(source: str, bulletin_date: str, marks: List[Dict]) -> Dict:
