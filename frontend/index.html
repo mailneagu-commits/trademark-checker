@@ -742,6 +742,7 @@
 
     <!-- Bulletin history table (collapsed by default) -->
     <div id="bulletinHistoryPanel" style="display:none;background:#fff;border:1.5px solid #d0d9ee;border-radius:10px;padding:16px;margin-bottom:18px;">
+      <div id="savedBulletinsBox" style="margin-bottom:20px;"></div>
       <h3 style="font-size:.88rem;color:#0f3460;margin-bottom:12px;">📋 Istoric buletine descărcate</h3>
       <div id="bulletinHistoryContent"><em style="color:#aaa;font-size:.83rem;">Se încarcă...</em></div>
     </div>
@@ -2703,8 +2704,104 @@ async function loadBulletinHistory() {
     const r    = await fetch("/api/monitor/bulletin-status");
     const data = await r.json();
     renderBulletinHistory(data);
+    loadSavedBulletins();
   } catch(e) {
     document.getElementById("bulletinHistoryContent").innerHTML = "<span style='color:#c0392b;font-size:.83rem;'>Eroare la încărcare.</span>";
+  }
+}
+
+// ── Mărci salvate în baza de date ──────────────────────────────────────────────
+
+async function loadSavedBulletins() {
+  const box = document.getElementById("savedBulletinsBox");
+  if (!box) return;
+  try {
+    const d = await (await fetch("/api/monitor/saved-bulletins")).json();
+    const srcName = { osim: "BOPI OSIM 🇷🇴", euipo: "EUIPO 🇪🇺" };
+    const fmt = t => t ? new Date(t + "Z").toLocaleString("ro-RO", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+    const warn = d.db && !d.db.persistent
+      ? `<div style="background:#fff4e5;border:1px solid #f5cba7;color:#a04000;border-radius:6px;padding:8px 12px;font-size:.78rem;margin-bottom:10px;">
+           ⚠ Baza de date (${_bEsc(d.db.engine)}) <b>nu e persistentă</b> — se șterge la fiecare deploy. Pentru păstrare permanentă:
+           în Railway adaugă un serviciu <b>PostgreSQL</b> (variabila <code>DATABASE_URL</code> se folosește automat) sau atașează un
+           <b>Volume</b> și setează <code>DATA_DIR</code> la calea lui.
+         </div>`
+      : `<div style="background:#eafaf1;border:1px solid #a9dfbf;color:#1e8449;border-radius:6px;padding:8px 12px;font-size:.78rem;margin-bottom:10px;">
+           ✅ Baza de date (${_bEsc(d.db ? d.db.engine : "?")}) este persistentă — mărcile salvate rămân după deploy.
+         </div>`;
+    const rows = (d.bulletins || []).map(b => `<tr>
+        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;">${srcName[b.source] || _bEsc(b.source)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;">${_bEsc(b.date)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;">${b.total}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;">${b.enriched}/${b.total}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.75rem;color:#888;">${fmt(b.updated_at)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;">
+          <button class="btn-sm" onclick="openSavedBulletin('${b.source}','${b.date}',${b.total})">▼ Vezi mărci</button></td>
+      </tr>`).join("");
+    box.innerHTML = `
+      <h3 style="font-size:.88rem;color:#0f3460;margin-bottom:10px;">🗄 Mărci salvate în baza de date</h3>
+      ${warn}
+      ${rows ? `<table class="watch-table" style="margin-bottom:14px;"><thead><tr>
+          <th>Sursă</th><th>Data buletinului</th><th>Mărci</th><th>Cu detalii complete</th><th>Actualizat la</th><th></th>
+        </tr></thead><tbody>${rows}</tbody></table>`
+        : '<div style="color:#aaa;font-size:.83rem;margin-bottom:14px;">Nicio marcă salvată încă — se salvează automat la descărcarea unui buletin.</div>'}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+        <input type="text" id="savedSearchQ" placeholder="🔍 Caută în toate mărcile salvate (denumire, solicitant, reprezentant, nr. cerere)…"
+          onkeydown="if(event.key==='Enter')searchSavedMarks()"
+          style="flex:1;min-width:240px;padding:7px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.82rem;" />
+        <select id="savedSearchSrc" style="padding:7px 8px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.82rem;">
+          <option value="">Toate sursele</option><option value="osim">OSIM</option><option value="euipo">EUIPO</option></select>
+        <input type="text" id="savedSearchCls" placeholder="Clasa" style="width:70px;padding:7px 8px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.82rem;" />
+        <button class="btn-primary" style="padding:7px 14px;font-size:.82rem;" onclick="searchSavedMarks()">Caută</button>
+      </div>
+      <div id="savedSearchResults"></div>`;
+  } catch (e) {
+    box.innerHTML = `<span style="color:#c0392b;font-size:.83rem;">❌ Nu am putut citi baza de date: ${_bEsc(e.message)}</span>`;
+  }
+}
+
+function openSavedBulletin(source, date, total) {
+  const panel = document.getElementById(source + "MarksPanel");
+  if (panel) panel.style.display = "none";
+  const inp = document.getElementById(source + "Date");
+  if (inp) inp.value = date;
+  _setBulletinResult(source,
+    `<span style="color:#1e8449;">🗄 Din baza de date: ${total} mărci · ${_bEsc(date)}</span>
+     <button onclick="toggleBulletinCompare('${source}','${date}')"
+       style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;">⚖ Compară cu monitorizarea</button>`);
+  toggleBulletinMarks(source, date);
+  const anchor = document.getElementById(source + "BulletinResult");
+  if (anchor) anchor.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function searchSavedMarks() {
+  const out = document.getElementById("savedSearchResults");
+  const q   = document.getElementById("savedSearchQ").value.trim();
+  const src = document.getElementById("savedSearchSrc").value;
+  const cls = document.getElementById("savedSearchCls").value.trim();
+  out.innerHTML = '<em style="color:#aaa;font-size:.82rem;">Se caută…</em>';
+  try {
+    const params = new URLSearchParams({ q, source: src, nice_class: cls, limit: "100" });
+    const d = await (await fetch("/api/monitor/saved-marks?" + params.toString())).json();
+    if (!d.marks.length) { out.innerHTML = '<span style="color:#888;font-size:.82rem;">Nicio marcă găsită.</span>'; return; }
+    const td = "padding:6px 8px;border-bottom:1px solid #eef1f6;";
+    const rows = d.marks.map(m => `<tr>
+        <td style="${td}white-space:nowrap;">${_bEsc(m.application_number)}</td>
+        <td style="${td}">${m.source === "osim" ? "OSIM" : "EUIPO"}</td>
+        <td style="${td}white-space:nowrap;">${_bEsc(m.bulletin_date)}</td>
+        <td style="${td}font-weight:600;"><a href="${_bEsc(bulletinMarkUrl(m.source, m.bulletin_date, m.application_number))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">${_bEsc(m.name) || "—"}</a></td>
+        <td style="${td}font-size:.76rem;">${_bEsc(m.applicant) || "—"}</td>
+        <td style="${td}font-size:.76rem;">${_bEsc(m.representative) || "—"}</td>
+        <td style="${td}white-space:nowrap;">${_bEsc((m.classes || []).join(", ")) || "—"}</td>
+      </tr>`).join("");
+    out.innerHTML = `
+      <div style="font-size:.78rem;color:#888;margin-bottom:6px;">${d.total} mărci găsite${d.total > d.marks.length ? ` (primele ${d.marks.length})` : ""}</div>
+      <div style="max-height:420px;overflow:auto;border:1px solid #eef1f6;border-radius:6px;">
+        <table class="watch-table" style="font-size:.8rem;"><thead style="position:sticky;top:0;background:#f0f4fa;"><tr>
+          <th>(210)</th><th>Sursă</th><th>Buletin</th><th>(541) Denumire</th><th>(731) Solicitant</th><th>(740) Reprezentant</th><th>(511) Clase</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+      </div>`;
+  } catch (e) {
+    out.innerHTML = `<span style="color:#c0392b;font-size:.82rem;">❌ ${_bEsc(e.message)}</span>`;
   }
 }
 

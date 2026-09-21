@@ -438,18 +438,64 @@ def bulletin_status():
 
 
 from scrapers.bulletin_enrich import apply_cached_detail, enrich_bulletin_marks, enrichment_stats
+from scrapers import bulletin_store
 
 
-def _load_bulletin_marks(source: str, date: str) -> List[Dict]:
+def _bulletin_day(source: str, td) -> str:
+    """Data (YYYY-MM-DD) sub care e salvat buletinul: ultima zi lucrătoare până la `td`."""
+    if source == "osim":
+        from scrapers.osim_bulletin import _prev_working_day
+    else:
+        from scrapers.euipo_bulletin import _prev_working_day
+    return _prev_working_day(td).isoformat()
+
+
+def _persist_bulletin(source: str, date: str) -> Optional[dict]:
+    """Salvează în baza de date mărcile buletinului (cu detaliile deja aduse) și imaginile lor.
+    Nu aruncă erori — salvarea e un plus, nu trebuie să strice descărcarea sau afișarea."""
+    from datetime import date as date_type
+    try:
+        td  = date_type.fromisoformat(date)
+        day = _bulletin_day(source, td)
+        marks = _load_bulletin_marks(source, date, prefer_db=False)
+        res = bulletin_store.save_bulletin_marks(source, day, marks)
+        if source == "osim":
+            from scrapers.osim_bulletin import get_bulletin_image_path, _date_slug
+            slug = _date_slug(date_type.fromisoformat(day))
+            for m in marks:
+                app = str(m.get("applicationNumber") or "")
+                path = get_bulletin_image_path(slug, app) if app and m.get("markImageURI") else None
+                if path and not bulletin_store.has_image("osim", app):
+                    with open(path, "rb") as f:
+                        bulletin_store.save_image("osim", app, f.read(), "image/png")
+        print(f"[BULLETIN-DB] {source} {day}: {res}")
+        return res
+    except Exception as e:
+        print(f"[BULLETIN-DB] Salvare eșuată ({source} {date}): {type(e).__name__}: {e}")
+        return None
+
+
+def _load_bulletin_marks(source: str, date: str, prefer_db: bool = True) -> List[Dict]:
     """Încarcă mărcile dintr-un buletin deja descărcat (OSIM sau EUIPO), fără
     să pornească vreo descărcare — folosit atât de /bulletin-marks cât și de
-    /bulletin-compare."""
+    /bulletin-compare. Întâi din baza de date (rămâne după ce cache-ul de fișiere se pierde),
+    apoi din fișierele descărcate."""
     from datetime import date as date_type
 
     try:
         td = date_type.fromisoformat(date)
     except ValueError:
         raise HTTPException(400, f"Dată invalidă: {date}")
+
+    if prefer_db and source in ("osim", "euipo"):
+        try:
+            day = _bulletin_day(source, td)
+            saved = bulletin_store.load_bulletin_marks(source, day)
+        except Exception as e:
+            print(f"[BULLETIN-DB] Citire eșuată ({source} {date}): {e}")
+            saved = []
+        if saved:
+            return apply_cached_detail(source, saved, bulletin_date=day if source == "osim" else None)
 
     if source == "osim":
         from scrapers.osim_bulletin import _prev_working_day, _date_slug, parse_pdf_cached, CACHE_DIR
@@ -513,12 +559,29 @@ async def get_bulletin_mark(source: str, date: str, app_num: str):
     return mark
 
 
+@router.get("/saved-bulletins")
+def saved_bulletins():
+    """Buletinele salvate în baza de date (cu numărul de mărci și câte au detalii complete)
+    + tipul bazei de date și dacă supraviețuiește unui deploy."""
+    from db import db_info
+    return {"bulletins": bulletin_store.list_saved_bulletins(), "db": db_info()}
+
+
+@router.get("/saved-marks")
+def saved_marks(q: str = "", source: str = "", date: str = "", nice_class: str = "",
+                limit: int = 100, offset: int = 0):
+    """Caută în TOATE mărcile salvate (din toate buletinele): după denumire, solicitant,
+    reprezentant sau număr de cerere; opțional filtrat pe sursă, dată sau clasă NICE."""
+    return bulletin_store.search_saved_marks(q, source, date, nice_class, min(max(limit, 1), 500), max(offset, 0))
+
+
 _enrich_jobs: dict = {}   # "source:date" -> {"running": bool, "progress": dict, "result": dict|None, "error": str|None}
 
 
 async def run_bulletin_enrich(source: str, date: str) -> Dict:
-    """Aduce din TMview detaliile complete ale mărcilor din buletin (produse/servicii,
-    date, solicitanți/reprezentanți structurați etc.), ca în aplicația de verificare."""
+    """Aduce detaliile complete ale mărcilor din buletin (produse/servicii, date,
+    solicitanți/reprezentanți etc.) și le salvează în baza de date."""
+    import asyncio
     key = f"{source}:{date}"
     job = _enrich_jobs.get(key)
     if job and job.get("running"):
@@ -528,6 +591,7 @@ async def run_bulletin_enrich(source: str, date: str) -> Dict:
     _enrich_jobs[key] = {"running": True, "progress": progress, "result": None, "error": None}
     try:
         result = await enrich_bulletin_marks(source, marks, progress)
+        await asyncio.get_event_loop().run_in_executor(None, _persist_bulletin, source, date)
         _enrich_jobs[key] = {"running": False, "progress": progress, "result": result, "error": None}
         return {"status": "done", **result}
     except Exception as e:
@@ -706,12 +770,18 @@ def get_bulletin_image(source: str, app_num: str, slug: Optional[str] = None):
         from scrapers.osim_bulletin import get_bulletin_image_path
         path = get_bulletin_image_path(slug, app_num)
         if not path:
+            saved = bulletin_store.get_image("osim", app_num)      # fișierul a dispărut → din baza de date
+            if saved:
+                return Response(content=saved["data"], media_type=saved["content_type"])
             raise HTTPException(404, "Imaginea nu a fost găsită (posibil marcă doar textuală, sau buletinul nu a fost încă parsat).")
         return FileResponse(path, media_type="image/png")
 
     if source == "euipo":
         import requests
         from agents.euipo_agent import EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, euipo_available, _get_access_token
+        saved = bulletin_store.get_image("euipo", app_num)
+        if saved:
+            return Response(content=saved["data"], media_type=saved["content_type"])
         if not euipo_available():
             raise HTTPException(503, "EUIPO API neconfigurat.")
         try:
@@ -726,7 +796,12 @@ def get_bulletin_image(source: str, app_num: str, slug: Optional[str] = None):
         if r.status_code != 200:
             raise HTTPException(404 if r.status_code == 404 else 502,
                                  f"EUIPO nu a returnat imaginea (status {r.status_code}).")
-        return Response(content=r.content, media_type=r.headers.get("content-type", "image/jpeg"))
+        ctype = r.headers.get("content-type", "image/jpeg")
+        try:
+            bulletin_store.save_image("euipo", app_num, r.content, ctype)   # păstrăm imaginea în baza de date
+        except Exception as e:
+            print(f"[BULLETIN-DB] Imagine EUIPO nesalvată ({app_num}): {e}")
+        return Response(content=r.content, media_type=ctype)
 
     raise HTTPException(400, "source trebuie să fie 'osim' sau 'euipo'")
 
@@ -840,6 +915,12 @@ async def trigger_bulletin_fetch(
                 marks = await loop.run_in_executor(None, fetch_latest_euipo)
                 info  = {}
             result["euipo"] = {"marks": len(marks), **info}
+
+    # Salvează în baza de date ce s-a adus (doar pentru data cerută explicit)
+    if td:
+        for src in ("osim", "euipo"):
+            if src in result and result[src].get("marks"):
+                await loop.run_in_executor(None, _persist_bulletin, src, td.isoformat())
 
     return result
 

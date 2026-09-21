@@ -147,7 +147,8 @@ def apply_cached_detail(source: str, marks: List[Dict], bulletin_date: Optional[
 
 def enrichment_stats(source: str, marks: List[Dict]) -> Dict:
     cache = _load_cache(source)
-    have = sum(1 for m in marks if (cache.get(tmview_st13(source, m) or "") or {}).get("detail"))
+    have = sum(1 for m in marks
+               if m.get("_detail_enriched") or (cache.get(tmview_st13(source, m) or "") or {}).get("detail"))
     return {"total": len(marks), "enriched": have}
 
 
@@ -237,7 +238,7 @@ async def _enrich_euipo_from_api(cache: Dict, marks: List[Dict], progress: Dict)
         st13 = tmview_st13("euipo", m)
         app = str(m.get("applicationNumber") or "").strip()
         entry = cache.get(st13) if st13 else None
-        if not st13 or not app or (entry and entry.get("detail")):
+        if not st13 or not app or m.get("_detail_enriched") or (entry and entry.get("detail")):
             continue
         if entry and now - entry.get("missing_at", 0) < RETRY_MISSING_AFTER:
             continue
@@ -295,7 +296,7 @@ async def enrich_bulletin_marks(source: str, marks: List[Dict], progress: Option
     todo = []
     for m in marks:
         st13 = tmview_st13(source, m)
-        if not st13:
+        if not st13 or m.get("_detail_enriched"):     # deja îmbogățită (din cache sau din baza de date)
             continue
         entry = cache.get(st13)
         if entry and entry.get("detail"):

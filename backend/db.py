@@ -29,6 +29,16 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def db_info() -> dict:
+    """Ce bază de date folosim și dacă supraviețuiește unui deploy. SQLite pe discul efemer al
+    containerului se șterge la fiecare deploy — persistă doar PostgreSQL (DATABASE_URL) sau un
+    volum Railway montat la DATA_DIR."""
+    if _pg_url:
+        return {"engine": "postgresql", "persistent": True}
+    persistent = bool(DATA_DIR) and DB_PATH.startswith(DATA_DIR)
+    return {"engine": "sqlite", "persistent": persistent, "path": DB_PATH}
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -53,7 +63,7 @@ def _ensure_columns():
 
 
 def init_db():
-    from monitor_models import WatchItem, SeenTrademark, AlertLog  # noqa: F401
+    from monitor_models import WatchItem, SeenTrademark, AlertLog, BulletinMark, BulletinImage  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _ensure_columns()
     print(f"[DB] Using: {'PostgreSQL' if _pg_url else 'SQLite'}")

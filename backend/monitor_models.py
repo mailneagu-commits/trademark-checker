@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON, ForeignKey, Text, LargeBinary, UniqueConstraint
 from db import Base
 
 
@@ -23,6 +23,44 @@ class WatchItem(Base):
     active             = Column(Boolean, default=True)
     created_at         = Column(DateTime, default=datetime.utcnow)
     last_checked_at    = Column(DateTime, nullable=True)
+
+
+class BulletinMark(Base):
+    """O marcă publicată într-un buletin OSIM/EUIPO, cu TOATE informațiile aduse despre ea
+    (câmpurile din buletin + detaliile din TMview/API-ul EUIPO), păstrate în baza de date ca să
+    poată fi consultate ulterior, fără să mai descărcăm buletinul. Coloanele de sus sunt doar
+    pentru căutare/sortare; marca completă e în `data`."""
+    __tablename__ = "bulletin_marks"
+    __table_args__ = (UniqueConstraint("source", "application_number", "bulletin_date", name="uq_bulletin_mark"),)
+
+    id                 = Column(Integer, primary_key=True, index=True)
+    source             = Column(String, nullable=False, index=True)       # "osim" / "euipo"
+    bulletin_date      = Column(String, nullable=False, index=True)       # "YYYY-MM-DD" — data buletinului
+    application_number = Column(String, nullable=False, index=True)      # (210)
+    position           = Column(Integer, default=0)                       # ordinea în buletin
+    trademark_name     = Column(String, default="", index=True)           # (541)
+    applicant          = Column(String, default="")                       # (731)
+    representative     = Column(String, default="")                       # (740)
+    nice_classes       = Column(JSON, default=list)                       # (511)
+    status             = Column(String, default="")
+    application_date   = Column(String, default="")                       # (220)
+    publication_date   = Column(String, default="")                       # (442)
+    detail_enriched    = Column(Boolean, default=False)                   # are detaliile complete (produse/servicii etc.)
+    data               = Column(JSON, default=dict)                       # marca completă, cu toate câmpurile
+    first_saved_at     = Column(DateTime, default=datetime.utcnow)
+    updated_at         = Column(DateTime, default=datetime.utcnow)
+
+
+class BulletinImage(Base):
+    """Imaginea unei mărci din buletin — pentru OSIM fișierul extras din PDF dispare odată cu
+    containerul, iar pentru EUIPO imaginea se cere altfel live din API."""
+    __tablename__ = "bulletin_images"
+
+    source             = Column(String, primary_key=True)
+    application_number = Column(String, primary_key=True)
+    content_type       = Column(String, default="image/png")
+    data               = Column(LargeBinary, nullable=False)
+    saved_at           = Column(DateTime, default=datetime.utcnow)
 
 
 class SeenTrademark(Base):
