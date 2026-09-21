@@ -8,13 +8,13 @@ from datetime import datetime
 from datetime import date as dt_date
 from typing import List, Optional, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from db import get_db
-from monitor_models import WatchItem, SeenTrademark, AlertLog
+from monitor_models import WatchItem, SeenTrademark, AlertLog, BulletinMark, BulletinImage
 from monitor_service import run_watch_item
 from paths import DATA_DIR
 
@@ -573,6 +573,128 @@ def saved_marks(q: str = "", source: str = "", date: str = "", nice_class: str =
     """Caută în TOATE mărcile salvate (din toate buletinele): după denumire, solicitant,
     reprezentant sau număr de cerere; opțional filtrat pe sursă, dată sau clasă NICE."""
     return bulletin_store.search_saved_marks(q, source, date, nice_class, min(max(limit, 1), 500), max(offset, 0))
+
+
+# ── Backup / restaurare bază de date ───────────────────────────────────────────
+# Baza de date conține lista de monitorizare (cu emailuri) — de aceea export/import cer un token
+# secret, setat de tine în Railway ca variabilă de mediu BACKUP_TOKEN. Fără token setat,
+# ambele endpoint-uri sunt dezactivate.
+
+def _require_backup_token(token: Optional[str]) -> None:
+    import hmac
+    expected = os.environ.get("BACKUP_TOKEN", "")
+    if not expected:
+        raise HTTPException(503, "Backup dezactivat: setează variabila de mediu BACKUP_TOKEN în Railway "
+                                 "(o parolă la alegere), apoi reîncearcă.")
+    if not token or not hmac.compare_digest(token, expected):
+        raise HTTPException(403, "Token de backup greșit.")
+
+
+_RESTORE_README = """Backup baza de date - Trademark Checker
+
+Conținut:
+  monitor.db        - baza de date SQLite (lista de monitorizare, mărcile din buletine, imaginile lor)
+  watch_images/     - logo-urile de referință ale mărcilor monitorizate (import Excel)
+  manifest.json     - data backup-ului și numărul de înregistrări
+
+Restaurare pe calculatorul tău (din folderul proiectului):
+  python3 tools/restore_backup.py calea/catre/acest-backup.zip
+apoi pornești aplicația local:  ./start.sh   (http://localhost:8000)
+"""
+
+
+@router.get("/db-export")
+def db_export(x_backup_token: Optional[str] = Header(None)):
+    """Descarcă un backup complet (zip): baza de date + logo-urile de referință."""
+    import json, shutil, sqlite3, tempfile, zipfile
+    from datetime import datetime as _dt
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+    from db import db_info, SessionLocal
+    _require_backup_token(x_backup_token)
+    info = db_info()
+    if info["engine"] != "sqlite":
+        raise HTTPException(501, "Baza de date e PostgreSQL — folosește pg_dump (Railway → Postgres → Connect).")
+
+    tmp  = tempfile.mkdtemp(prefix="backup_")
+    snap = os.path.join(tmp, "monitor.db")
+    src, dst = sqlite3.connect(info["path"]), sqlite3.connect(snap)
+    try:
+        src.backup(dst)                      # copie consistentă, chiar dacă aplicația scrie în același timp
+    finally:
+        dst.close(); src.close()
+
+    db = SessionLocal()
+    try:
+        manifest = {
+            "created_at": _dt.utcnow().isoformat() + "Z",
+            "watch_items":    db.query(WatchItem).count(),
+            "bulletin_marks": db.query(BulletinMark).count(),
+            "bulletin_images": db.query(BulletinImage).count(),
+        }
+    finally:
+        db.close()
+
+    stamp = _dt.utcnow().strftime("%Y-%m-%d_%H%M")
+    zpath = os.path.join(tmp, f"backup-marci-{stamp}.zip")
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(snap, "monitor.db")
+        if os.path.isdir(WATCH_IMAGE_DIR):
+            for fn in os.listdir(WATCH_IMAGE_DIR):
+                z.write(os.path.join(WATCH_IMAGE_DIR, fn), f"watch_images/{fn}")
+        z.writestr("manifest.json", json.dumps(manifest, indent=2))
+        z.writestr("LEGGIMI.txt", _RESTORE_README)
+    return FileResponse(zpath, media_type="application/zip", filename=os.path.basename(zpath),
+                        background=BackgroundTask(shutil.rmtree, tmp, ignore_errors=True))
+
+
+@router.post("/db-import")
+async def db_import(file: UploadFile = File(...), x_backup_token: Optional[str] = Header(None)):
+    """Restaurează dintr-un backup (zip creat de /db-export): ÎNLOCUIEȘTE conținutul bazei de date."""
+    import shutil, sqlite3, tempfile, zipfile
+    from db import db_info, engine, _ensure_columns
+    _require_backup_token(x_backup_token)
+    info = db_info()
+    if info["engine"] != "sqlite":
+        raise HTTPException(501, "Restaurarea e disponibilă doar pentru SQLite.")
+
+    tmp = tempfile.mkdtemp(prefix="restore_")
+    try:
+        zp = os.path.join(tmp, "up.zip")
+        with open(zp, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        try:
+            with zipfile.ZipFile(zp) as z:
+                if "monitor.db" not in z.namelist():
+                    raise HTTPException(400, "Arhiva nu conține monitor.db — nu e un backup valid.")
+                z.extract("monitor.db", tmp)
+                images = [n for n in z.namelist() if n.startswith("watch_images/") and not n.endswith("/")]
+                os.makedirs(WATCH_IMAGE_DIR, exist_ok=True)
+                for n in images:
+                    with z.open(n) as srcf, open(os.path.join(WATCH_IMAGE_DIR, os.path.basename(n)), "wb") as out:
+                        shutil.copyfileobj(srcf, out)
+        except zipfile.BadZipFile:
+            raise HTTPException(400, "Fișierul nu e o arhivă zip validă.")
+
+        src = sqlite3.connect(os.path.join(tmp, "monitor.db"))
+        try:
+            if src.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise HTTPException(400, "Baza de date din backup e coruptă.")
+            tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "watch_items" not in tables:
+                raise HTTPException(400, "Backup-ul nu conține tabelele aplicației.")
+            dst = sqlite3.connect(info["path"])
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+        engine.dispose()
+        _ensure_columns()                     # backup mai vechi: adaugă coloanele apărute între timp
+        return {"status": "restored", "images": len(images)}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 _enrich_jobs: dict = {}   # "source:date" -> {"running": bool, "progress": dict, "result": dict|None, "error": str|None}

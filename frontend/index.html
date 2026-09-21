@@ -2753,10 +2753,90 @@ async function loadSavedBulletins() {
         <input type="text" id="savedSearchCls" placeholder="Clasa" style="width:70px;padding:7px 8px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.82rem;" />
         <button class="btn-primary" style="padding:7px 14px;font-size:.82rem;" onclick="searchSavedMarks()">Caută</button>
       </div>
-      <div id="savedSearchResults"></div>`;
+      <div id="savedSearchResults"></div>
+      <div style="margin-top:16px;padding-top:12px;border-top:1px dashed #d8e0ee;">
+        <div style="font-size:.8rem;color:#0f3460;font-weight:700;margin-bottom:6px;">💾 Backup baza de date</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <button class="btn-sm" onclick="downloadDbBackup()">⬇ Descarcă backup (zip)</button>
+          <button class="btn-sm" onclick="document.getElementById('dbRestoreInput').click()">⬆ Restaurează din backup</button>
+          <input type="file" id="dbRestoreInput" accept=".zip" style="display:none" onchange="restoreDbBackup(this)">
+          <span id="dbBackupMsg" style="font-size:.78rem;"></span>
+        </div>
+        <div style="font-size:.72rem;color:#999;margin-top:6px;">
+          Backup-ul conține lista de monitorizare, mărcile din buletine și logo-urile. Pentru a-l folosi pe calculatorul tău:
+          <code>python3 tools/restore_backup.py backup.zip</code>, apoi <code>./start.sh</code>.
+          Necesită variabila <code>BACKUP_TOKEN</code> setată în Railway (o parolă la alegere).
+        </div>
+      </div>`;
   } catch (e) {
     box.innerHTML = `<span style="color:#c0392b;font-size:.83rem;">❌ Nu am putut citi baza de date: ${_bEsc(e.message)}</span>`;
   }
+}
+
+// ── Backup / restaurare baza de date (protejat de BACKUP_TOKEN din Railway) ──────
+
+function _backupToken(force) {
+  let t = "";
+  try { t = sessionStorage.getItem("backupToken") || ""; } catch (e) {}
+  if (!t || force) {
+    t = (prompt("Token de backup (valoarea variabilei BACKUP_TOKEN din Railway):") || "").trim();
+    try { if (t) sessionStorage.setItem("backupToken", t); } catch (e) {}
+  }
+  return t;
+}
+
+function _dbMsg(html) { const el = document.getElementById("dbBackupMsg"); if (el) el.innerHTML = html; }
+
+async function downloadDbBackup() {
+  const token = _backupToken(false);
+  if (!token) return;
+  _dbMsg('<span style="color:#2471a3;">⏳ Se pregătește backup-ul…</span>');
+  try {
+    const r = await fetch("/api/monitor/db-export", { headers: { "X-Backup-Token": token } });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      if (r.status === 403) { try { sessionStorage.removeItem("backupToken"); } catch (x) {} }
+      _dbMsg(`<span style="color:#c0392b;">❌ ${_bEsc(e.detail || r.status)}</span>`);
+      return;
+    }
+    const blob = await r.blob();
+    const cd   = r.headers.get("content-disposition") || "";
+    const name = (cd.match(/filename="?([^";]+)"?/) || [])[1] || "backup-marci.zip";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    _dbMsg(`<span style="color:#1e8449;">✅ Backup descărcat: ${_bEsc(name)} (${(blob.size / 1048576).toFixed(1)} MB)</span>`);
+  } catch (e) {
+    _dbMsg(`<span style="color:#c0392b;">❌ ${_bEsc(e.message)}</span>`);
+  }
+}
+
+async function restoreDbBackup(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (!confirm("Restaurarea ÎNLOCUIEȘTE toată baza de date curentă (lista de monitorizare și mărcile salvate) cu cea din backup. Continui?")) {
+    input.value = ""; return;
+  }
+  const token = _backupToken(false);
+  if (!token) { input.value = ""; return; }
+  _dbMsg('<span style="color:#2471a3;">⏳ Se restaurează…</span>');
+  try {
+    const fd = new FormData(); fd.append("file", file);
+    const r = await fetch("/api/monitor/db-import", { method: "POST", headers: { "X-Backup-Token": token }, body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (r.status === 403) { try { sessionStorage.removeItem("backupToken"); } catch (x) {} }
+      _dbMsg(`<span style="color:#c0392b;">❌ ${_bEsc(d.detail || r.status)}</span>`);
+    } else {
+      _dbMsg(`<span style="color:#1e8449;">✅ Restaurat (${d.images} logo-uri).</span>`);
+      loadSavedBulletins();
+      if (typeof loadWatches === "function") loadWatches();
+    }
+  } catch (e) {
+    _dbMsg(`<span style="color:#c0392b;">❌ ${_bEsc(e.message)}</span>`);
+  }
+  input.value = "";
 }
 
 function openSavedBulletin(source, date, total) {
