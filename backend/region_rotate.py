@@ -68,6 +68,15 @@ def _load_state() -> Dict:
         db.close()
 
 
+def _cycle_position() -> str:
+    """Regiunea pe care o considerăm 'curentă' PENTRU ROTIRE — ultima pe care chiar am cerut-o
+    noi (salvată în DB), nu ce raportează RAILWAY_REPLICA_REGION (cod intern Railway, ex. 'sfo'
+    pentru us-west1 — nu se potrivește cu numele din REGION_CYCLE, deci nu poate fi folosit ca
+    să alegem 'următoarea' regiune)."""
+    to = _load_state().get("to")
+    return to if to in REGION_CYCLE else REGION_CYCLE[-1]  # necunoscut → următoarea e REGION_CYCLE[0]
+
+
 def _save_state(state: Dict) -> None:
     from db import SessionLocal
     from monitor_models import AppState
@@ -154,16 +163,11 @@ def rotate_region(reason: str) -> Dict:
                   "nu rulăm pe Railway sau variabilele nu sunt încă disponibile.")
             return {"ok": False, "error": "service/environment id lipsă"}
 
-        cur = current_region()
-        try:
-            idx = REGION_CYCLE.index(cur)
-        except ValueError:
-            idx = -1
+        cur = _cycle_position()
+        idx = REGION_CYCLE.index(cur)
         next_region = REGION_CYCLE[(idx + 1) % len(REGION_CYCLE)]
-        if next_region == cur and len(REGION_CYCLE) > 1:
-            next_region = REGION_CYCLE[(idx + 2) % len(REGION_CYCLE)]
 
-        print(f"[REGION-ROTATE] {reason} — trec din {cur or '?'} pe {next_region}")
+        print(f"[REGION-ROTATE] {reason} — trec din {current_region() or cur} pe {next_region}")
         try:
             _graphql(
                 """
@@ -185,11 +189,11 @@ def rotate_region(reason: str) -> Dict:
             )
         except Exception as e:
             print(f"[REGION-ROTATE] Eroare API Railway: {e}")
-            _save_state({"at": datetime.utcnow().isoformat(), "from": cur, "to": next_region,
+            _save_state({"at": datetime.utcnow().isoformat(), "from": current_region() or cur, "to": next_region,
                         "reason": reason, "ok": False, "error": str(e)})
             return {"ok": False, "error": str(e)}
 
-        _save_state({"at": datetime.utcnow().isoformat(), "from": cur, "to": next_region,
+        _save_state({"at": datetime.utcnow().isoformat(), "from": current_region() or cur, "to": next_region,
                     "reason": reason, "ok": True})
         print(f"[REGION-ROTATE] Redeploy pornit spre {next_region} — aplicația repornește în ~1-2 min.")
         return {"ok": True, "from": cur, "to": next_region}
