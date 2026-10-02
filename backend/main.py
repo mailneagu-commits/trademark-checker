@@ -2,12 +2,12 @@ import asyncio
 import os
 import traceback
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import io
 
 from agents.search_agent import SearchAgent, set_browser_session, has_browser_session
@@ -82,6 +82,36 @@ async def set_curl(request: CurlRequest):
     if not ok:
         raise HTTPException(status_code=400, detail="Nu am găsit cookie-uri în cURL. Verifică că ai copiat request-ul corect.")
     return {"status": "ok", "message": "Sesiune TMview activată. Căutările vor folosi acum sesiunea ta de browser."}
+
+
+@app.get("/api/region-status")
+async def region_status():
+    """Regiunea curentă, dacă rotirea automată e configurată, și ultima rotire încercată."""
+    from region_rotate import status
+    return status()
+
+
+@app.post("/api/region-rotate")
+async def region_rotate_now(x_backup_token: Optional[str] = Header(None)):
+    """Forțează o rotire de regiune acum (testare / urgență) — protejat de BACKUP_TOKEN,
+    ca și backup-ul bazei de date."""
+    import hmac
+    expected = os.environ.get("BACKUP_TOKEN", "")
+    if not expected:
+        raise HTTPException(503, "Setează BACKUP_TOKEN în Railway ca să poți declanșa rotirea manual de aici.")
+    if not x_backup_token or not hmac.compare_digest(x_backup_token, expected):
+        raise HTTPException(403, "Token greșit.")
+    import asyncio
+    import region_rotate as _rr
+    # Forțat: ignorăm cooldown-ul (apelat manual, nu de bucla automată)
+    old_check = _rr._can_rotate_now
+    _rr._can_rotate_now = lambda: None if _rr._token() else "RAILWAY_API_TOKEN nesetat"
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, _rr.rotate_region, "declanșat manual din /api/region-rotate")
+    finally:
+        _rr._can_rotate_now = old_check
+    return result
 
 
 @app.get("/api/debug-euipo-raw")

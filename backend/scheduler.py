@@ -186,10 +186,19 @@ def start_scheduler():
         id="bulletin_prefetch",
         replace_existing=True,
     )
+    # Verificare TMview la fiecare 10 minute — rotește regiunea automat dacă e blocat,
+    # chiar dacă nimeni nu a căutat nimic între timp (circuit breaker-ul se deschide
+    # doar la o căutare reală eșuată).
+    sched.add_job(
+        lambda: asyncio.ensure_future(_check_tmview_health()),
+        CronTrigger(minute="*/10"),
+        id="tmview_health",
+        replace_existing=True,
+    )
 
     sched.start()
     print("[SCHEDULER] Started — daily 07:00, weekly Mon 07:30, monthly 1st 08:00 UTC, "
-          "bulletin prefetch hourly 06-19 UTC (mon-fri)")
+          "bulletin prefetch hourly 06-19 UTC (mon-fri), TMview health check every 10 min")
 
     # Rulează prefetch-ul și imediat la pornire, nu doar la următorul tick orar —
     # altfel, chiar după un deploy (care șterge cache-ul de fișiere), primul

@@ -51,6 +51,16 @@ class BulletinMark(Base):
     updated_at         = Column(DateTime, default=datetime.utcnow)
 
 
+class AppState(Base):
+    """Stare mică, cheie-valoare, pentru lucruri care trebuie să supraviețuiască unui redeploy
+    (ex. ultima rotire automată de regiune) — nu merită un tabel dedicat fiecăruia."""
+    __tablename__ = "app_state"
+
+    key        = Column(String, primary_key=True)
+    value      = Column(JSON, default=dict)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class SavedCheck(Base):
     """O verificare de disponibilitate (denumire + clase + teritorii) cu rezultatele ei complete,
     salvată automat ca s-o putem redeschide fără să repetăm căutarea, și ștearsă când nu mai e

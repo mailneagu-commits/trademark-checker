@@ -406,6 +406,7 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
                 body = r.text
                 if not body.strip() or "json" not in ct.lower():
                     print(f"[TMVIEW] IMPERVA BLOCK — ct={ct!r} body_len={len(body)}")
+                    _cb_record_failure()
                     return [], 0
                 # Check if response is actually JSON (not HTML/redirect)
                 try:
@@ -483,10 +484,23 @@ def _cb_record_success():
 
 def _cb_record_failure():
     global _cb_failures, _cb_open
+    was_open = _cb_open
     _cb_failures += 1
     if _cb_failures >= _CB_THRESHOLD:
         _cb_open = True
         print(f"[CIRCUIT BREAKER] DESCHIS — TMview indisponibil, revin la demo marks")
+        if not was_open:
+            _trigger_region_rotation("circuit breaker deschis (TMview blochează căutarea)")
+
+
+def _trigger_region_rotation(reason: str) -> None:
+    """Pornește rotirea automată a regiunii Railway, în fundal — nu blochează căutarea curentă."""
+    try:
+        import asyncio
+        from region_rotate import rotate_region
+        asyncio.get_event_loop().run_in_executor(None, rotate_region, reason)
+    except Exception as e:
+        print(f"[REGION-ROTATE] Nu am putut porni rotirea: {e}")
 
 def _cb_is_open() -> bool:
     return _cb_open
