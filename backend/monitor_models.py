@@ -51,6 +51,20 @@ class BulletinMark(Base):
     updated_at         = Column(DateTime, default=datetime.utcnow)
 
 
+class CheckJob(Base):
+    """Job de căutare de fundal (POST /api/check/start) — persistat ca să supraviețuiască unui
+    redeploy (inclusiv o rotire automată de regiune declanșată chiar de blocajul pe care-l întâlnește
+    căutarea asta), nu doar ținut într-un dict în memoria procesului."""
+    __tablename__ = "check_jobs"
+
+    id         = Column(String, primary_key=True)   # uuid hex
+    status     = Column(String, default="running")  # running / done / error
+    result     = Column(JSON, nullable=True)
+    error      = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class AppState(Base):
     """Stare mică, cheie-valoare, pentru lucruri care trebuie să supraviețuiască unui redeploy
     (ex. ultima rotire automată de regiune) — nu merită un tabel dedicat fiecăruia."""

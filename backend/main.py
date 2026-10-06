@@ -2,6 +2,7 @@ import asyncio
 import os
 import traceback
 from contextlib import asynccontextmanager
+from datetime import datetime
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +15,8 @@ from agents.search_agent import SearchAgent, set_browser_session, has_browser_se
 from agents.similarity_agent import SimilarityAgent
 from agents.variant_agent import generate_all_variants
 from export import build_excel, build_pdf, build_word
-from db import init_db
+from db import init_db, SessionLocal
+from monitor_models import CheckJob
 from scheduler import start_scheduler, stop_scheduler
 from routes.monitor import router as monitor_router
 from routes.checks import router as checks_router, save_check
@@ -627,7 +629,26 @@ async def check_trademark(request: SearchRequest):
 # nerezonabil de mult pagina. Aici pornim căutarea în fundal, cu un buget de
 # reîncercări mult mai generos (până la ~7 minute), și frontend-ul verifică
 # periodic dacă s-a terminat, în loc să aștepte pe un singur request.
-_check_jobs: dict = {}
+#
+# Job-ul e salvat în DB, nu într-un dict în memorie — un redeploy la mijlocul
+# căutării (ex. rotirea automată de regiune, declanșată chiar de blocajul pe
+# care-l întâlnește căutarea asta) altfel ar șterge job-ul din memoria
+# procesului vechi și frontend-ul ar primi "Job negăsit" la următoarea verificare.
+
+def _set_job(job_id: str, status: str, result: Optional[dict] = None, error: Optional[str] = None) -> None:
+    db = SessionLocal()
+    try:
+        row = db.get(CheckJob, job_id)
+        if row is None:
+            row = CheckJob(id=job_id)
+            db.add(row)
+        row.status     = status
+        row.result     = result
+        row.error      = error
+        row.updated_at = datetime.utcnow()
+        db.commit()
+    finally:
+        db.close()
 
 
 @app.post("/api/check/start")
@@ -643,17 +664,17 @@ async def check_trademark_start(request: SearchRequest):
         raise HTTPException(status_code=400, detail="Selectați cel puțin un teritoriu.")
 
     job_id = uuid.uuid4().hex
-    _check_jobs[job_id] = {"status": "running", "result": None, "error": None}
+    _set_job(job_id, "running")
 
     async def _bg():
         try:
             result = await _run_check(request, max_tmview_attempts=7)
             result["check_id"] = save_check(request, result)     # salvat în baza de date
-            _check_jobs[job_id] = {"status": "done", "result": result, "error": None}
+            _set_job(job_id, "done", result=result)
         except HTTPException as e:
-            _check_jobs[job_id] = {"status": "error", "result": None, "error": e.detail}
+            _set_job(job_id, "error", error=e.detail)
         except Exception as e:
-            _check_jobs[job_id] = {"status": "error", "result": None, "error": str(e)}
+            _set_job(job_id, "error", error=str(e))
 
     asyncio.ensure_future(_bg())
     return {"job_id": job_id, "status": "started"}
@@ -661,10 +682,14 @@ async def check_trademark_start(request: SearchRequest):
 
 @app.get("/api/check/status")
 async def check_trademark_status(job_id: str):
-    job = _check_jobs.get(job_id)
-    if not job:
+    db = SessionLocal()
+    try:
+        row = db.get(CheckJob, job_id)
+    finally:
+        db.close()
+    if not row:
         raise HTTPException(404, "Job negăsit — a expirat sau ID invalid.")
-    return job
+    return {"status": row.status, "result": row.result, "error": row.error}
 
 
 async def _run_export(request: ExportRequest):
