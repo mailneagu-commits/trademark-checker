@@ -54,6 +54,46 @@ async def _auto_run_all_watches():
         print(f"[SCHEDULER] Eroare monitorizare auto: {e}")
 
 
+async def _probe_tmview() -> Optional[str]:
+    """O singură căutare de test pe TMview. None = merge, altfel motivul blocajului.
+    Imperva blochează în mai multe feluri: 403 „Request Rejected”, 200 cu pagină HTML
+    în loc de JSON, sau conexiuni resetate / care atârnă."""
+    from agents.search_agent import AsyncSession, TMVIEW_URL, TMVIEW_HOME, _build_headers, HAS_CURL_CFFI
+    if not HAS_CURL_CFFI:
+        return None
+    payload = {"page": "1", "pageSize": "3", "criteria": "F", "basicSearch": "TEST",
+               "newPage": True, "fields": ["ST13", "tmName"], "territories": ["RO"]}
+    try:
+        async with AsyncSession(impersonate="chrome120", proxies=None, verify=True) as session:
+            await session.get(TMVIEW_HOME, timeout=15)
+            r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=20)
+    except Exception as e:
+        return f"eroare de conexiune: {type(e).__name__}: {str(e)[:120]}"
+    if r.status_code != 200:
+        return f"HTTP {r.status_code}"
+    if "json" not in r.headers.get("content-type", "").lower():
+        return "200 cu HTML în loc de JSON (Imperva)"
+    return None
+
+
+async def _check_tmview_health():
+    """Rulat la 10 min: dacă TMview blochează IP-ul containerului, rotim regiunea Railway.
+    Confirmăm cu o a doua probă, ca o flotare izolată să nu declanșeze un redeploy."""
+    reason = await _probe_tmview()
+    if reason is None:
+        return
+    await asyncio.sleep(20)
+    reason2 = await _probe_tmview()
+    if reason2 is None:
+        print(f"[TMVIEW-HEALTH] Prima probă a eșuat ({reason}), a doua a mers — nu rotesc.")
+        return
+    print(f"[TMVIEW-HEALTH] TMview blocat ({reason2}) — cer rotirea regiunii")
+    from region_rotate import rotate_region
+    res = await asyncio.get_event_loop().run_in_executor(
+        None, rotate_region, f"verificare periodică: TMview blocat ({reason2})")
+    print(f"[TMVIEW-HEALTH] Rezultat rotire: {res}")
+
+
 async def _prefetch_bulletins():
     """Pre-descarcă și pre-parsează buletinele OSIM/EUIPO de îndată ce apar (nu o
     singură dată/zi — rulează periodic, pentru că ora exactă de publicare variază),
