@@ -8,7 +8,6 @@
     "startCommand": "uvicorn app:app --host 0.0.0.0 --port $PORT",
     "healthcheckPath": "/api/session-status",
     "healthcheckTimeout": 30,
-    "restartPolicyType": "ON_FAILURE",
-    "region": "europe-west4"
+    "restartPolicyType": "ON_FAILURE"
   }
 }

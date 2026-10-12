@@ -6,8 +6,8 @@ TMview/Imperva blochează la nivel de IP, nu de cont — containerul de pe o alt
 primește alt IP și de obicei scapă de blocaj. Cerem schimbarea regiunii prin API-ul Railway
 (serviciul de pe un alt IP decât al TMview-ului blocat), care face singur un redeploy.
 
-Necesită variabila de mediu RAILWAY_API_TOKEN (Railway → Account Settings → Tokens, sau un
-token de proiect). RAILWAY_SERVICE_ID și RAILWAY_ENVIRONMENT_ID sunt puse automat de Railway.
+Necesită variabila de mediu RAILWAY_API_TOKEN (Railway → Account Settings → Tokens; un token de
+proiect e read-only și nu merge). RAILWAY_SERVICE_ID și RAILWAY_ENVIRONMENT_ID sunt puse automat de Railway.
 Fără RAILWAY_API_TOKEN, rotirea e dezactivată — se loghează o singură dată motivul, apoi aplicația
 continuă normal (poate fi rotit manual, ca înainte).
 """
@@ -22,8 +22,13 @@ import requests
 
 GRAPHQL_URL = "https://backboard.railway.com/graphql/v2"
 
-# Aceleași regiuni folosite și la rotirea manuală, în ordinea încercată de obicei.
-REGION_CYCLE: List[str] = ["us-west1", "europe-west4", "asia-southeast1", "us-east4"]
+# ID-urile actuale (Railway Metal) — vechile nume GCP ("us-west1", "europe-west4" etc.) și câmpul
+# `region` din serviceInstanceUpdate sunt depreciate: Railway întorcea succes dar NU muta serviciul.
+# Acum regiunea se setează prin `multiRegionConfig` = {regiune: {"numReplicas": N} | null}.
+REGION_CYCLE: List[str] = ["us-west2", "europe-west4-drams3a", "asia-southeast1-eqsg3a", "us-east4-eqdc4a"]
+# Starea salvată din versiunea veche conține numele vechi — le traducem ca să continuăm ciclul.
+_LEGACY_NAMES = {"us-west1": "us-west2", "europe-west4": "europe-west4-drams3a",
+                 "asia-southeast1": "asia-southeast1-eqsg3a", "us-east4": "us-east4-eqdc4a"}
 
 # Nu rotim mai des decât atât — un redeploy durează ~60-90s, iar un container proaspăt
 # merită verificat cu căutări reale (nu doar primul ping) înainte să-l declarăm tot blocat.
@@ -74,6 +79,7 @@ def _cycle_position() -> str:
     pentru us-west1 — nu se potrivește cu numele din REGION_CYCLE, deci nu poate fi folosit ca
     să alegem 'următoarea' regiune)."""
     to = _load_state().get("to")
+    to = _LEGACY_NAMES.get(to, to)
     return to if to in REGION_CYCLE else REGION_CYCLE[-1]  # necunoscut → următoarea e REGION_CYCLE[0]
 
 
@@ -95,6 +101,25 @@ def _save_state(state: Dict) -> None:
         db.close()
 
 
+def _live_multi_region_config(token: str, service_id: str, env_id: str) -> Optional[Dict]:
+    """multiRegionConfig-ul ultimului deploy, cum îl vede Railway (None dacă nu se poate citi)."""
+    data = _graphql(
+        """
+        query($serviceId: String!, $environmentId: String!) {
+          serviceInstance(serviceId: $serviceId, environmentId: $environmentId) {
+            latestDeployment { status meta }
+          }
+        }
+        """,
+        {"serviceId": service_id, "environmentId": env_id},
+        token,
+    )
+    dep = ((data.get("serviceInstance") or {}).get("latestDeployment") or {})
+    meta = dep.get("meta") or {}
+    cfg = ((meta.get("serviceManifest") or {}).get("deploy") or {}).get("multiRegionConfig")
+    return {"deployment_status": dep.get("status"), "multiRegionConfig": cfg}
+
+
 def status() -> Dict:
     """Pentru diagnosticare: regiunea curentă, dacă rotirea e configurată, ultima încercare."""
     state = {}
@@ -102,8 +127,16 @@ def status() -> Dict:
         state = _load_state()
     except Exception:
         pass
+    live = None
+    if _token() and os.environ.get("RAILWAY_SERVICE_ID") and os.environ.get("RAILWAY_ENVIRONMENT_ID"):
+        try:
+            live = _live_multi_region_config(_token(), os.environ["RAILWAY_SERVICE_ID"],
+                                             os.environ["RAILWAY_ENVIRONMENT_ID"])
+        except Exception as e:
+            live = {"error": str(e)[:300]}
     return {
         "current_region": current_region(),
+        "railway_live": live,
         "configured": bool(_token()),
         "cycle": REGION_CYCLE,
         "cooldown_seconds": COOLDOWN_SECONDS,
@@ -163,21 +196,40 @@ def rotate_region(reason: str) -> Dict:
                   "nu rulăm pe Railway sau variabilele nu sunt încă disponibile.")
             return {"ok": False, "error": "service/environment id lipsă"}
 
-        cur = _cycle_position()
+        existing: Dict = {}
+        try:
+            existing = (_live_multi_region_config(token, service_id, env_id) or {}).get("multiRegionConfig") or {}
+        except Exception as e:
+            print(f"[REGION-ROTATE] Nu am putut citi configurația curentă: {e}")
+        # Regiunea reală (din Railway) are prioritate față de cea salvată de noi.
+        live_regions = [r for r, v in existing.items() if v and r in REGION_CYCLE]
+        cur = live_regions[0] if len(live_regions) == 1 else _cycle_position()
         idx = REGION_CYCLE.index(cur)
         next_region = REGION_CYCLE[(idx + 1) % len(REGION_CYCLE)]
 
         print(f"[REGION-ROTATE] {reason} — trec din {current_region() or cur} pe {next_region}")
         try:
-            _graphql(
-                """
+            # Scoatem (null) toate regiunile existente și punem 1 replică pe cea nouă — altfel
+            # Railway ar adăuga regiunea nouă lângă cea veche (2 replici, una tot pe IP-ul blocat).
+            mrc: Dict = {r: None for r in REGION_CYCLE}
+            mrc.update({r: None for r in existing})
+            mrc[next_region] = {"numReplicas": 1}
+            update_q = """
                 mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) {
                   serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input)
                 }
-                """,
-                {"serviceId": service_id, "environmentId": env_id, "input": {"region": next_region}},
-                token,
-            )
+                """
+            try:
+                _graphql(update_q, {"serviceId": service_id, "environmentId": env_id,
+                                    "input": {"multiRegionConfig": mrc}}, token)
+            except Exception as e:
+                # O regiune veche invalidă (ex. "sfo") poate face Railway să respingă tot obiectul —
+                # reîncercăm doar cu regiunile valide din ciclu.
+                print(f"[REGION-ROTATE] multiRegionConfig complet respins ({e}) — reîncerc doar cu regiunile din ciclu")
+                mrc = {r: None for r in REGION_CYCLE}
+                mrc[next_region] = {"numReplicas": 1}
+                _graphql(update_q, {"serviceId": service_id, "environmentId": env_id,
+                                    "input": {"multiRegionConfig": mrc}}, token)
             _graphql(
                 """
                 mutation($serviceId: String!, $environmentId: String!) {
