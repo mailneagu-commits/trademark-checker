@@ -6,6 +6,7 @@ import os
 import random
 import re
 import shlex
+import time
 from datetime import date
 import requests as _std_requests
 from typing import List, Dict, Tuple, Optional
@@ -389,6 +390,9 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     if nice_classes: payload["niceClass"]   = [int(c) if c.isdigit() else c for c in nice_classes]
     if _cb_is_open():
         return [], 0
+    _dl = _deadline_ctx.get()
+    if _dl is not None and time.monotonic() > _dl:
+        return [], 0
 
     # O căutare completă face zeci de cereri individuale (criterii, pagini, variante
     # fonetice) — verificat live că fiecare cerere poate eșua tranzitoriu ("Connection
@@ -458,6 +462,11 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
 # Câte mărci păstrăm per variantă de căutare (cele mai apropiate de numele căutat) — setat de
 # _fetch_tmview pe durata unei căutări. None = fără limită (comportamentul vechi, paginat).
 _rank_ctx: "contextvars.ContextVar[Optional[Tuple[str, int]]]" = contextvars.ContextVar("_rank_ctx", default=None)
+# Momentul (time.monotonic) după care nu mai trimitem cereri noi în căutarea curentă — întoarcem
+# ce am găsit până atunci, în loc să fie aruncat tot de un timeout exterior.
+_deadline_ctx: "contextvars.ContextVar[Optional[float]]" = contextvars.ContextVar("_deadline_ctx", default=None)
+TMVIEW_BUDGET_SECONDS = 50.0       # căutare normală
+TMVIEW_BUDGET_SECONDS_EU = 80.0    # EU_FULL (26 teritorii, mai multe loturi)
 
 
 def _relevance(query: str, mark: Dict) -> float:
@@ -499,7 +508,7 @@ async def _search_term(session, term, nice_classes, offices, territories, criter
     return collected
 
 
-TOP_PER_VARIANT = 20  # mărci păstrate per variantă de căutare (cele mai relevante)
+TOP_PER_VARIANT = 7   # mărci păstrate per variantă de căutare (cele mai relevante)
 TERRITORY_BATCH = 7   # teritorii per request — evită WAF blocking
 
 # ── Circuit breaker ──────────────────────────────────────────────────────────
@@ -586,6 +595,8 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
 
     upper = name.upper().strip()
     _rank_ctx.set((re.sub(r"[^A-Z0-9]", "", upper), TOP_PER_VARIANT))
+    _deadline_ctx.set(time.monotonic() + (TMVIEW_BUDGET_SECONDS_EU if territories and len(territories) > TERRITORY_BATCH
+                                          else TMVIEW_BUDGET_SECONDS))
 
     many_territories = territories and len(territories) > TERRITORY_BATCH
 
@@ -666,7 +677,9 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         # 26 teritorii = ~4 loturi per termen — doar fragmentele, fără pattern-urile ?
         extra_searches = [("C", t) for t in _fragments[:12]]
     else:
-        extra_searches = [("C", t) for t in (_fragments + _ngrams + _single_char)[:60]]
+        # Fără pattern-urile ? (o literă diferită) — ~16 cereri care aduc foarte puțin și lungeau
+        # căutarea; diferențele de o literă sunt prinse oricum de F (fuzzy) și de fragmente.
+        extra_searches = [("C", t) for t in (_fragments + _ngrams)[:45]]
 
     async with AsyncSession(impersonate="chrome120", proxies=proxies, verify=not use_proxy) as session:
         if not has_browser_session():
@@ -960,7 +973,9 @@ class SearchAgent:
         # că eșecurile reale pot dura 24-80+ secunde) până la max_tmview_attempts,
         # cu pauză progresivă între încercări (4s, 8s, 16s, 30s, apoi plafonat).
         _, _ter_preview = build_offices_and_territories(offices)
-        _tmview_timeout = 90.0 if len(_ter_preview) > TERRITORY_BATCH else 60.0
+        # Plasă de siguranță peste bugetul intern (_deadline_ctx) — _fetch_tmview se oprește singur
+        # la buget și întoarce ce a găsit; timeout-ul de aici ar arunca tot.
+        _tmview_timeout = (TMVIEW_BUDGET_SECONDS_EU if len(_ter_preview) > TERRITORY_BATCH else TMVIEW_BUDGET_SECONDS) + 40.0
         _MAX_ATTEMPTS = max(1, max_tmview_attempts)
         _backoff_schedule = [4.0, 8.0, 16.0, 30.0]
 

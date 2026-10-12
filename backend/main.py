@@ -635,6 +635,9 @@ async def check_trademark(request: SearchRequest):
 # care-l întâlnește căutarea asta) altfel ar șterge job-ul din memoria
 # procesului vechi și frontend-ul ar primi "Job negăsit" la următoarea verificare.
 
+_PROCESS_START = datetime.utcnow()
+
+
 def _set_job(job_id: str, status: str, result: Optional[dict] = None, error: Optional[str] = None) -> None:
     db = SessionLocal()
     try:
@@ -668,7 +671,7 @@ async def check_trademark_start(request: SearchRequest):
 
     async def _bg():
         try:
-            result = await _run_check(request, max_tmview_attempts=7)
+            result = await _run_check(request, max_tmview_attempts=3)
             result["check_id"] = save_check(request, result)     # salvat în baza de date
             _set_job(job_id, "done", result=result)
         except HTTPException as e:
@@ -689,6 +692,12 @@ async def check_trademark_status(job_id: str):
         db.close()
     if not row:
         raise HTTPException(404, "Job negăsit — a expirat sau ID invalid.")
+    if row.status == "running" and row.updated_at and row.updated_at < _PROCESS_START:
+        # Job pornit de procesul anterior — a murit la repornire (de obicei rotirea automată de
+        # regiune, declanșată chiar de blocajul TMview). Altfel pagina ar aștepta la nesfârșit.
+        return {"status": "error", "result": None,
+                "error": "Serverul a repornit pe altă regiune (TMview blocase IP-ul) — "
+                         "căutarea s-a întrerupt. Apasă din nou „Caută” peste ~1 minut."}
     return {"status": row.status, "result": row.result, "error": row.error}
 
 
