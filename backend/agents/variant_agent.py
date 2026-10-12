@@ -119,6 +119,13 @@ def build_phonetic_variants(name: str) -> List[str]:
 
     # Pas 1: substituții simple pe termenul original
     first_level: List[str] = []
+    # Q fără U după el se pronunță K (UNIQORUM ≈ UNIKORUM ≈ UNICORUM ≈ UNIQUORUM) —
+    # primele, fiindcă doar primele 2 variante fonetice intră în căutările principale.
+    if re.search(r"Q(?!U)", upper):
+        for dst in ("K", "C", "QU"):
+            replaced = re.sub(r"Q(?!U)", dst, upper)
+            add(replaced)
+            first_level.append(replaced)
     for src, dst in _PHONETIC_PAIRS:
         if src in upper:
             replaced = upper.replace(src, dst)

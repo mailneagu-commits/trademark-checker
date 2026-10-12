@@ -584,14 +584,50 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
             main_searches.append(("F", _pt))
             main_searches.append(("C", f"*{_pt}*"))
 
+    # Căutare fuzzy (F) pe bucăți din nume — F pe cuvântul întreg (UNIQORUM) nu găsește aproape
+    # nimic la nume lungi, dar F pe UNIQO / QORUM / NIQORU aduce mărci apropiate pe care
+    # fragmentele C (*QORUM*) nu le prind: MYQORZO, ACQUOR, EQUORA, CORUS, CUNIQUE, ANNIQUE.
+    _core_word = "".join(ch for ch in upper if ch.isalnum())
+    _fuzzy_parts: List[str] = []
+    if len(_core_word) >= 7:
+        _k = 5 if len(_core_word) <= 9 else 6
+        for _part in (_core_word[:_k], _core_word[-_k:], _core_word[1:-1][:6]):
+            if _part not in _fuzzy_parts and _part != _core_word:
+                _fuzzy_parts.append(_part)
+    if many_territories:
+        main_searches += [("F", p) for p in _fuzzy_parts[:2]]
+    else:
+        main_searches += [("F", p) for p in _fuzzy_parts]
+
     all_phonetic = list(set(
         build_phonetic_variants(name) + build_vowel_variants(name) +
         build_plural_stem_variants(name)[:4]
     ))
     phonetic_terms = all_phonetic[:2] if (use_proxy or many_territories) else all_phonetic[:4]
     req_timeout = 55 if use_proxy else 6
-    _extra_pool = [("C", term) for term in _unique_terms(extra_terms) if term.upper() != upper]
-    extra_searches = [] if many_territories else _extra_pool[:4]
+    # Termeni extra (fragmente *UNIQO*, *QORUM*, *NIQOR*… și pattern-uri cu ? pentru o literă
+    # diferită). Înainte se luau doar primii 4 — 3 dintre ei dublau căutările principale, deci
+    # fragmentele de la mijloc/coadă nu se căutau niciodată (UNIQORUM: 128/128 rezultate doar
+    # din *UNIQ*, zero din *QORUM*). Acum: fără duplicate, fragmente întâi, apoi pattern-urile ?.
+    _main_terms = {t for _, t in main_searches}
+    _pool = [t for t in _unique_terms(extra_terms) if t.upper() != upper and t not in _main_terms]
+    _fragments = [t for t in _pool if "?" not in t]
+    _single_char = [t for t in _pool if "?" in t]
+    # Toate ferestrele de 4 litere din nume și din variantele fonetice principale — prind mărci
+    # ca CORUS/ACORUS (*CORU* din UNICORUM), KORU (*KORU*), ACQUOR/EQUORA (*QUOR* din UNIQUORUM),
+    # pe care fragmentele de început/sfârșit nu le acoperă.
+    _ngrams: List[str] = []
+    for _w in [_core_word] + [p for p in _phon_plain[:3]]:
+        _w = "".join(ch for ch in _w if ch.isalnum())
+        for _i in range(len(_w) - 3) if len(_w) >= 6 else []:
+            _g = f"*{_w[_i:_i + 4]}*"
+            if _g not in _fragments and _g not in _ngrams and _g not in _main_terms:
+                _ngrams.append(_g)
+    if many_territories:
+        # 26 teritorii = ~4 loturi per termen — doar fragmentele, fără pattern-urile ?
+        extra_searches = [("C", t) for t in _fragments[:12]]
+    else:
+        extra_searches = [("C", t) for t in (_fragments + _ngrams + _single_char)[:60]]
 
     async with AsyncSession(impersonate="chrome120", proxies=proxies, verify=not use_proxy) as session:
         if not has_browser_session():
@@ -602,7 +638,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
                 print(f"[TMVIEW] warmup GET error: {type(e).__name__}: {e}")
             await asyncio.sleep(0.5)
 
-        MAX_TOTAL = 200
+        MAX_TOTAL = 800  # nume lungi + fragmente fuzzy: UNIQO singur atinge 400; scorul filtrează după
         seen: set = set()
         all_marks: List[Dict] = []
 
@@ -623,8 +659,12 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         for crit, term in extra_searches:
             if len(all_marks) >= MAX_TOTAL or _cb_is_open():
                 break
+            # Fragmente scurte (*UNIQ*, *ORUM*) aduc sute de mărci puțin relevante — max 2 pagini,
+            # ca să nu consume tot plafonul înaintea fragmentelor mai specifice.
+            _core = term.replace("*", "").replace("?", "")
+            _pages = 1 if many_territories else (2 if len(_core) <= 4 else MAX_PAGES_PER_TERM)
             marks = await _search_batched(session, term, nice_classes, effective_offices, territories, crit, seen,
-                                               max_pages=(1 if many_territories else MAX_PAGES_PER_TERM),
+                                               max_pages=_pages,
                                                batch_delay=inter_batch_delay)
             all_marks.extend(marks)
             await asyncio.sleep(random.uniform(*inter_search_delay))

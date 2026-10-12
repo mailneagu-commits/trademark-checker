@@ -582,9 +582,9 @@ async def _run_check(request: "SearchRequest", max_tmview_attempts: int = 3) -> 
     # găsind mărci ca CARTESIA care altfel ar fi ratate.
     from agents.variant_agent import build_phonetic_variants, build_input_list as _bil
     _phon_extras = [t for t in build_phonetic_variants(name) if not t.startswith("*") and len(t) >= 3]
-    for _phon in _phon_extras[:1]:
+    for _phon in _phon_extras[:3]:  # ex. UNIQORUM → UNIKORUM, UNICORUM, UNIQUORUM
         for _t in _bil(_phon):
-            if _t not in extra_terms:
+            if "?" not in _t and _t not in extra_terms:
                 extra_terms.append(_t)
 
     trademarks, source = await search_agent.search(

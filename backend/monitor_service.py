@@ -153,9 +153,9 @@ async def run_watch_item(watch_item, db: Session) -> Dict:
     variants    = generate_all_variants(name)
     extra_terms = list(variants.get("search_terms", []))
     _phon_extras = [t for t in build_phonetic_variants(name) if not t.startswith("*") and len(t) >= 3]
-    for _phon in _phon_extras[:1]:
+    for _phon in _phon_extras[:3]:  # ex. UNIQORUM → UNIKORUM, UNICORUM, UNIQUORUM
         for _t in _bil(_phon):
-            if _t not in extra_terms:
+            if "?" not in _t and _t not in extra_terms:
                 extra_terms.append(_t)
 
     # ── Sursă 1: TMview API ──────────────────────────────────────────────
