@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextvars
 import json
 import os
 import random
@@ -8,6 +9,7 @@ import shlex
 from datetime import date
 import requests as _std_requests
 from typing import List, Dict, Tuple, Optional
+from rapidfuzz import fuzz
 
 # TMDN API credentials (HTTP Basic Auth) - optional, from environment
 _TMDN_API_KEY = os.environ.get("TMDN_API_KEY", "")
@@ -453,7 +455,36 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     return [], 0
 
 
+# Câte mărci păstrăm per variantă de căutare (cele mai apropiate de numele căutat) — setat de
+# _fetch_tmview pe durata unei căutări. None = fără limită (comportamentul vechi, paginat).
+_rank_ctx: "contextvars.ContextVar[Optional[Tuple[str, int]]]" = contextvars.ContextVar("_rank_ctx", default=None)
+
+
+def _relevance(query: str, mark: Dict) -> float:
+    """Cât de aproape e marca de numele căutat — întreg, pe cuvinte, sau ca parte din nume."""
+    cand = re.sub(r"[^A-Z0-9 ]", "", str(mark.get("tmName") or "").upper())
+    if not cand:
+        return 0.0
+    words = [w for w in cand.split() if len(w) >= 3] or [cand]
+    return max(
+        fuzz.ratio(query, cand.replace(" ", "")),
+        max(fuzz.ratio(query, w) for w in words),
+        0.85 * fuzz.partial_ratio(query, cand),
+    )
+
+
 async def _search_term(session, term, nice_classes, offices, territories, criteria, seen, max_pages=MAX_PAGES_PER_TERM):
+    rank = _rank_ctx.get()
+    if rank:
+        # O singură pagină (30) per variantă, păstrăm cele mai relevante N — mai puține cereri
+        # spre TMview (mai puține blocaje Imperva) și o listă mai puțin aglomerată.
+        query, top_n = rank
+        marks, _ = await _search_page(session, term, nice_classes, offices, territories, criteria, 1)
+        fresh = [m for m in marks if m.get("ST13") and m["ST13"] not in seen]
+        fresh.sort(key=lambda m: _relevance(query, m), reverse=True)
+        kept = fresh[:top_n]
+        seen.update(m["ST13"] for m in kept)
+        return kept
     collected = []
     for page in range(1, max_pages + 1):
         marks, total = await _search_page(
@@ -468,6 +499,7 @@ async def _search_term(session, term, nice_classes, offices, territories, criter
     return collected
 
 
+TOP_PER_VARIANT = 20  # mărci păstrate per variantă de căutare (cele mai relevante)
 TERRITORY_BATCH = 7   # teritorii per request — evită WAF blocking
 
 # ── Circuit breaker ──────────────────────────────────────────────────────────
@@ -533,6 +565,12 @@ async def _search_batched(session, term, nice_classes, offices, territories, cri
         collected.extend(marks)
         if idx < len(batches) - 1:
             await asyncio.sleep(batch_delay)
+    rank = _rank_ctx.get()
+    if rank and len(batches) > 1 and len(collected) > rank[1]:
+        # Și pe mai multe loturi de teritorii: tot max N per variantă, cele mai relevante.
+        collected.sort(key=lambda m: _relevance(rank[0], m), reverse=True)
+        seen.difference_update(m["ST13"] for m in collected[rank[1]:])  # le pot găsi alte variante
+        collected = collected[:rank[1]]
     return collected
 
 
@@ -547,6 +585,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     offices, territories = build_offices_and_territories(user_offices)
 
     upper = name.upper().strip()
+    _rank_ctx.set((re.sub(r"[^A-Z0-9]", "", upper), TOP_PER_VARIANT))
 
     many_territories = territories and len(territories) > TERRITORY_BATCH
 
