@@ -475,10 +475,14 @@ def _relevance(query: str, mark: Dict) -> float:
     if not cand:
         return 0.0
     words = [w for w in cand.split() if len(w) >= 3] or [cand]
+    q_words = [w for w in query.split() if len(w) >= 3] or [query.replace(" ", "")]
+    q_compact = query.replace(" ", "")
     return max(
-        fuzz.ratio(query, cand.replace(" ", "")),
-        max(fuzz.ratio(query, w) for w in words),
-        0.85 * fuzz.partial_ratio(query, cand),
+        fuzz.ratio(q_compact, cand.replace(" ", "")),
+        max(fuzz.ratio(q_compact, w) for w in words),
+        # Marcă din mai multe cuvinte: un cuvânt identic/apropiat de unul din cuvintele căutate.
+        0.95 * max(fuzz.ratio(qw, w) for qw in q_words for w in words),
+        0.85 * fuzz.partial_ratio(q_compact, cand),
     )
 
 
@@ -597,7 +601,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     offices, territories = build_offices_and_territories(user_offices)
 
     upper = name.upper().strip()
-    _rank_ctx.set((re.sub(r"[^A-Z0-9]", "", upper), TOP_PER_VARIANT))
+    _rank_ctx.set((" ".join(re.split(r"[^A-Z0-9]+", upper)).strip(), TOP_PER_VARIANT))
     _deadline_ctx.set(time.monotonic() + (TMVIEW_BUDGET_SECONDS_EU if territories and len(territories) > TERRITORY_BATCH
                                           else TMVIEW_BUDGET_SECONDS))
 
@@ -640,17 +644,40 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     # Căutare fuzzy (F) pe bucăți din nume — F pe cuvântul întreg (UNIQORUM) nu găsește aproape
     # nimic la nume lungi, dar F pe UNIQO / QORUM / NIQORU aduce mărci apropiate pe care
     # fragmentele C (*QORUM*) nu le prind: MYQORZO, ACQUOR, EQUORA, CORUS, CUNIQUE, ANNIQUE.
+    # Cuvintele mărcii (≥3 caractere). La mărci din mai multe cuvinte căutăm FIECARE cuvânt separat —
+    # o marcă ce conține unul dintre cuvinte (ex. OCEAN din BLUE OCEAN PHARMA) trebuie găsită și
+    # afișată. Înainte, fragmentele se tăiau peste cuvinte (*IA B*, *BLUE OCEAN P*) și cuvântul
+    # singur (*OCEAN*) nu se căuta deloc.
+    _words = [w for w in re.split(r"[^A-Z0-9]+", upper) if len(w) >= 3]
+    _multiword = len(_words) >= 2
     _core_word = "".join(ch for ch in upper if ch.isalnum())
-    _fuzzy_parts: List[str] = []
-    if len(_core_word) >= 7:
-        _k = 5 if len(_core_word) <= 9 else 6
-        for _part in (_core_word[:_k], _core_word[-_k:], _core_word[1:-1][:6]):
-            if _part not in _fuzzy_parts and _part != _core_word:
-                _fuzzy_parts.append(_part)
-    if many_territories:
-        main_searches += [("F", p) for p in _fuzzy_parts[:2]]
+
+    def _fuzzy_parts_of(word: str) -> List[str]:
+        parts: List[str] = []
+        if len(word) >= 7:
+            k = 5 if len(word) <= 9 else 6
+            for part in (word[:k], word[-k:], word[1:-1][:6]):
+                if part not in parts and part != word:
+                    parts.append(part)
+        return parts
+
+    if _multiword:
+        # Cuvintele lungi (mai distinctive) primele.
+        for _w in sorted(_words, key=len, reverse=True):
+            main_searches += [("E", _w), ("C", f"*{_w}*")]
+            if len(_w) >= 5:
+                main_searches.append(("F", _w))
+                _wp = [t for t in build_phonetic_variants(_w) if not t.startswith("*")][:1]
+                main_searches += [("C", f"*{t}*") for t in _wp]
+            main_searches += [("F", p) for p in _fuzzy_parts_of(_w)[:2]]
     else:
-        main_searches += [("F", p) for p in _fuzzy_parts]
+        _fp = _fuzzy_parts_of(_core_word)
+        # Căutare fuzzy (F) pe bucăți din nume — F pe cuvântul întreg (UNIQORUM) nu găsește aproape
+        # nimic la nume lungi, dar F pe UNIQO / QORUM / NIQORU aduce mărci apropiate pe care
+        # fragmentele C (*QORUM*) nu le prind: MYQORZO, ACQUOR, EQUORA, CORUS, CUNIQUE, ANNIQUE.
+        main_searches += [("F", p) for p in (_fp[:2] if many_territories else _fp)]
+    _seen_ms: set = set()
+    main_searches = [x for x in main_searches if not (x in _seen_ms or _seen_ms.add(x))]
 
     all_phonetic = list(set(
         build_phonetic_variants(name) + build_vowel_variants(name) +
@@ -664,13 +691,18 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
     # din *UNIQ*, zero din *QORUM*). Acum: fără duplicate, fragmente întâi, apoi pattern-urile ?.
     _main_terms = {t for _, t in main_searches}
     _pool = [t for t in _unique_terms(extra_terms) if t.upper() != upper and t not in _main_terms]
+    if _multiword:
+        # Fragmentele care trec peste granița dintre cuvinte (*IA B*, *E OCEAN PHARMA*) nu au sens —
+        # păstrăm doar fragmentele dintr-un singur cuvânt.
+        _pool = [t for t in _pool if " " not in t.strip("*?")]
     _fragments = [t for t in _pool if "?" not in t]
     _single_char = [t for t in _pool if "?" in t]
     # Toate ferestrele de 4 litere din nume și din variantele fonetice principale — prind mărci
     # ca CORUS/ACORUS (*CORU* din UNICORUM), KORU (*KORU*), ACQUOR/EQUORA (*QUOR* din UNIQUORUM),
     # pe care fragmentele de început/sfârșit nu le acoperă.
     _ngrams: List[str] = []
-    for _w in [_core_word] + [p for p in _phon_plain[:3]]:
+    _ngram_src = list(_words) if _multiword else [_core_word] + [p for p in _phon_plain[:3]]
+    for _w in _ngram_src:
         _w = "".join(ch for ch in _w if ch.isalnum())
         for _i in range(len(_w) - 3) if len(_w) >= 6 else []:
             _g = f"*{_w[_i:_i + 4]}*"
