@@ -509,6 +509,9 @@ async def _search_term(session, term, nice_classes, offices, territories, criter
 
 
 TOP_PER_VARIANT = 7   # mărci păstrate per variantă de căutare (cele mai relevante)
+# Verificat live 2026-10-13: TMview acceptă toate cele 26 de teritorii EU_FULL într-o cerere
+# (200, JSON) — 1 cerere per variantă în loc de 4 loturi de câte 7.
+TERRITORY_REQUEST_BATCH = 30
 TERRITORY_BATCH = 7   # teritorii per request — evită WAF blocking
 
 # ── Circuit breaker ──────────────────────────────────────────────────────────
@@ -557,9 +560,9 @@ def _cb_reset():
 async def _search_batched(session, term, nice_classes, offices, territories, crit, seen, max_pages=5, batch_delay=0.2):
     """Caută cu împărțire automată în loturi dacă sunt multe teritorii."""
     collected = []
-    if territories and len(territories) > TERRITORY_BATCH:
-        batches = [territories[i:i+TERRITORY_BATCH]
-                   for i in range(0, len(territories), TERRITORY_BATCH)]
+    if territories and len(territories) > TERRITORY_REQUEST_BATCH:
+        batches = [territories[i:i+TERRITORY_REQUEST_BATCH]
+                   for i in range(0, len(territories), TERRITORY_REQUEST_BATCH)]
     else:
         batches = [territories]
 
@@ -673,13 +676,9 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
             _g = f"*{_w[_i:_i + 4]}*"
             if _g not in _fragments and _g not in _ngrams and _g not in _main_terms:
                 _ngrams.append(_g)
-    if many_territories:
-        # 26 teritorii = ~4 loturi per termen — doar fragmentele, fără pattern-urile ?
-        extra_searches = [("C", t) for t in _fragments[:12]]
-    else:
-        # Fără pattern-urile ? (o literă diferită) — ~16 cereri care aduc foarte puțin și lungeau
-        # căutarea; diferențele de o literă sunt prinse oricum de F (fuzzy) și de fragmente.
-        extra_searches = [("C", t) for t in (_fragments + _ngrams)[:45]]
+    # Fără pattern-urile ? (o literă diferită) — ~16 cereri care aduc foarte puțin și lungeau
+    # căutarea; diferențele de o literă sunt prinse oricum de F (fuzzy) și de fragmente.
+    extra_searches = [("C", t) for t in (_fragments + _ngrams)[:45]]
 
     async with AsyncSession(impersonate="chrome120", proxies=proxies, verify=not use_proxy) as session:
         if not has_browser_session():
@@ -694,10 +693,11 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
         seen: set = set()
         all_marks: List[Dict] = []
 
-        base_delay = 1.5 if use_proxy else 1.0
+        base_delay = 1.5 if use_proxy else 0.15
         # EU_FULL: 0.5s batch delay (Imperva e cauzat de prefetch concurrent, nu de search sec.)
-        inter_batch_delay  = 0.5 if many_territories else 0.2
-        inter_search_delay = (0.5, 1.0) if many_territories else (0.15, 0.4)
+        # Cererile durează ~0.2s; pauzele mari de înainte (0.5-1.8s) consumau ~70% din timp.
+        inter_batch_delay  = 0.2
+        inter_search_delay = (0.15, 0.4)
 
         for crit, term in main_searches:
             if len(all_marks) >= MAX_TOTAL or _cb_is_open():
@@ -805,7 +805,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
                 for m in marks:
                     m["_phonetic"] = True
                 all_marks.extend(marks)
-                await asyncio.sleep(random.uniform(base_delay, base_delay + 0.8))
+                await asyncio.sleep(random.uniform(base_delay, base_delay + 0.25))
             all_marks = all_marks[:MAX_TOTAL]
 
         # Wildcard patterns cu poziții specifice → marcate ca "Risc Ridicat"
@@ -819,7 +819,7 @@ async def _fetch_tmview(name: str, nice_classes: List[str], user_offices: List[s
                 for m in marks:
                     m["_risk_high"] = True  # Marchez ca risc ridicat
                 all_marks.extend(marks)
-                await asyncio.sleep(random.uniform(base_delay, base_delay + 1.0))
+                await asyncio.sleep(random.uniform(base_delay, base_delay + 0.25))
             all_marks = all_marks[:MAX_TOTAL]
 
         if not include_expired:
