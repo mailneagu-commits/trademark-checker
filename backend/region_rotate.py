@@ -120,6 +120,14 @@ def _live_multi_region_config(token: str, service_id: str, env_id: str) -> Optio
     return {"deployment_status": dep.get("status"), "multiRegionConfig": cfg}
 
 
+def _health_status() -> Dict:
+    try:
+        import scheduler
+        return dict(scheduler._last_health)
+    except Exception:
+        return {}
+
+
 def status() -> Dict:
     """Pentru diagnosticare: regiunea curentă, dacă rotirea e configurată, ultima încercare."""
     state = {}
@@ -137,6 +145,8 @@ def status() -> Dict:
     return {
         "current_region": current_region(),
         "railway_live": live,
+        "last_call": dict(_last_call),
+        "health": _health_status(),
         "configured": bool(_token()),
         "cycle": REGION_CYCLE,
         "cooldown_seconds": COOLDOWN_SECONDS,
@@ -167,7 +177,22 @@ _boot_time = time.time()
 _rotating = False  # evită rotiri suprapuse (declanșate de mai multe căutări simultane)
 
 
+_last_call: Dict = {}  # ultima apelare (inclusiv sărită/eșuată) — pentru /api/region-status
+
+
 def rotate_region(reason: str) -> Dict:
+    """Wrapper: înregistrează rezultatul oricărei apelări, inclusiv excepțiile neprevăzute."""
+    try:
+        res = _rotate_region(reason)
+    except Exception as e:  # nu lăsăm excepția să dispară într-un executor
+        print(f"[REGION-ROTATE] Excepție neprevăzută: {type(e).__name__}: {e}")
+        res = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    _last_call.clear()
+    _last_call.update({"at": datetime.utcnow().isoformat(), "reason": reason, **res})
+    return res
+
+
+def _rotate_region(reason: str) -> Dict:
     """Cere Railway să mute serviciul pe următoarea regiune din listă și să redeployeze.
     Nu aruncă excepții — un eșec aici nu trebuie să strice căutarea care l-a declanșat."""
     global _rotating, _warned_no_token

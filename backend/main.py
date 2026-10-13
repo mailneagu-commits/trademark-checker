@@ -596,6 +596,12 @@ async def _run_check(request: "SearchRequest", max_tmview_attempts: int = 3) -> 
         include_expired=request.include_expired,
         max_tmview_attempts=max_tmview_attempts,
     )
+    if source.startswith("demo (TMview"):
+        # Nu afișăm mărci inventate ca rezultat — utilizatorul le-ar putea lua drept reale.
+        raise HTTPException(
+            status_code=503,
+            detail="TMview blochează momentan serverul (protecție Imperva). Serverul își schimbă "
+                   "automat regiunea/IP-ul — reîncearcă căutarea peste 2-3 minute.")
     analysis = similarity_agent.analyze(name, trademarks, request.nice_classes, user_offices=request.offices)
 
     return {

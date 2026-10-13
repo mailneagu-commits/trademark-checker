@@ -76,10 +76,15 @@ async def _probe_tmview() -> Optional[str]:
     return None
 
 
+_last_health: dict = {}  # ultima verificare periodică — afișată în /api/region-status
+
+
 async def _check_tmview_health():
     """Rulat la 10 min: dacă TMview blochează IP-ul containerului, rotim regiunea Railway.
     Confirmăm cu o a doua probă, ca o flotare izolată să nu declanșeze un redeploy."""
+    from datetime import datetime as _dt
     reason = await _probe_tmview()
+    _last_health.update({"at": _dt.utcnow().isoformat(), "blocked": reason})
     if reason is None:
         return
     await asyncio.sleep(20)
@@ -199,29 +204,32 @@ def start_scheduler():
 
     # Daily at 07:00 UTC
     sched.add_job(
-        lambda: asyncio.ensure_future(_run_all_due("daily")),
+        _run_all_due,
         CronTrigger(hour=7, minute=0),
+        args=["daily"],
         id="daily_monitor",
         replace_existing=True,
     )
     # Weekly on Monday at 07:30 UTC
     sched.add_job(
-        lambda: asyncio.ensure_future(_run_all_due("weekly")),
+        _run_all_due,
         CronTrigger(day_of_week="mon", hour=7, minute=30),
+        args=["weekly"],
         id="weekly_monitor",
         replace_existing=True,
     )
     # Monthly on the 1st at 08:00 UTC
     sched.add_job(
-        lambda: asyncio.ensure_future(_run_all_due("monthly")),
+        _run_all_due,
         CronTrigger(day=1, hour=8, minute=0),
+        args=["monthly"],
         id="monthly_monitor",
         replace_existing=True,
     )
     # Pre-descărcare buletine: la fiecare oră, 06:00-19:00 UTC, zile lucrătoare —
     # ora exactă de publicare a buletinelor OSIM/EUIPO variază de la o zi la alta.
     sched.add_job(
-        lambda: asyncio.ensure_future(_prefetch_bulletins()),
+        _prefetch_bulletins,
         CronTrigger(day_of_week="mon-fri", hour="6-19", minute=0),
         id="bulletin_prefetch",
         replace_existing=True,
@@ -230,12 +238,15 @@ def start_scheduler():
     # chiar dacă nimeni nu a căutat nimic între timp (circuit breaker-ul se deschide
     # doar la o căutare reală eșuată).
     sched.add_job(
-        lambda: asyncio.ensure_future(_check_tmview_health()),
+        _check_tmview_health,
         CronTrigger(minute="*/10"),
         id="tmview_health",
         replace_existing=True,
     )
 
+    # Funcțiile corutină se dau direct: AsyncIOScheduler le rulează pe event loop. Înainte erau
+    # lambda: asyncio.ensure_future(...) — APScheduler rulează funcțiile normale într-un thread
+    # fără event loop, deci fiecare job murea cu RuntimeError, silențios (niciun job nu rula).
     sched.start()
     print("[SCHEDULER] Started — daily 07:00, weekly Mon 07:30, monthly 1st 08:00 UTC, "
           "bulletin prefetch hourly 06-19 UTC (mon-fri), TMview health check every 10 min")
