@@ -7,6 +7,7 @@ import asyncio
 from typing import Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 
 _scheduler: Optional[AsyncIOScheduler] = None
 
@@ -241,6 +242,17 @@ def start_scheduler():
         _check_tmview_health,
         CronTrigger(minute="*/10"),
         id="tmview_health",
+        replace_existing=True,
+    )
+    # Și o verificare imediat după perioada de grație: după o mutare de zonă aflăm în ~2,5 min
+    # dacă noua zonă merge (cronometrul din frontend așteaptă exact asta), nu la următorul tick.
+    # Importul fixează și region_rotate._boot_time la pornire, nu la primul apel.
+    import region_rotate
+    from datetime import datetime as _dt, timedelta as _td
+    sched.add_job(
+        _check_tmview_health,
+        DateTrigger(run_date=_dt.now() + _td(seconds=region_rotate.STARTUP_PROBE_SECONDS)),
+        id="tmview_health_boot",
         replace_existing=True,
     )
 

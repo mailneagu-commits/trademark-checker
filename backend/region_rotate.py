@@ -36,6 +36,11 @@ COOLDOWN_SECONDS = 6 * 60
 # Nu rotim în primele X secunde după un redeploy — containerul abia pornit încă nu a avut
 # nicio căutare reală prin el; altfel am rotit la nesfârșit la fiecare pornire.
 GRACE_AFTER_DEPLOY_SECONDS = 2 * 60
+# Prima verificare TMview după pornire (scheduler.py) — imediat după perioada de grație, ca un
+# container proaspăt mutat să afle repede dacă noua zonă merge (nu abia la următorul tick de 10 min).
+STARTUP_PROBE_SECONDS = GRACE_AFTER_DEPLOY_SECONDS + 30
+# Cât durează, aproximativ, de la cererea de rotire până când noul container răspunde.
+REDEPLOY_SECONDS = 3 * 60
 
 _STATE_KEY = "region_rotation"
 _warned_no_token = False
@@ -154,6 +159,50 @@ def status() -> Dict:
         "cooldown_seconds": COOLDOWN_SECONDS,
         "last": state,
     }
+
+
+def _parse_utc(s: Optional[str]) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(s) if s else None
+    except ValueError:
+        return None
+
+
+def retry_eta() -> Dict:
+    """Pentru cronometrul din frontend: în ce etapă e deblocarea TMview și când merită refăcută
+    căutarea (retry_at, UTC). Estimări — ora exactă depinde de cât durează redeploy-ul Railway."""
+    from datetime import timedelta
+    now = datetime.utcnow()
+    boot = datetime.utcfromtimestamp(_boot_time)
+    health = _health_status()
+    state: Dict = {}
+    try:
+        state = _load_state()
+    except Exception:
+        pass
+    base = {"region": current_region(), "configured": bool(_token())}
+
+    last_at = _parse_utc(state.get("at"))
+    if state.get("ok") and last_at and last_at > boot:
+        # Acest container a cerut deja mutarea — noul container (altă zonă) pornește curând.
+        return {**base, "phase": "rotating", "to": state.get("to"),
+                "retry_at": (last_at + timedelta(seconds=REDEPLOY_SECONDS)).isoformat()}
+
+    checked_at = _parse_utc(health.get("at"))
+    if checked_at is None or checked_at < boot:
+        return {**base, "phase": "verifying",
+                "retry_at": max(now, boot + timedelta(seconds=STARTUP_PROBE_SECONDS + 30)).isoformat()}
+
+    if health.get("blocked"):
+        # Următoarea verificare periodică (la fix :00, :10, …) + a doua probă (20s) + redeploy.
+        nxt = now.replace(second=0, microsecond=0) + timedelta(minutes=10 - now.minute % 10)
+        res = {**base, "phase": "blocked", "reason": health.get("blocked"),
+               "retry_at": (nxt + timedelta(seconds=20 + REDEPLOY_SECONDS)).isoformat()}
+        if state.get("ok") is False and last_at and last_at > checked_at - timedelta(minutes=1):
+            res["rotation_error"] = state.get("error", "")[:200]
+        return res
+
+    return {**base, "phase": "ok", "checked_at": health.get("at")}
 
 
 def _can_rotate_now() -> Optional[str]:

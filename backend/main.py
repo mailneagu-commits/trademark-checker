@@ -93,6 +93,14 @@ async def region_status():
     return status()
 
 
+@app.get("/api/tmview-eta")
+async def tmview_eta():
+    """Pentru cronometrul din frontend: etapa deblocării TMview și când merită reîncercată căutarea.
+    Fără apeluri la API-ul Railway (spre deosebire de /api/region-status) — se poate interoga des."""
+    from region_rotate import retry_eta
+    return retry_eta()
+
+
 @app.post("/api/region-rotate")
 async def region_rotate_now(x_backup_token: Optional[str] = Header(None)):
     """Forțează o rotire de regiune acum (testare / urgență) — protejat de BACKUP_TOKEN,

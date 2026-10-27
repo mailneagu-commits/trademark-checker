@@ -296,6 +296,17 @@
       background: #fdecea; color: #c0392b; padding: 13px 16px;
       border-radius: 9px; border-left: 4px solid #e74c3c; font-size: 0.88rem; margin-bottom: 14px;
     }
+    .tmview-banner {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      padding: 12px 16px; border-radius: 9px; margin-bottom: 14px; font-size: 0.88rem;
+      background: #fff6e5; color: #8a5a00; border-left: 4px solid #f0a020;
+    }
+    .tmview-banner.ok { background: #e9f7ef; color: #1e7e46; border-left-color: #27ae60; }
+    .tmview-banner .tb-text { flex: 1; min-width: 220px; }
+    .tmview-banner .tb-clock {
+      font-variant-numeric: tabular-nums; font-size: 1.5rem; font-weight: 700; letter-spacing: .02em;
+    }
+    .tmview-banner .tb-sub { font-size: .76rem; opacity: .8; margin-top: 2px; }
 
     /* Expired toggle */
     .toggle-wrap { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
@@ -402,6 +413,9 @@
 </header>
 
 <div class="container" id="page-verificare">
+
+  <!-- Cronometru deblocare TMview (schimbare automată de zonă) -->
+  <div id="tmviewBanner" class="tmview-banner" style="display:none;"></div>
 
   <!-- FORM -->
   <div class="card">
@@ -991,6 +1005,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadSavedChecks();
   document.getElementById("niceSearch").addEventListener("input", e => buildNiceChips(e.target.value));
   checkSessionStatus();
+  refreshTmviewEta();
 });
 
 async function checkSessionStatus() {
@@ -1215,7 +1230,7 @@ async function doSearch() {
       }),
     });
     const startData = await startRes.json();
-    if (!startRes.ok) { showError(startData.detail || "Eroare necunoscută."); return; }
+    if (!startRes.ok) { showError(startData.detail || "Eroare necunoscută."); refreshTmviewEta(); return; }
 
     // Conexiunea către TMview poate pica minute întregi (verificat live) — căutarea
     // rulează în fundal, cu reîncercări mult mai generoase decât ar suporta o
@@ -1226,6 +1241,7 @@ async function doSearch() {
   } catch(e) {
     setExportControlsEnabled(false);
     showError(e.message || "Nu s-a putut contacta serverul. Asigurați-vă că backend-ul rulează pe portul 8000.");
+    refreshTmviewEta();  // un eșec TMview poate declanșa mutarea zonei — arată cronometrul imediat
   } finally {
     setLoading(false);
   }
@@ -1416,6 +1432,87 @@ async function deleteOldChecks() {
 function showError(msg) {
   const box = document.getElementById("errorBox");
   box.textContent = "⚠️ " + msg; box.style.display = "block";
+}
+
+// ---- Cronometru deblocare TMview ----
+// Când TMview blochează IP-ul serverului, backend-ul mută singur serviciul în altă zonă Railway
+// (redeploy ~3 min). /api/tmview-eta spune etapa și când merită refăcută căutarea.
+const REGION_LABELS = {
+  "us-west2": "SUA Vest", "europe-west4-drams3a": "Europa (Amsterdam)",
+  "asia-southeast1-eqsg3a": "Asia (Singapore)", "us-east4-eqdc4a": "SUA Est (Virginia)",
+};
+const regionLabel = r => REGION_LABELS[r] || r || "necunoscută";
+let _eta = null, _etaWasBad = false, _etaPollTimer = null, _etaClockTimer = null;
+
+async function refreshTmviewEta() {
+  clearTimeout(_etaPollTimer);
+  try {
+    const r = await fetch("/api/tmview-eta", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    _eta = await r.json();
+  } catch (e) {
+    // Serverul nu răspunde: de obicei e redeploy-ul în noua zonă — păstrăm cronometrul.
+    if (_eta && _eta.phase !== "ok") _eta.offline = true;
+  }
+  if (_eta && _eta.phase !== "ok") _etaWasBad = true;
+  renderTmviewEta();
+  _etaPollTimer = setTimeout(refreshTmviewEta, (!_eta || _eta.phase === "ok") ? 120000 : 15000);
+}
+
+function renderTmviewEta() {
+  const box = document.getElementById("tmviewBanner");
+  clearInterval(_etaClockTimer);
+  if (!_eta || (_eta.phase === "ok" && !_etaWasBad)) { box.style.display = "none"; return; }
+
+  if (_eta.phase === "ok") {
+    box.className = "tmview-banner ok";
+    box.innerHTML = `<div class="tb-text"><strong>✅ TMview funcționează din nou</strong>
+        <div class="tb-sub">Server în zona ${regionLabel(_eta.region)} — poți reface verificarea.</div></div>
+      <button class="btn-sm" onclick="dismissTmviewEta(); doSearch();">🔄 Refă verificarea</button>
+      <button class="btn-sm" onclick="dismissTmviewEta()">✕</button>`;
+    box.style.display = "flex";
+    return;
+  }
+
+  let title, sub;
+  if (_eta.offline) {
+    title = "🔄 Serverul repornește în noua zonă…";
+    sub = "Pagina se actualizează singură când serverul răspunde din nou.";
+  } else if (_eta.phase === "rotating") {
+    title = `🔄 Se mută serverul în zona ${regionLabel(_eta.to)}…`;
+    sub = `TMview a blocat zona ${regionLabel(_eta.region)}. Mutarea face un redeploy de ~3 minute.`;
+  } else if (_eta.phase === "verifying") {
+    title = `🔎 Server pornit în zona ${regionLabel(_eta.region)} — verific dacă TMview răspunde…`;
+    sub = "Dacă și această zonă e blocată, serverul se mută automat în următoarea.";
+  } else {
+    title = `⛔ TMview blochează serverul (zona ${regionLabel(_eta.region)})`;
+    sub = _eta.configured
+      ? (_eta.rotation_error
+          ? "Mutarea automată în altă zonă a eșuat — reîncerc la următoarea verificare."
+          : "La următoarea verificare automată (din 10 în 10 minute) serverul se mută în altă zonă.")
+      : "Schimbarea automată a zonei nu e configurată (lipsește RAILWAY_API_TOKEN).";
+  }
+  box.className = "tmview-banner";
+  box.innerHTML = `<div class="tb-text"><strong>${title}</strong><div class="tb-sub">${sub}</div></div>
+    <div style="text-align:right;"><div class="tb-sub">Poți reîncerca în aproximativ</div>
+    <div class="tb-clock" id="tbClock">–:––</div></div>`;
+  box.style.display = "flex";
+
+  const target = _eta.retry_at ? new Date(_eta.retry_at + "Z").getTime() : null;
+  const tick = () => {
+    const el = document.getElementById("tbClock");
+    if (!el) return;
+    if (!target) { el.textContent = "–:––"; return; }
+    const s = Math.round((target - Date.now()) / 1000);
+    el.textContent = s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "în curând…";
+  };
+  tick();
+  _etaClockTimer = setInterval(tick, 1000);
+}
+
+function dismissTmviewEta() {
+  _etaWasBad = false;
+  document.getElementById("tmviewBanner").style.display = "none";
 }
 
 let _progressTimer     = null;
