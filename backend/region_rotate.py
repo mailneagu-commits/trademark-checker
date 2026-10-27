@@ -78,7 +78,9 @@ def _cycle_position() -> str:
     noi (salvată în DB), nu ce raportează RAILWAY_REPLICA_REGION (cod intern Railway, ex. 'sfo'
     pentru us-west1 — nu se potrivește cu numele din REGION_CYCLE, deci nu poate fi folosit ca
     să alegem 'următoarea' regiune)."""
-    to = _load_state().get("to")
+    state = _load_state()
+    # O încercare eșuată nu ne-a mutat — rămânem unde eram ("from"), nu unde voiam să ajungem.
+    to = state.get("to") if state.get("ok") else state.get("from")
     to = _LEGACY_NAMES.get(to, to)
     return to if to in REGION_CYCLE else REGION_CYCLE[-1]  # necunoscut → următoarea e REGION_CYCLE[0]
 
@@ -226,9 +228,15 @@ def _rotate_region(reason: str) -> Dict:
             existing = (_live_multi_region_config(token, service_id, env_id) or {}).get("multiRegionConfig") or {}
         except Exception as e:
             print(f"[REGION-ROTATE] Nu am putut citi configurația curentă: {e}")
-        # Regiunea reală (din Railway) are prioritate față de cea salvată de noi.
+        # Regiunea reală are prioritate față de cea salvată de noi: întâi cea a containerului care
+        # rulează, apoi configurația din Railway (lipsește cât timp ultimul deploy e încă în build).
         live_regions = [r for r, v in existing.items() if v and r in REGION_CYCLE]
-        cur = live_regions[0] if len(live_regions) == 1 else _cycle_position()
+        if current_region() in REGION_CYCLE:
+            cur = current_region()
+        elif len(live_regions) == 1:
+            cur = live_regions[0]
+        else:
+            cur = _cycle_position()
         idx = REGION_CYCLE.index(cur)
         next_region = REGION_CYCLE[(idx + 1) % len(REGION_CYCLE)]
 
