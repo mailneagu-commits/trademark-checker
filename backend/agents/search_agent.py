@@ -295,7 +295,9 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
                 {
                     "name":    a.get("organizationName") or a.get("fullName") or a.get("name") or "",
                     "address": a.get("fullAddress") or a.get("address") or "",
-                    "country": a.get("nationalityCode") or a.get("incorporationCountryCode") or a.get("country") or "",
+                    "country": (a.get("nationalityCode") or a.get("incorporationCountryCode") or a.get("country")
+                                or a.get("countryCode") or a.get("addressCountryCode") or a.get("domicileCountryCode")
+                                or a.get("residenceCountryCode") or ""),
                 }
                 for a in data.get("applicants", [])
                 if a.get("organizationName") or a.get("fullName") or a.get("name")
