@@ -2145,6 +2145,11 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
     rl = p_own.add_run("Titular: "); rl.bold = True; rl.font.size = Pt(9); rl.font.name = "Arial"
     rv = p_own.add_run(owner);       rv.font.size = Pt(9); rv.font.name = "Arial"
 
+    if app_addr:
+        p_addr = ic.add_paragraph()
+        ral = p_addr.add_run("Adresă titular: "); ral.bold = True; ral.font.size = Pt(8); ral.font.name = "Arial"; ral.font.color.rgb = LGRAY
+        rav = p_addr.add_run(app_addr);           rav.font.size = Pt(8); rav.font.name = "Arial"; rav.font.color.rgb = GRAY
+
     if reps_w:
         p_rep = ic.add_paragraph()
         rrl = p_rep.add_run("Reprezentant: "); rrl.bold = True; rrl.font.size = Pt(8); rrl.font.name = "Arial"; rrl.font.color.rgb = LGRAY
