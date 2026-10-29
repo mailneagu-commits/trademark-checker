@@ -611,6 +611,12 @@ def _fetch_image_bytes(url: str, size=(60, 60), _cache: dict = {}) -> Optional[b
             print(f"[IMG] ✅ Success: {len(result)} bytes")
             return result
         else:
+            # 404 sau eroare JSON „UNRECOVERABLE” de la TMview = marca nu are imagine la sursă (nici în
+            # browser nu apare) — nu e un blocaj, deci nu avertizăm și nu o mai cerem în acest export.
+            if r.status_code == 404 or (r.status_code == 500 and b"UNRECOVERABLE" in r.content[:300]):
+                print(f"[IMG] Fără imagine la sursă (HTTP {r.status_code})")
+                _cache[key] = None
+                return None
             print(f"[IMG] ⚠️  Bad status/type or too small (may be blocked)")
             _img_fail(url, f"status={r.status_code} type={ct} size={len(r.content)} body={r.content[:80]!r}")
             # Try alternative: maybe it's a relative URL that needs different domain
