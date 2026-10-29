@@ -109,6 +109,34 @@ def _translate_to_ro(text: str) -> str:
     return text
 
 
+# Țara titularului (cod ISO din TMview) → nume în română, pentru cardurile din export.
+_COUNTRY_RO = {
+    "RO": "România", "MD": "Republica Moldova", "AT": "Austria", "BE": "Belgia", "BG": "Bulgaria",
+    "CY": "Cipru", "CZ": "Cehia", "DE": "Germania", "DK": "Danemarca", "EE": "Estonia", "ES": "Spania",
+    "FI": "Finlanda", "FR": "Franța", "GR": "Grecia", "HR": "Croația", "HU": "Ungaria", "IE": "Irlanda",
+    "IT": "Italia", "LT": "Lituania", "LU": "Luxemburg", "LV": "Letonia", "MT": "Malta", "NL": "Țările de Jos",
+    "PL": "Polonia", "PT": "Portugalia", "SE": "Suedia", "SI": "Slovenia", "SK": "Slovacia",
+    "GB": "Regatul Unit", "CH": "Elveția", "NO": "Norvegia", "IS": "Islanda", "LI": "Liechtenstein",
+    "TR": "Turcia", "UA": "Ucraina", "RS": "Serbia", "RU": "Rusia", "US": "Statele Unite", "CA": "Canada",
+    "MX": "Mexic", "BR": "Brazilia", "CN": "China", "HK": "Hong Kong", "TW": "Taiwan", "JP": "Japonia",
+    "KR": "Coreea de Sud", "IN": "India", "SG": "Singapore", "AU": "Australia", "NZ": "Noua Zeelandă",
+    "IL": "Israel", "AE": "Emiratele Arabe Unite", "SA": "Arabia Saudită", "ZA": "Africa de Sud",
+}
+
+
+def _applicant_addresses(tm: dict) -> str:
+    """Adresele titularilor, fiecare cu țara: „Allee de la Recherche 60, 1070 Brussels, Belgia (BE)”."""
+    out = []
+    for a in (tm.get("applicants") or []):
+        addr = (a.get("address") or "").strip().rstrip(",")
+        cc = (a.get("country") or "").strip().upper()
+        country = f"{_COUNTRY_RO[cc]} ({cc})" if cc in _COUNTRY_RO else cc
+        part = ", ".join(x for x in (addr, country) if x)
+        if part:
+            out.append(part)
+    return "; ".join(out)
+
+
 def _prefill_translations(texts) -> None:
     """Pregătește dintr-o dată traducerile pentru toate textele unui export, ca _translate_to_ro
     (apelat card cu card) să le găsească în _translation_cache: întâi din DB (export_cache), apoi
@@ -1166,7 +1194,7 @@ def build_pdf(query: str, nice_classes: List[str], offices: List[str],
         office      = tm.get("office") or ""
         office_name = tm.get("officeName") or ""
         applicant   = ", ".join(a.get("name","") for a in (tm.get("applicants") or []) if a.get("name")) or "—"
-        app_addr    = "; ".join(a.get("address","") for a in (tm.get("applicants") or []) if a.get("address"))
+        app_addr    = _applicant_addresses(tm)
         reps        = ", ".join((r.get("fullName") or r.get("organizationName",""))
                                 for r in (tm.get("representatives") or [])
                                 if r.get("fullName") or r.get("organizationName"))
@@ -2055,7 +2083,7 @@ def _word_trademark_card(doc, tm, page_w_cm: float = 27.1, expired: bool = False
         stat_col = GRAY
 
     owner     = ", ".join(a.get("name","") for a in (tm.get("applicants") or []) if a.get("name")) or "—"
-    app_addr  = "; ".join(a.get("address","") for a in (tm.get("applicants") or []) if a.get("address"))
+    app_addr  = _applicant_addresses(tm)
     reps_w    = ", ".join((r.get("fullName") or r.get("organizationName",""))
                           for r in (tm.get("representatives") or [])
                           if r.get("fullName") or r.get("organizationName"))
