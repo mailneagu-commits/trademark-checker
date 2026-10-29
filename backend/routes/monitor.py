@@ -621,6 +621,14 @@ def delete_all_saved_bulletins(db: Session = Depends(get_db)):
     marks  = db.query(BulletinMark).delete(synchronize_session=False)
     images = db.query(BulletinImage).delete(synchronize_session=False)
     db.commit()
+    # PostgreSQL nu micșorează fișierele tabelelor la DELETE — doar VACUUM FULL dă spațiul înapoi
+    # (Railway taxează volumul după spațiul ocupat). Rulează în afara unei tranzacții.
+    from db import engine
+    if engine.dialect.name == "postgresql":
+        from sqlalchemy import text
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
+            c.execute(text("VACUUM FULL bulletin_marks"))
+            c.execute(text("VACUUM FULL bulletin_images"))
     for d in (osim_bulletin.CACHE_DIR, euipo_bulletin.CACHE_DIR):
         shutil.rmtree(d, ignore_errors=True)
         os.makedirs(d, exist_ok=True)
