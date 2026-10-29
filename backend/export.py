@@ -444,6 +444,16 @@ _IMG_HEADERS = {
 }
 
 
+# Motivele ultimelor eșecuri la descărcarea imaginilor — raportate în statusul
+# exportului, ca să se vadă de ce lipsesc imaginile din carduri fără loguri Railway.
+IMG_FAILURES: List[str] = []
+
+
+def _img_fail(url: str, reason: str) -> None:
+    IMG_FAILURES.append(f"{url[-40:]}: {reason}")
+    del IMG_FAILURES[:-20]
+
+
 def _fetch_image_bytes(url: str, size=(60, 60), _cache: dict = {}) -> Optional[bytes]:
     if not url:
         print(f"[IMG] No URL provided")
@@ -495,6 +505,7 @@ def _fetch_image_bytes(url: str, size=(60, 60), _cache: dict = {}) -> Optional[b
             return result
         else:
             print(f"[IMG] ⚠️  Bad status/type or too small (may be blocked)")
+            _img_fail(url, f"status={r.status_code} type={ct} size={len(r.content)} body={r.content[:80]!r}")
             # Try alternative: maybe it's a relative URL that needs different domain
             if url.startswith("https://www.tmdn.org") and r.status_code == 200 and r.text and len(r.text) < 500:
                 # Looks like an error page, might need different approach
@@ -502,8 +513,10 @@ def _fetch_image_bytes(url: str, size=(60, 60), _cache: dict = {}) -> Optional[b
                 
     except Exception as e:
         print(f"[IMG] ❌ Exception: {type(e).__name__}: {e}")
-    
-    _cache[key] = None
+        _img_fail(url, f"{type(e).__name__}: {e}")
+
+    # Eșecurile nu se mai țin în cache: un blocaj trecător nu trebuie să scoată
+    # imaginea din toate exporturile următoare până la repornirea serverului.
     return None
 
 

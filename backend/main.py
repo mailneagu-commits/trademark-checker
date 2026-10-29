@@ -808,9 +808,12 @@ async def export_start(request: ExportRequest):
 
     async def _bg():
         try:
+            import export as _export_mod
+            _export_mod.IMG_FAILURES.clear()
             data, filename, media_type = await _run_export(request)
             _export_jobs[job_id] = {
                 "status": "done", "error": None,
+                "image_failures": list(_export_mod.IMG_FAILURES),
                 "data": data, "filename": filename, "media_type": media_type,
             }
         except HTTPException as e:
@@ -827,7 +830,7 @@ async def export_status(job_id: str):
     job = _export_jobs.get(job_id)
     if not job:
         raise HTTPException(404, "Job de export negăsit — a expirat sau ID invalid.")
-    return {"status": job["status"], "error": job.get("error")}
+    return {"status": job["status"], "error": job.get("error"), "image_failures": job.get("image_failures")}
 
 
 @app.get("/api/export/download")
