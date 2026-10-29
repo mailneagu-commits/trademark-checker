@@ -1343,7 +1343,8 @@ function renderSavedChecks() {
       <input type="text" id="savedChecksQ" value="${_bEsc(qVal)}" placeholder="🔍 Caută după denumire sau notă…"
         oninput="clearTimeout(window._scT);window._scT=setTimeout(loadSavedChecks,300)"
         style="flex:1;min-width:200px;max-width:340px;padding:6px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.82rem;">
-      <button class="btn-sm" id="scDelSelBtn" style="color:#c0392b;display:none;" onclick="deleteSelectedChecks()">🗑 Șterge selectate</button>
+      <label class="btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;"><input type="checkbox" id="scSelAllTop" onchange="toggleAllSavedChecks(this.checked)"> Selectează tot</label>
+      <button class="btn-sm" id="scDelSelBtn" style="color:#c0392b;" disabled title="Bifează verificările din listă, apoi șterge-le pe toate odată" onclick="deleteSelectedChecks()">🗑 Șterge selectate (0)</button>
       <button class="btn-sm" onclick="deleteOldChecks()">🧹 Șterge mai vechi de… zile</button>
     </div>
     ${rows ? `<div style="overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;"><table style="width:100%;border-collapse:collapse;font-size:.82rem;">
@@ -1358,13 +1359,16 @@ function renderSavedChecks() {
           <th style="padding:6px 8px;"></th></tr></thead>
         <tbody>${rows}</tbody></table></div>`
       : '<div style="color:#aaa;font-size:.84rem;">Nicio verificare salvată încă — se salvează automat după fiecare căutare.</div>'}`;
+  updateSavedChecksSel();
   if (hadFocus) { const i = document.getElementById("savedChecksQ"); i.focus(); i.setSelectionRange(qVal.length, qVal.length); }
 }
 
 function updateSavedChecksSel() {
   const n = document.querySelectorAll(".sc-sel:checked").length;
   const b = document.getElementById("scDelSelBtn");
-  if (b) { b.style.display = n ? "" : "none"; b.textContent = `🗑 Șterge selectate (${n})`; }
+  if (b) { b.disabled = !n; b.style.opacity = n ? "1" : ".5"; b.textContent = `🗑 Șterge selectate (${n})`; }
+  const all = document.querySelectorAll(".sc-sel").length;
+  ["scSelAll", "scSelAllTop"].forEach(id => { const el = document.getElementById(id); if (el) el.checked = all > 0 && n === all; });
 }
 function toggleAllSavedChecks(on) {
   document.querySelectorAll(".sc-sel").forEach(c => c.checked = on);

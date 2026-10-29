@@ -34,11 +34,26 @@ def db_info() -> dict:
     containerului se șterge la fiecare deploy — persistă doar PostgreSQL (DATABASE_URL) sau un
     volum Railway montat la DATA_DIR."""
     if _pg_url:
-        return {"engine": "postgresql", "persistent": True}
+        return {"engine": "postgresql", "persistent": True, "size": _pg_sizes()}
     # DATA_DIR setat nu e suficient: trebuie să fie un volum montat, altfel tot disc efemer
     on_volume = bool(DATA_DIR) and DB_PATH.startswith(DATA_DIR) and os.path.ismount(DATA_DIR)
     return {"engine": "sqlite", "persistent": on_volume, "path": DB_PATH,
             "data_dir": DATA_DIR or None, "data_dir_is_mount": bool(DATA_DIR) and os.path.ismount(DATA_DIR)}
+
+
+def _pg_sizes() -> dict:
+    """Cât ocupă baza de date (total + cele mai mari tabele, în MB) — Railway taxează volumul Postgres după spațiu."""
+    from sqlalchemy import text
+    try:
+        with engine.connect() as c:
+            total = c.execute(text("SELECT pg_database_size(current_database())")).scalar()
+            rows = c.execute(text(
+                "SELECT relname, pg_total_relation_size(relid) FROM pg_catalog.pg_statio_user_tables "
+                "ORDER BY 2 DESC LIMIT 8")).all()
+        mb = lambda b: round(b / 1024 / 1024, 1)
+        return {"total_mb": mb(total), "tables_mb": {r[0]: mb(r[1]) for r in rows}}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def get_db():
