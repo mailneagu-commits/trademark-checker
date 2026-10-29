@@ -222,21 +222,25 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
     # o mică întârziere și lăsând CLASE NISA PRODUSE/SERVICII gol la export, în
     # tăcere (exceptions înghițite mai jos). Reîncercăm de 2 ori, cu timeout mai
     # generos, înainte să renunțăm la acest ST13.
+    # Măsurat live (export NUROFEN): cererile reușite durau ~14s = prima încercare expirată la 12s
+    # + reîncercare reușită în ~1s — TMview „înghite” des prima cerere. Renunțăm repede la prima
+    # (5s) și mai încercăm de două ori, cu timeout tot mai generos.
     r = None
-    for _try in range(2):
+    _timeouts = (5, 8, 12)
+    for _try, _tmo in enumerate(_timeouts):
         try:
             r = await asyncio.wait_for(
                 session.get(
                     TMVIEW_DETAIL.format(st13=st13),
                     headers=_build_headers(),
-                    timeout=10,
+                    timeout=_tmo,
                 ),
-                timeout=12,
+                timeout=_tmo + 2,
             )
             break
         except Exception as _e:
-            if _try == 0:
-                await asyncio.sleep(1.0)
+            if _try < len(_timeouts) - 1:
+                await asyncio.sleep(0.5)
                 continue
             _diag_fail(type(_e).__name__)
             return {}
