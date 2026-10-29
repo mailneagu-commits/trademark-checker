@@ -108,6 +108,10 @@ async def _prefetch_bulletins():
     toate mărcile". La un tick ulterior din aceeași zi (deja rezolvat), nu repetă
     nimic — fetch_*_for_date e aproape instant din cache, iar monitorizarea completă
     (căutări TMview/EUIPO per marcă) nu merită repetată la fiecare oră fără rost."""
+    from routes.monitor import bulletin_prefetch_enabled
+    if not bulletin_prefetch_enabled():
+        print("[SCHEDULER] Descărcarea automată a buletinelor e oprită — sar peste")
+        return
     from scrapers.osim_bulletin import fetch_latest_osim, _load_processed as _osim_processed
     from scrapers.euipo_bulletin import (
         fetch_latest_euipo, is_fetch_in_progress, _in_progress,

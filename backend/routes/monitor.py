@@ -564,7 +564,67 @@ def saved_bulletins():
     """Buletinele salvate în baza de date (cu numărul de mărci și câte au detalii complete)
     + tipul bazei de date și dacă supraviețuiește unui deploy."""
     from db import db_info
-    return {"bulletins": bulletin_store.list_saved_bulletins(), "db": db_info()}
+    return {"bulletins": bulletin_store.list_saved_bulletins(), "db": db_info(),
+            "prefetch_enabled": bulletin_prefetch_enabled()}
+
+
+# ── Descărcarea automată a buletinelor (pornită/oprită din pagină) ────────────
+# Starea e în app_state (DB), ca să rămână oprită și după deploy/repornire.
+_PREFETCH_KEY = "bulletin_prefetch"
+
+
+def bulletin_prefetch_enabled() -> bool:
+    from db import SessionLocal
+    from monitor_models import AppState
+    db = SessionLocal()
+    try:
+        row = db.get(AppState, _PREFETCH_KEY)
+        return bool((row.value or {}).get("enabled", True)) if row else True
+    finally:
+        db.close()
+
+
+def _set_bulletin_prefetch(enabled: bool) -> None:
+    from db import SessionLocal
+    from monitor_models import AppState
+    db = SessionLocal()
+    try:
+        row = db.get(AppState, _PREFETCH_KEY)
+        if row is None:
+            row = AppState(key=_PREFETCH_KEY)
+            db.add(row)
+        row.value = {"enabled": enabled}
+        row.updated_at = datetime.utcnow()
+        db.commit()
+    finally:
+        db.close()
+
+
+class PrefetchToggle(BaseModel):
+    enabled: bool
+
+
+@router.post("/bulletin-prefetch")
+def set_bulletin_prefetch(body: PrefetchToggle):
+    _set_bulletin_prefetch(body.enabled)
+    return {"prefetch_enabled": body.enabled}
+
+
+@router.post("/saved-bulletins/delete-all")
+def delete_all_saved_bulletins(db: Session = Depends(get_db)):
+    """Șterge toate buletinele salvate: mărcile și imaginile din DB + fișierele descărcate
+    (PDF-uri, cache-ul parsat, lista „procesate”) de pe discul containerului, ca o descărcare
+    ulterioară să le ia de la zero. Oprește și descărcarea automată, altfel s-ar umple iar."""
+    import shutil
+    from scrapers import osim_bulletin, euipo_bulletin
+    _set_bulletin_prefetch(False)
+    marks  = db.query(BulletinMark).delete(synchronize_session=False)
+    images = db.query(BulletinImage).delete(synchronize_session=False)
+    db.commit()
+    for d in (osim_bulletin.CACHE_DIR, euipo_bulletin.CACHE_DIR):
+        shutil.rmtree(d, ignore_errors=True)
+        os.makedirs(d, exist_ok=True)
+    return {"deleted_marks": marks, "deleted_images": images, "prefetch_enabled": False}
 
 
 @router.get("/saved-marks")

@@ -3006,6 +3006,25 @@ async function loadBulletinHistory() {
 
 // ── Mărci salvate în baza de date ──────────────────────────────────────────────
 
+async function setBulletinPrefetch(enabled) {
+  await fetch("/api/monitor/bulletin-prefetch", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({enabled}) });
+  loadSavedBulletins();
+}
+
+async function deleteAllSavedBulletins(n) {
+  if (!confirm(`Ștergi toate cele ${n} buletine salvate (mărcile și imaginile lor)? Descărcarea automată se oprește. Nu se poate anula.`)) return;
+  const msg = document.getElementById("savedBulletinsMsg");
+  if (msg) msg.textContent = "⏳ se șterge…";
+  try {
+    const r = await fetch("/api/monitor/saved-bulletins/delete-all", { method: "POST" });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+    await loadSavedBulletins();
+    const m = document.getElementById("savedBulletinsMsg");
+    if (m) { m.style.color = "#1e8449"; m.textContent = `✅ Șterse: ${d.deleted_marks} mărci, ${d.deleted_images} imagini`; }
+  } catch (e) { if (msg) { msg.style.color = "#c0392b"; msg.textContent = "❌ " + e.message; } }
+}
+
 async function loadSavedBulletins() {
   const box = document.getElementById("savedBulletinsBox");
   if (!box) return;
@@ -3038,6 +3057,13 @@ async function loadSavedBulletins() {
           <th>Sursă</th><th>Data buletinului</th><th>Mărci</th><th>Cu detalii complete</th><th>Actualizat la</th><th></th>
         </tr></thead><tbody>${rows}</tbody></table>`
         : '<div style="color:#aaa;font-size:.83rem;margin-bottom:14px;">Nicio marcă salvată încă — se salvează automat la descărcarea unui buletin.</div>'}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;font-size:.8rem;">
+        <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" ${d.prefetch_enabled ? "checked" : ""} onchange="setBulletinPrefetch(this.checked)">
+          Descarcă automat buletinele noi (în fiecare oră, luni–vineri)</label>
+        ${rows ? `<button class="btn-sm" style="color:#c0392b;" onclick="deleteAllSavedBulletins(${(d.bulletins || []).length})">🗑 Șterge toate buletinele salvate</button>` : ""}
+        <span id="savedBulletinsMsg"></span>
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
         <input type="text" id="savedSearchQ" placeholder="🔍 Caută în toate mărcile salvate (denumire, solicitant, reprezentant, nr. cerere)…"
           onkeydown="if(event.key==='Enter')searchSavedMarks()"
