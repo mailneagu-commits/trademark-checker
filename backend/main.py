@@ -383,23 +383,6 @@ async def tm_detail(st13: str):
         return {"error": f"{type(e).__name__}: {e}"}
 
 
-@app.get("/api/debug/tmview-applicants")
-async def debug_tmview_applicants(st13: str):
-    """TEMPORAR — titularii bruți din detaliul TMview (ce câmpuri de țară există)."""
-    import agents.search_agent as _sa
-    async with _sa.AsyncSession(impersonate="chrome120", proxies=_sa._PROXIES, verify=not bool(_sa._PROXIES)) as session:
-        await session.get(_sa.TMVIEW_HOME, timeout=10, headers=_sa._build_headers())
-        for _ in range(3):
-            try:
-                r = await session.get(_sa.TMVIEW_DETAIL.format(st13=st13), headers=_sa._build_headers(), timeout=12)
-                if r.status_code == 200 and "json" in r.headers.get("content-type", ""):
-                    d = r.json()
-                    return {"applicants": d.get("applicants"), "tm_applicants": (d.get("tradeMark") or {}).get("applicants")}
-            except Exception:
-                await asyncio.sleep(1)
-    return {"error": "TMview nu a răspuns"}
-
-
 @app.get("/api/session-status")
 async def session_status():
     return {"active": has_browser_session()}

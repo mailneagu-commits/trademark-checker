@@ -25,6 +25,9 @@ def _upsert(model, rows: list, key: str) -> None:
         conn.execute(stmt)
 
 DETAIL_TTL = timedelta(days=7)     # detaliile (status, reprezentant…) se pot schimba
+# Crește la orice schimbare în felul în care se construiește un detaliu (ex. țara titularului) —
+# detaliile salvate cu o versiune mai veche sunt tratate ca lipsă și aduse din nou.
+DETAIL_VERSION = 2
 IMAGE_TTL  = timedelta(days=180)
 
 
@@ -43,7 +46,7 @@ def get_details(st13s: Iterable[str]) -> Dict[str, dict]:
     try:
         since = datetime.utcnow() - DETAIL_TTL
         rows = db.query(DetailCache).filter(DetailCache.st13.in_(keys), DetailCache.fetched_at >= since).all()
-        return {r.st13: r.data for r in rows if r.data}
+        return {r.st13: r.data for r in rows if r.data and r.data.get("_cv") == DETAIL_VERSION}
     except Exception as e:
         print(f"[EXPORT-CACHE] get_details: {e}")
         return {}
@@ -57,7 +60,8 @@ def save_details(details: Dict[str, dict]) -> None:
         return
     try:
         now = datetime.utcnow()
-        _upsert(DetailCache, [{"st13": k, "data": v, "fetched_at": now} for k, v in details.items()], "st13")
+        _upsert(DetailCache, [{"st13": k, "data": {**v, "_cv": DETAIL_VERSION}, "fetched_at": now}
+                              for k, v in details.items()], "st13")
         # curățăm detaliile expirate, ca tabelul să nu crească la nesfârșit
         with engine.begin() as conn:
             conn.execute(DetailCache.__table__.delete().where(DetailCache.fetched_at < now - DETAIL_TTL))

@@ -295,9 +295,10 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
                 {
                     "name":    a.get("organizationName") or a.get("fullName") or a.get("name") or "",
                     "address": a.get("fullAddress") or a.get("address") or "",
-                    "country": (a.get("nationalityCode") or a.get("incorporationCountryCode") or a.get("country")
-                                or a.get("countryCode") or a.get("addressCountryCode") or a.get("domicileCountryCode")
-                                or a.get("residenceCountryCode") or ""),
+                    # Țara ADRESEI întâi — afișată lângă adresă. nationalityCode e uneori greșit în
+                    # datele OSIM (ex. STREPSILS RO: nationalityCode „RO”, adresa în Slough, GB).
+                    "country": ((a.get("addressDetails") or {}).get("countryCode") or a.get("incorporationCountryCode")
+                                or a.get("nationalityCode") or a.get("country") or ""),
                 }
                 for a in data.get("applicants", [])
                 if a.get("organizationName") or a.get("fullName") or a.get("name")
@@ -481,7 +482,7 @@ async def enrich_marks_with_detail(marks: list, concurrency: int = 10, fill_addr
         detail = details.get(mark.get("ST13", ""))
         if not detail:
             return mark
-        merged = {**mark, **{k: v for k, v in detail.items() if k != "_src"}}
+        merged = {**mark, **{k: v for k, v in detail.items() if k not in ("_src", "_cv")}}
         # applicants_detail has normalized {name, address, country}
         if detail.get("applicants_detail"):
             merged["applicants"] = detail["applicants_detail"]
