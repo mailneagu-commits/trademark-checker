@@ -205,9 +205,18 @@ DEMO_MARKS = [
 ]
 
 
+# Diagnostic pentru cererile de detaliu (ultimul export): motivele eșecurilor și durata celor reușite.
+DETAIL_DIAG: Dict = {"fail": {}, "ok_s": []}
+
+
+def _diag_fail(reason: str) -> None:
+    DETAIL_DIAG["fail"][reason] = DETAIL_DIAG["fail"].get(reason, 0) + 1
+
+
 async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
     if not st13 or st13.startswith("DEMO"):
         return {}
+    _t0 = time.monotonic()
     # Conexiunea spre TMview e adesea instabilă (verificat live, toată sesiunea) —
     # timeout-ul inițial de 3-4s era prea agresiv, ratând aproape orice cerere cu
     # o mică întârziere și lăsând CLASE NISA PRODUSE/SERVICII gol la export, în
@@ -225,15 +234,21 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
                 timeout=12,
             )
             break
-        except Exception:
+        except Exception as _e:
             if _try == 0:
                 await asyncio.sleep(1.0)
                 continue
+            _diag_fail(type(_e).__name__)
             return {}
     try:
         if r is None or r.status_code != 200:
+            _diag_fail(f"HTTP {r.status_code if r is not None else '-'}")
+            return {}
+        if "json" not in r.headers.get("content-type", "").lower():
+            _diag_fail("non-JSON (Imperva?)")
             return {}
         data = r.json()
+        DETAIL_DIAG["ok_s"].append(round(time.monotonic() - _t0, 1))
         tm   = data.get("tradeMark", {})
         pubs = data.get("publication", [])
 

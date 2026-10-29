@@ -774,6 +774,7 @@ async def _run_export(request: ExportRequest):
     _t0 = _time.monotonic()
     # Enrich all marks with TMview detail (G&S text, representatives, exact dates, etc.)
     import agents.search_agent as _sa
+    _sa.DETAIL_DIAG["fail"].clear(); _sa.DETAIL_DIAG["ok_s"].clear()
     all_export_marks = results + similar + ended_marks + terminated_marks + expired_conflicts + expired_similar
     if all_export_marks:
         enriched_map = {}
@@ -797,6 +798,11 @@ async def _run_export(request: ExportRequest):
         except Exception as _e:
             print(f"[EXPORT] Detail enrichment failed: {_e} — exporting with available data")
     _export_mod.EXPORT_TIMINGS["detalii_s"] = round(_time.monotonic() - _t0, 1)
+    _ok = sorted(_sa.DETAIL_DIAG["ok_s"])
+    _export_mod.EXPORT_TIMINGS["detalii_diag"] = {
+        "mărci": len({m.get("ST13") for m in all_export_marks}), "reușite_acum": len(_ok),
+        "eșecuri": dict(_sa.DETAIL_DIAG["fail"]),
+        "durata_median_s": _ok[len(_ok) // 2] if _ok else None, "durata_max_s": _ok[-1] if _ok else None}
 
     _t1 = _time.monotonic()
     _all_for_img = results + similar + ended_marks + terminated_marks + expired_conflicts + expired_similar
