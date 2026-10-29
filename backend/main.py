@@ -383,48 +383,6 @@ async def tm_detail(st13: str):
         return {"error": f"{type(e).__name__}: {e}"}
 
 
-class _DetailBench(BaseModel):
-    st13s: List[str]
-    concurrency: int = 5
-
-
-@app.post("/api/debug/detail-bench")
-async def detail_bench(body: _DetailBench):
-    """Măsoară cererile de detaliu TMview (fără cache) la o anumită concurență — pentru a alege
-    concurența exportului pe date reale. Max 30 de mărci per test."""
-    import time as _t
-    import agents.search_agent as _sa
-    _sa.DETAIL_DIAG["fail"].clear(); _sa.DETAIL_DIAG["ok_s"].clear()
-    sem = asyncio.Semaphore(max(1, min(body.concurrency, 15)))
-    t0 = _t.monotonic()
-    async with _sa.AsyncSession(impersonate="chrome120", proxies=_sa._PROXIES, verify=not bool(_sa._PROXIES)) as session:
-        await session.get(_sa.TMVIEW_HOME, timeout=10, headers=_sa._build_headers())
-
-        async def one(st13):
-            async with sem:
-                return bool(await _sa._fetch_detail(session, st13))
-        res = await asyncio.gather(*(one(s) for s in body.st13s[:30]))
-    ok = sorted(_sa.DETAIL_DIAG["ok_s"])
-    return {"n": len(res), "ok": sum(res), "elapsed_s": round(_t.monotonic() - t0, 1),
-            "fail": dict(_sa.DETAIL_DIAG["fail"]), "median_s": ok[len(ok) // 2] if ok else None}
-
-
-@app.get("/api/debug/euipo-raw")
-async def euipo_raw(app_num: str):
-    """Răspunsul brut al API-ului EUIPO pentru o marcă (structura câmpurilor) — diagnostic."""
-    import requests as _rq
-    from agents.euipo_agent import EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, _get_access_token
-    def _get():
-        r = _rq.get(f"{EUIPO_SEARCH_URL}/{app_num}",
-                    headers={"Authorization": f"Bearer {_get_access_token()}",
-                             "X-IBM-Client-Id": EUIPO_CLIENT_ID, "Accept": "application/json"}, timeout=20)
-        return r.status_code, (r.json() if "json" in r.headers.get("content-type", "") else r.text[:300])
-    import time as _t
-    t0 = _t.monotonic()
-    code, body = await asyncio.get_event_loop().run_in_executor(None, _get)
-    return {"status": code, "elapsed_s": round(_t.monotonic() - t0, 2), "body": body}
-
-
 @app.get("/api/session-status")
 async def session_status():
     return {"active": has_browser_session()}
@@ -739,7 +697,7 @@ async def _prefetch_export_assets(result: dict) -> None:
     try:
         await asyncio.sleep(3)
         t0 = datetime.utcnow()
-        enriched = await _sa.enrich_marks_with_detail(marks, concurrency=4)
+        enriched = await _sa.enrich_marks_with_detail(marks, concurrency=4, fill_addresses=True)
         await asyncio.get_event_loop().run_in_executor(None, _export_mod.prefetch_images, enriched)
         print(f"[EXPORT-PREFETCH] {len(marks)} mărci pregătite în {(datetime.utcnow() - t0).total_seconds():.0f}s")
     except Exception as e:

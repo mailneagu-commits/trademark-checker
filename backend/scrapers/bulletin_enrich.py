@@ -196,6 +196,18 @@ def _euipo_api_to_detail(b: Dict) -> Dict:
 def _euipo_api_detail(app_num: str):
     """Detaliul unei mărci din API-ul EUIPO. Întoarce dict (găsită), {} (404 — nu există) sau
     None (eroare trecătoare: rețea, 429, 5xx — se reîncearcă mai târziu)."""
+    raw = euipo_api_raw(app_num)
+    if not raw:
+        return raw
+    try:
+        return _euipo_api_to_detail(raw)
+    except Exception:
+        return None
+
+
+def euipo_api_raw(app_num: str):
+    """Răspunsul brut al API-ului EUIPO pentru o marcă: dict (găsită), {} (404) sau None (eroare
+    trecătoare). Folosit și de exportul verificării (agents/search_agent.euipo_export_detail)."""
     import requests
     from agents.euipo_agent import EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, _get_access_token
 
@@ -212,7 +224,7 @@ def _euipo_api_detail(app_num: str):
             continue
         if r.status_code == 200:
             try:
-                return _euipo_api_to_detail(r.json())
+                return r.json()
             except Exception:
                 return None
         if r.status_code == 404:

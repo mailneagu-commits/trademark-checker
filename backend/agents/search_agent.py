@@ -334,65 +334,146 @@ async def fetch_detail_once(session, st13: str) -> Dict:
             fut.add_done_callback(lambda _f, k=st13: _detail_inflight.pop(k, None))
 
 
-async def enrich_marks_with_detail(marks: list, concurrency: int = 10) -> list:
-    """Fetch and merge TMview detail for each mark. Best-effort: falls back to original on error.
-    Detaliile se iau întâi din cache-ul din DB (export_cache, valabil 7 zile) — doar mărcile care
-    lipsesc de acolo se cer la TMview, câte o dată per ST13, apoi se salvează pentru exporturile
-    următoare (Word → PDF → Excel ale aceleiași căutări nu mai refac nimic)."""
+def euipo_export_detail(raw: Dict) -> Dict:
+    """Detaliul unei mărci UE din API-ul oficial EUIPO, în forma `_fetch_detail` (TMview): produse/
+    servicii direct în română, date reale de înregistrare/expirare, titulari și reprezentanți —
+    DOAR cu numele (API-ul nu dă adresa; o completăm separat din TMview, vezi fill_addresses)."""
+    from scrapers.bulletin_enrich import _euipo_api_to_detail
+    d = _euipo_api_to_detail(raw)
+    d.update({
+        "applicationNumber": raw.get("applicationNumber") or "",
+        "registrationDate":  (raw.get("registrationDate") or "")[:10],
+        "expiryDate":        (raw.get("expiryDate") or "")[:10],
+        "applicants_detail": [{"name": a.get("name", ""), "address": "", "country": ""}
+                              for a in (raw.get("applicants") or []) if a.get("name")],
+        "representatives":   [{"fullName": r.get("name", ""), "fullAddress": "", "country": ""}
+                              for r in (raw.get("representatives") or []) if r.get("name")],
+        "_src": "euipo",
+    })
+    if d["expiryDate"]:
+        d["expiryIsReal"] = True     # data oficială EUIPO, nu estimarea „depozit + 10 ani”
+    return d
+
+
+def _is_em(st13: str) -> bool:
+    return st13.startswith("EM5")
+
+
+def _needs_address(detail: Dict) -> bool:
+    """Detaliu EUIPO la care încă lipsesc adresele titularilor (vin doar de la TMview)."""
+    return detail.get("_src") == "euipo" and not any(a.get("address") for a in detail.get("applicants_detail") or [])
+
+
+async def _tmview_details(st13s: List[str], concurrency: int, budget_s: float = 90) -> Dict[str, Dict]:
+    """Detaliile TMview pentru o listă de ST13 (cu reîncercări), în limita unui buget de timp —
+    ce s-a adus până atunci se păstrează."""
+    fresh: Dict[str, Dict] = {}
+    if not st13s:
+        return fresh
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _fetch_one(session, st13):
+        try:
+            async with sem:
+                d = await fetch_detail_once(session, st13)
+            if d:
+                fresh[st13] = d
+        except Exception:
+            pass
+
+    try:
+        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES,
+                                verify=not bool(_PROXIES)) as session:
+            # Dacă acest "warmup" GET eșuează o singură dată, funcția întreagă
+            # renunța tăcut — nici măcar marca cu cea mai bună șansă nu mai era
+            # încercată. O reîncercare rapidă înainte de a renunța la toată
+            # îmbogățirea (nu doar la o marcă individuală).
+            for _try in range(2):
+                try:
+                    await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
+                    break
+                except Exception:
+                    if _try == 0:
+                        await asyncio.sleep(1.5)
+                        continue
+                    raise
+            await asyncio.wait_for(
+                asyncio.gather(*(_fetch_one(session, s) for s in st13s), return_exceptions=True),
+                timeout=budget_s,
+            )
+    except Exception as e:
+        print(f"[ENRICH] TMview: {type(e).__name__}: {e} — continui cu ce am adus")
+    return fresh
+
+
+async def enrich_marks_with_detail(marks: list, concurrency: int = 10, fill_addresses: bool = False) -> list:
+    """Fetch and merge detail for each mark. Best-effort: falls back to original on error.
+    Detaliile se iau întâi din cache-ul din DB (export_cache, valabil 7 zile); cele lipsă se cer:
+    mărcile UE (EM) la API-ul oficial EUIPO (~2s, fiabil, produse/servicii în română), restul la
+    TMview (lent, eșuează des). API-ul EUIPO nu dă adresa titularului — cu fill_addresses=True
+    (pregătirea din fundal de după căutare) o aducem și pe ea din TMview; exportul nu o așteaptă."""
     if not HAS_CURL_CFFI or not marks:
         return marks
     import export_cache
+    from agents.euipo_agent import euipo_available
+    from scrapers.bulletin_enrich import euipo_api_raw
     loop = asyncio.get_event_loop()
-    st13s = sorted({m.get("ST13", "") for m in marks
-                    if m.get("ST13") and not m.get("ST13", "").startswith("DEMO")})
+    app_by_st13 = {m.get("ST13"): str(m.get("applicationNumber") or "").strip() for m in marks if m.get("ST13")}
+    st13s = sorted(s for s in app_by_st13 if not s.startswith("DEMO"))
     details: Dict[str, Dict] = await loop.run_in_executor(None, export_cache.get_details, st13s)
     missing = [s for s in st13s if s not in details]
-    print(f"[ENRICH] {len(st13s)} mărci unice: {len(details)} din cache, {len(missing)} de la TMview")
+    use_euipo = euipo_available()
+    em_missing = [s for s in missing if use_euipo and _is_em(s) and app_by_st13.get(s)]
+    tv_missing = [s for s in missing if s not in em_missing]
+    print(f"[ENRICH] {len(st13s)} mărci: {len(details)} din cache, {len(em_missing)} de la EUIPO, "
+          f"{len(tv_missing)} de la TMview")
 
-    if missing:
-        fresh: Dict[str, Dict] = {}
-        sem = asyncio.Semaphore(concurrency)
+    async def _from_euipo() -> Dict[str, Dict]:
+        sem = asyncio.Semaphore(8)
+        out: Dict[str, Dict] = {}
 
-        async def _fetch_one(session, st13):
-            try:
-                async with sem:
-                    d = await fetch_detail_once(session, st13)
-                if d:
-                    fresh[st13] = d
-            except Exception:
-                pass
+        async def _one(st13):
+            async with sem:
+                raw = await loop.run_in_executor(None, euipo_api_raw, app_by_st13[st13])
+            if raw:
+                try:
+                    out[st13] = euipo_export_detail(raw)
+                except Exception as e:
+                    print(f"[ENRICH] EUIPO {st13}: {e}")
+        await asyncio.gather(*(_one(s) for s in em_missing), return_exceptions=True)
+        return out
 
-        try:
-            async with AsyncSession(impersonate="chrome120", proxies=_PROXIES,
-                                    verify=not bool(_PROXIES)) as session:
-                # Dacă acest "warmup" GET eșuează o singură dată, funcția întreagă
-                # renunța tăcut — nici măcar marca cu cea mai bună șansă nu mai era
-                # încercată. O reîncercare rapidă înainte de a renunța la toată
-                # îmbogățirea (nu doar la o marcă individuală).
-                for _try in range(2):
-                    try:
-                        await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
-                        break
-                    except Exception:
-                        if _try == 0:
-                            await asyncio.sleep(1.5)
-                            continue
-                        raise
-                await asyncio.wait_for(
-                    asyncio.gather(*(_fetch_one(session, s) for s in missing), return_exceptions=True),
-                    timeout=90,
-                )
-        except Exception as e:
-            print(f"[ENRICH] TMview: {type(e).__name__}: {e} — continui cu ce am adus")
-        if fresh:
-            await loop.run_in_executor(None, export_cache.save_details, dict(fresh))
-            details.update(fresh)
+    euipo_fresh, tv_fresh = await asyncio.gather(_from_euipo(), _tmview_details(tv_missing, concurrency))
+    # mărcile EM pe care EUIPO nu le-a dat (eroare/404) le cerem totuși la TMview
+    em_failed = [s for s in em_missing if s not in euipo_fresh]
+    if em_failed:
+        tv_fresh.update(await _tmview_details(em_failed, concurrency, budget_s=60))
+    fresh = {**euipo_fresh, **tv_fresh}
+
+    if fill_addresses:
+        # Adresele titularilor pentru detaliile din EUIPO (cache + aduse acum) — doar din TMview.
+        need = [s for s in st13s if _needs_address({**details, **fresh}.get(s, {}))]
+        if need:
+            tv_addr = await _tmview_details(need, concurrency, budget_s=240)
+            for s, tv in tv_addr.items():
+                base = dict(fresh.get(s) or details.get(s) or {})
+                if tv.get("applicants_detail"):
+                    base["applicants_detail"] = tv["applicants_detail"]
+                if any(r.get("fullAddress") for r in tv.get("representatives") or []):
+                    base["representatives"] = tv["representatives"]
+                base["_src"] = "euipo+tmview"
+                fresh[s] = base
+            print(f"[ENRICH] adrese titulari: {len(tv_addr)}/{len(need)} completate din TMview")
+
+    if fresh:
+        await loop.run_in_executor(None, export_cache.save_details, dict(fresh))
+        details.update(fresh)
 
     def _merge(mark):
         detail = details.get(mark.get("ST13", ""))
         if not detail:
             return mark
-        merged = {**mark, **detail}
+        merged = {**mark, **{k: v for k, v in detail.items() if k != "_src"}}
         # applicants_detail has normalized {name, address, country}
         if detail.get("applicants_detail"):
             merged["applicants"] = detail["applicants_detail"]
