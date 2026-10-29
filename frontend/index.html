@@ -555,6 +555,7 @@
     <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
       <h2 style="margin:0;">📊 Rezultate analiză similaritate</h2>
     </div>
+    <div id="searchQualityWarn" style="display:none;background:#fff4e5;border:1.5px solid #f5b041;color:#9a5b00;border-radius:8px;padding:10px 14px;font-size:.84rem;margin-bottom:12px;"></div>
 
     <!-- Add to monitoring inline form -->
     <div id="addToMonitorForm" style="display:none;background:#f0faf3;border:1.5px solid #c8e6c9;border-radius:8px;padding:14px;margin-bottom:14px;">
@@ -1248,6 +1249,19 @@ async function doSearch() {
 }
 
 // Afișează un rezultat de verificare (proaspăt sau redeschis din baza de date).
+// Avertisment când TMview a căzut pe parcursul căutării — o parte din variante nu s-au căutat,
+// deci pot lipsi mărci (inclusiv conflicte) din rezultat.
+function renderSearchQuality(q) {
+  const box = document.getElementById("searchQualityWarn");
+  if (!box) return;
+  if (!q || !q.partial) { box.style.display = "none"; return; }
+  const lost = (q.failed || 0) + (q.skipped || 0), total = lost + (q.ok || 0);
+  box.innerHTML = `⚠️ <b>Căutare incompletă</b> — ${lost} din ${total} cereri spre TMview au eșuat sau nu s-au mai putut face
+    (TMview a răspuns instabil${q.attempts > 1 ? `, chiar și după ${q.attempts} încercări` : ""}). Pot lipsi mărci din rezultate —
+    <b>refă căutarea</b> peste 1–2 minute înainte de a trage concluzii.`;
+  box.style.display = "block";
+}
+
 function applyCheckResult(data, opts = {}) {
   lastResults = data;
   allResults  = data.results || [];
@@ -1255,6 +1269,7 @@ function applyCheckResult(data, opts = {}) {
   activeStatus = "all";
   exportSel.clear(); _allCardKeys = []; updateSelBar();
   renderVariants(data.variants);
+  renderSearchQuality(data.search_quality);
   renderResults(data);
   renderSimilar(data.similar || []);
   renderEnded(data.ended_marks || []);

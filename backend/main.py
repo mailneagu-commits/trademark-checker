@@ -595,6 +595,7 @@ async def _run_check(request: "SearchRequest", max_tmview_attempts: int = 3) -> 
             if "?" not in _t and _t not in extra_terms:
                 extra_terms.append(_t)
 
+    quality: dict = {}
     trademarks, source = await search_agent.search(
         name,
         request.nice_classes,
@@ -603,6 +604,7 @@ async def _run_check(request: "SearchRequest", max_tmview_attempts: int = 3) -> 
         wildcard_patterns=variants.get("wildcard_patterns", []),
         include_expired=request.include_expired,
         max_tmview_attempts=max_tmview_attempts,
+        quality=quality,
     )
     if source.startswith("demo (TMview"):
         # Nu afișăm mărci inventate ca rezultat — utilizatorul le-ar putea lua drept reale.
@@ -626,6 +628,7 @@ async def _run_check(request: "SearchRequest", max_tmview_attempts: int = 3) -> 
         "expired_conflicts": analysis["expired_conflicts"],
         "expired_similar":   analysis["expired_similar"],
         "source":            source,
+        "search_quality":    quality,
         "variants":          variants,
     }
 

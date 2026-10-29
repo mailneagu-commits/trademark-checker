@@ -379,6 +379,18 @@ def _build_headers() -> Dict:
     return hdrs
 
 
+# Contorul cererilor spre TMview din căutarea curentă (ok / eșuate / sărite din cauza bugetului de
+# timp sau a circuit breaker-ului) — ca o căutare la care TMview a căzut pe parcurs să fie raportată
+# ca incompletă, nu afișată ca și cum ar fi completă.
+_req_stats_ctx: "contextvars.ContextVar[Optional[Dict]]" = contextvars.ContextVar("_req_stats_ctx", default=None)
+
+
+def _stat(key: str) -> None:
+    st = _req_stats_ctx.get()
+    if st is not None:
+        st[key] = st.get(key, 0) + 1
+
+
 async def _search_page(session, term, nice_classes, offices, territories, criteria, page):
     payload = {
         "page": str(page), "pageSize": "30", "criteria": criteria,
@@ -389,9 +401,11 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
     if territories:  payload["territories"] = territories
     if nice_classes: payload["niceClass"]   = [int(c) if c.isdigit() else c for c in nice_classes]
     if _cb_is_open():
+        _stat("skipped")
         return [], 0
     _dl = _deadline_ctx.get()
     if _dl is not None and time.monotonic() > _dl:
+        _stat("skipped")
         return [], 0
 
     # O căutare completă face zeci de cereri individuale (criterii, pagini, variante
@@ -413,6 +427,7 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
                 if not body.strip() or "json" not in ct.lower():
                     print(f"[TMVIEW] IMPERVA BLOCK — ct={ct!r} body_len={len(body)}")
                     _cb_record_failure()
+                    _stat("failed")
                     return [], 0
                 # Check if response is actually JSON (not HTML/redirect)
                 try:
@@ -421,9 +436,11 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
                     resp_preview = body[:100].lower()
                     if "html" in resp_preview or "<!doctype" in resp_preview or "302" in str(r.status_code):
                         print(f"[TMVIEW] HTML response (possible IP ban/redirect): {resp_preview}")
+                        _stat("failed")
                         return [], 0
                     raise
                 _cb_record_success()
+                _stat("ok")
                 marks = data.get("tradeMarks", [])
                 print(f"[TMVIEW] found {len(marks)} marks")
                 for m in marks:
@@ -456,6 +473,7 @@ async def _search_page(session, term, nice_classes, offices, territories, criter
                 _cb_record_failure()
             print(f"[TMVIEW] _search_page error: {type(_e).__name__}: {_e}")
             break
+    _stat("failed")
     return [], 0
 
 
@@ -954,7 +972,13 @@ class SearchAgent:
                      extra_terms: Optional[List[str]] = None,
                      wildcard_patterns: Optional[List[str]] = None,
                      include_expired: bool = True,
-                     max_tmview_attempts: int = 3) -> Tuple[List[Dict], str]:
+                     max_tmview_attempts: int = 3,
+                     quality: Optional[Dict] = None) -> Tuple[List[Dict], str]:
+        """`quality` (dict dat de apelant) se completează cu {ok, failed, skipped, partial, attempts}
+        pentru căutarea TMview — partial=True înseamnă că o parte din cereri au eșuat sau au fost
+        sărite, deci pot lipsi mărci din rezultat."""
+        if quality is None:
+            quality = {}
         if not HAS_CURL_CFFI:
             marks = _demo_marks(name, nice_classes, offices)
             if not include_expired:
@@ -1011,8 +1035,25 @@ class SearchAgent:
         _MAX_ATTEMPTS = max(1, max_tmview_attempts)
         _backoff_schedule = [4.0, 8.0, 16.0, 30.0]
 
+        _best: List[Dict] = []          # rezultatele adunate din încercările parțiale
+        _best_stats: Optional[Dict] = None
+
+        def _partial(st: Dict) -> bool:
+            lost = st.get("failed", 0) + st.get("skipped", 0)
+            total = lost + st.get("ok", 0)
+            return total > 0 and lost / total >= 0.15
+
+        def _finish(marks: List[Dict], st: Dict, attempt: int) -> Tuple[List[Dict], str]:
+            quality.update(ok=st.get("ok", 0), failed=st.get("failed", 0), skipped=st.get("skipped", 0),
+                           partial=_partial(st), attempts=attempt)
+            if not include_expired:
+                marks = [m for m in marks if not _is_expired_mark(m)]
+            return marks, "live:tmview"
+
         for _attempt in range(1, _MAX_ATTEMPTS + 1):
             _cb_reset()
+            _stats = {"ok": 0, "failed": 0, "skipped": 0}
+            _req_stats_ctx.set(_stats)
             try:
                 marks = await asyncio.wait_for(
                     _fetch_tmview(name, nice_classes, offices, proxy_url="",
@@ -1026,11 +1067,16 @@ class SearchAgent:
                     # dintr-o căutare EU_FULL pe mai multe teritorii) unor date 100% demo —
                     # chiar dacă circuit breaker-ul s-a deschis între timp (blocând doar
                     # cererile ULTERIOARE, nu invalidând ce am găsit deja).
-                    print(f"[TMVIEW] direct success (attempt {_attempt}/{_MAX_ATTEMPTS}): {len(marks)} marks"
-                          + (" (parțial — circuit breaker deschis pe parcurs)" if _cb_is_open() else ""))
-                    if not include_expired:
-                        marks = [m for m in marks if not _is_expired_mark(m)]
-                    return marks, "live:tmview"
+                    print(f"[TMVIEW] direct success (attempt {_attempt}/{_MAX_ATTEMPTS}): {len(marks)} marks, "
+                          f"cereri {_stats}" + (" (circuit breaker deschis pe parcurs)" if _cb_is_open() else ""))
+                    _best = _merge_marks(_best, marks)
+                    if _best_stats is None or _stats.get("ok", 0) > _best_stats.get("ok", 0):
+                        _best_stats = _stats
+                    # Căutare parțială (TMview a căzut pe parcurs) — o reluăm, dacă mai avem încercări,
+                    # și păstrăm reuniunea rezultatelor; altfel ar lipsi mărci fără ca nimeni să afle.
+                    if not _partial(_stats) or _attempt == _MAX_ATTEMPTS:
+                        return _finish(_best, _best_stats, _attempt)
+                    print(f"[TMVIEW] Căutare parțială ({_stats}) — reiau")
             except asyncio.TimeoutError:
                 print(f"[TMVIEW] direct timeout (attempt {_attempt}/{_MAX_ATTEMPTS})")
             except Exception as e:
@@ -1043,6 +1089,8 @@ class SearchAgent:
                 continue
             break
 
+        if _best:
+            return _finish(_best, _best_stats, _MAX_ATTEMPTS)
         return _demo_marks(name, nice_classes, offices), "demo (TMview/EUIPO indisponibil - date demonstrative)"
 
     async def search_expired(self, name: str, nice_classes: List[str],
