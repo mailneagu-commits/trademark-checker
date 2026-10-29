@@ -1,4 +1,5 @@
 import io
+import time as _time
 import os
 import requests
 from typing import List, Dict, Optional
@@ -106,6 +107,85 @@ def _translate_to_ro(text: str) -> str:
     except Exception:
         pass
     return text
+
+
+def _prefill_translations(texts) -> None:
+    """Pregătește dintr-o dată traducerile pentru toate textele unui export, ca _translate_to_ro
+    (apelat card cu card) să le găsească în _translation_cache: întâi din DB (export_cache), apoi
+    textele deja în română (detectate local), iar restul trimise la Google în loturi paralele —
+    înainte se făcea câte o cerere pe rând pentru fiecare clasă a fiecărei mărci."""
+    global _translate_chars_used
+    import export_cache
+    from concurrent.futures import ThreadPoolExecutor
+    todo = [t for t in {t for t in texts if t} if t not in _translation_cache]
+    if not todo:
+        return
+    _translation_cache.update(export_cache.get_translations(todo))
+    todo = [t for t in todo if t not in _translation_cache]
+    if not todo or not _GOOGLE_TRANSLATE_API_KEY:
+        return
+    try:
+        from langdetect import detect
+        ro = {}
+        for t in todo:
+            try:
+                if detect(t) == "ro":
+                    ro[t] = t
+            except Exception:
+                pass
+        _translation_cache.update(ro)
+        export_cache.save_translations(ro)
+        todo = [t for t in todo if t not in ro]
+    except Exception:
+        pass
+
+    # loturi de max 50 de texte / ~20.000 caractere per cerere (limitele Google Translate v2)
+    batches, cur, cur_len = [], [], 0
+    for t in todo:
+        if cur and (len(cur) >= 50 or cur_len + len(t) > 20000):
+            batches.append(cur); cur, cur_len = [], 0
+        cur.append(t); cur_len += len(t)
+    if cur:
+        batches.append(cur)
+
+    def _one(batch):
+        try:
+            resp = requests.post(
+                "https://translation.googleapis.com/language/translate/v2",
+                params={"key": _GOOGLE_TRANSLATE_API_KEY},
+                data=[("q", t) for t in batch] + [("target", "ro"), ("format", "text")],
+                timeout=20,
+            )
+            if resp.status_code == 200:
+                out = [x["translatedText"] for x in resp.json()["data"]["translations"]]
+                return dict(zip(batch, out))
+            print(f"[TRANSLATE] HTTP {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            print(f"[TRANSLATE] {type(e).__name__}: {e}")
+        return {}
+
+    done: dict = {}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for part in pool.map(_one, batches):
+            done.update(part)
+    _translation_cache.update(done)
+    _translate_chars_used += sum(len(t) for t in done)
+    export_cache.save_translations(done)
+    print(f"[TRANSLATE] {len(done)}/{len(todo)} texte traduse în {len(batches)} cereri")
+
+
+def _gs_texts_to_translate(marks) -> list:
+    """Textele de produse/servicii pe care cardurile Word le traduc (același calcul ca în
+    _word_trademark_card: ultimul text nevid per clasă)."""
+    out = []
+    for tm in marks:
+        per_cls = {}
+        for g in (tm.get("goodAndServices") or []):
+            nc = str(g.get("niceClass") or "")
+            if nc.isdigit():
+                per_cls[str(int(nc))] = g.get("goodsAndServices") or ""
+        out += [t for t in per_cls.values() if t]
+    return out
 
 
 # ── Risk thresholds ────────────────────────────────────────────────────
@@ -447,6 +527,19 @@ _IMG_HEADERS = {
 # Motivele ultimelor eșecuri la descărcarea imaginilor — raportate în statusul
 # exportului, ca să se vadă de ce lipsesc imaginile din carduri fără loguri Railway.
 IMG_FAILURES: List[str] = []
+# Cât a durat fiecare etapă a ultimului export (secunde) — raportat în /api/export/status.
+EXPORT_TIMINGS: Dict[str, float] = {}
+
+
+def prefetch_images(marks, size=(65, 65)) -> None:
+    """Descarcă în paralel imaginile tuturor mărcilor (din cache-ul DB sau de la TMview), ca
+    generarea documentului să nu le ceară una câte una (Excel/PDF le cereau secvențial)."""
+    from concurrent.futures import ThreadPoolExecutor
+    from functools import partial
+    urls = list({tm.get("imageUrl") for tm in marks if tm.get("imageUrl")})
+    if urls:
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            list(pool.map(partial(_fetch_image_bytes, size=size), urls))
 
 
 def _img_fail(url: str, reason: str) -> None:
@@ -468,6 +561,24 @@ def _fetch_image_bytes(url: str, size=(60, 60), _cache: dict = {}) -> Optional[b
         else:
             print(f"[IMG] Cache hit (failed): {url[:60]}...")
         return result
+    def _thumb(raw: bytes) -> bytes:
+        img = PILImage.open(io.BytesIO(raw)).convert("RGBA")
+        img.thumbnail(size, PILImage.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    # Imaginea originală e păstrată în DB (export_cache) — nu o mai cerem la TMview la fiecare export.
+    import export_cache
+    cached = export_cache.get_image(url)
+    if cached:
+        try:
+            result = _thumb(cached[0])
+            _cache[key] = result
+            return result
+        except Exception as e:
+            print(f"[IMG] Imagine din cache invalidă ({e}) — o cer din nou")
+
     try:
         print(f"[IMG] Fetching: {url[:70]}...")
         
@@ -494,13 +605,9 @@ def _fetch_image_bytes(url: str, size=(60, 60), _cache: dict = {}) -> Optional[b
         print(f"[IMG] Response: status={r.status_code}, type={ct}, size={len(r.content)}")
         
         if r.status_code == 200 and "image" in ct and len(r.content) > 100:
-            img = PILImage.open(io.BytesIO(r.content)).convert("RGBA")
-            img.thumbnail(size, PILImage.LANCZOS)
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            buf.seek(0)
-            result = buf.read()
+            result = _thumb(r.content)
             _cache[key] = result
+            export_cache.save_image(url, r.content, ct)
             print(f"[IMG] ✅ Success: {len(result)} bytes")
             return result
         else:
@@ -2286,6 +2393,9 @@ def build_word(query: str, nice_classes: List[str], offices: List[str],
         with _TPE(max_workers=10) as _ipool:
             list(_ipool.map(_partial(_fetch_image_bytes, size=(65, 65)), _all_img_urls))
         print(f"[BUILD_WORD] ✅ Image pre-fetch completed")
+    _t_tr = _time.monotonic()
+    _prefill_translations(_gs_texts_to_translate(all_results))
+    EXPORT_TIMINGS["traduceri_s"] = round(_time.monotonic() - _t_tr, 1)
 
     # ─── COVER PAGE (dashboard ca in UI) ─────────────────────────────
     # Titlu aplicatie

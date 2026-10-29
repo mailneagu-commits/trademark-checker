@@ -135,3 +135,35 @@ class AlertLog(Base):
     email_to       = Column(String, default="")
     status         = Column(String, default="sent")   # sent / error / skipped
     error_msg      = Column(Text, default="")
+
+
+# ── Cache pentru export ────────────────────────────────────────────────────────
+# Exportul aducea la fiecare rulare, de la zero, detaliile TMview, traducerile și imaginile
+# fiecărei mărci (~100 s). Le păstrăm aici — vezi export_cache.py.
+
+class DetailCache(Base):
+    """Detaliile TMview ale unei mărci (ce întoarce _fetch_detail), valabile câteva zile."""
+    __tablename__ = "detail_cache"
+
+    st13       = Column(String, primary_key=True)
+    data       = Column(JSON, default=dict)
+    fetched_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class TranslationCache(Base):
+    """Traducerea în română a unui text de produse/servicii (cheie: sha256 al textului)."""
+    __tablename__ = "translation_cache"
+
+    text_hash  = Column(String, primary_key=True)
+    translated = Column(Text, nullable=False)
+    saved_at   = Column(DateTime, default=datetime.utcnow)
+
+
+class ImageCache(Base):
+    """Imaginea originală a unei mărci (de la TMview), după URL."""
+    __tablename__ = "image_cache"
+
+    url          = Column(String, primary_key=True)
+    content_type = Column(String, default="")
+    data         = Column(LargeBinary, nullable=False)
+    saved_at     = Column(DateTime, default=datetime.utcnow, index=True)

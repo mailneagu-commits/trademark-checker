@@ -295,66 +295,103 @@ async def _fetch_detail(session: "AsyncSession", st13: str) -> Dict:
         return {}
 
 
-async def enrich_marks_with_detail(marks: list) -> list:
-    """Fetch and merge TMview detail for each mark. Best-effort: falls back to original on error."""
+# Cererile de detaliu aflate în curs, per ST13 — pregătirea exportului din fundal și cererile
+# paginii (/api/tm-detail) pot cere aceeași marcă simultan; o singură cerere spre TMview.
+_detail_inflight: Dict[str, "asyncio.Future"] = {}
+
+
+async def fetch_detail_once(session, st13: str) -> Dict:
+    fut = _detail_inflight.get(st13)
+    if fut is not None:
+        return await asyncio.shield(fut)
+    fut = asyncio.ensure_future(_fetch_detail(session, st13))
+    _detail_inflight[st13] = fut
+    try:
+        return await asyncio.shield(fut)
+    finally:
+        if _detail_inflight.get(st13) is fut and fut.done():
+            _detail_inflight.pop(st13, None)
+        elif _detail_inflight.get(st13) is fut:
+            fut.add_done_callback(lambda _f, k=st13: _detail_inflight.pop(k, None))
+
+
+async def enrich_marks_with_detail(marks: list, concurrency: int = 10) -> list:
+    """Fetch and merge TMview detail for each mark. Best-effort: falls back to original on error.
+    Detaliile se iau întâi din cache-ul din DB (export_cache, valabil 7 zile) — doar mărcile care
+    lipsesc de acolo se cer la TMview, câte o dată per ST13, apoi se salvează pentru exporturile
+    următoare (Word → PDF → Excel ale aceleiași căutări nu mai refac nimic)."""
     if not HAS_CURL_CFFI or not marks:
         return marks
-    sem = asyncio.Semaphore(10)
+    import export_cache
+    loop = asyncio.get_event_loop()
+    st13s = sorted({m.get("ST13", "") for m in marks
+                    if m.get("ST13") and not m.get("ST13", "").startswith("DEMO")})
+    details: Dict[str, Dict] = await loop.run_in_executor(None, export_cache.get_details, st13s)
+    missing = [s for s in st13s if s not in details]
+    print(f"[ENRICH] {len(st13s)} mărci unice: {len(details)} din cache, {len(missing)} de la TMview")
 
-    async def _enrich_one(session, mark):
-        st13 = mark.get("ST13", "")
-        if not st13 or st13.startswith("DEMO"):
-            return mark
+    if missing:
+        fresh: Dict[str, Dict] = {}
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _fetch_one(session, st13):
+            try:
+                async with sem:
+                    d = await fetch_detail_once(session, st13)
+                if d:
+                    fresh[st13] = d
+            except Exception:
+                pass
+
         try:
-            async with sem:
-                detail = await _fetch_detail(session, st13)
-            if detail:
-                merged = {**mark, **detail}
-                # applicants_detail has normalized {name, address, country}
-                if detail.get("applicants_detail"):
-                    merged["applicants"] = detail["applicants_detail"]
-                # Nu suprascriem goodAndServices deja populat (ex. printr-un fetch
-                # de detaliu declanșat mai devreme din UI la expandarea cardului)
-                # cu un răspuns gol dintr-o nouă încercare server-side eșuată sau
-                # incompletă — TMview e adesea instabil la request individual.
-                if mark.get("goodAndServices") and not detail.get("goodAndServices"):
-                    merged["goodAndServices"] = mark["goodAndServices"]
-                # Completăm imaginea din detail doar dacă lipsea la căutare —
-                # unele mărci inactive (expirate) nu au markImageURI în
-                # rezultatul de search, dar detail-ul o poate avea.
-                if not merged.get("imageUrl") and detail.get("markImageURI"):
-                    merged["imageUrl"] = detail["markImageURI"]
-                merged.pop("markImageURI", None)
-                return merged
-        except Exception:
-            pass
-        return mark
+            async with AsyncSession(impersonate="chrome120", proxies=_PROXIES,
+                                    verify=not bool(_PROXIES)) as session:
+                # Dacă acest "warmup" GET eșuează o singură dată, funcția întreagă
+                # renunța tăcut — nici măcar marca cu cea mai bună șansă nu mai era
+                # încercată. O reîncercare rapidă înainte de a renunța la toată
+                # îmbogățirea (nu doar la o marcă individuală).
+                for _try in range(2):
+                    try:
+                        await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
+                        break
+                    except Exception:
+                        if _try == 0:
+                            await asyncio.sleep(1.5)
+                            continue
+                        raise
+                await asyncio.wait_for(
+                    asyncio.gather(*(_fetch_one(session, s) for s in missing), return_exceptions=True),
+                    timeout=90,
+                )
+        except Exception as e:
+            print(f"[ENRICH] TMview: {type(e).__name__}: {e} — continui cu ce am adus")
+        if fresh:
+            await loop.run_in_executor(None, export_cache.save_details, dict(fresh))
+            details.update(fresh)
 
-    try:
-        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES,
-                                verify=not bool(_PROXIES)) as session:
-            # Dacă acest "warmup" GET eșuează o singură dată, funcția întreagă
-            # renunța tăcut — nici măcar marca cu cea mai bună șansă nu mai era
-            # încercată. O reîncercare rapidă înainte de a renunța la toată
-            # îmbogățirea (nu doar la o marcă individuală).
-            for _try in range(2):
-                try:
-                    await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
-                    break
-                except Exception:
-                    if _try == 0:
-                        await asyncio.sleep(1.5)
-                        continue
-                    raise
-            results = await asyncio.wait_for(
-                asyncio.gather(*(_enrich_one(session, m) for m in marks),
-                               return_exceptions=True),
-                timeout=90,
-            )
-        return [m if not isinstance(m, Exception) else marks[i]
-                for i, m in enumerate(results)]
-    except Exception:
-        return marks
+    def _merge(mark):
+        detail = details.get(mark.get("ST13", ""))
+        if not detail:
+            return mark
+        merged = {**mark, **detail}
+        # applicants_detail has normalized {name, address, country}
+        if detail.get("applicants_detail"):
+            merged["applicants"] = detail["applicants_detail"]
+        # Nu suprascriem goodAndServices deja populat (ex. printr-un fetch
+        # de detaliu declanșat mai devreme din UI la expandarea cardului)
+        # cu un răspuns gol dintr-o nouă încercare server-side eșuată sau
+        # incompletă — TMview e adesea instabil la request individual.
+        if mark.get("goodAndServices") and not detail.get("goodAndServices"):
+            merged["goodAndServices"] = mark["goodAndServices"]
+        # Completăm imaginea din detail doar dacă lipsea la căutare —
+        # unele mărci inactive (expirate) nu au markImageURI în
+        # rezultatul de search, dar detail-ul o poate avea.
+        if not merged.get("imageUrl") and detail.get("markImageURI"):
+            merged["imageUrl"] = detail["markImageURI"]
+        merged.pop("markImageURI", None)
+        return merged
+
+    return [_merge(m) for m in marks]
 
 
 def _build_headers() -> Dict:

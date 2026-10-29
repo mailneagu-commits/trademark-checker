@@ -366,10 +366,19 @@ async def tm_detail(st13: str):
         return {"error": "curl_cffi not available"}
     if not st13 or st13.startswith("DEMO"):
         return {}
+    import export_cache
+    from agents.search_agent import fetch_detail_once
+    loop = asyncio.get_event_loop()
+    cached = (await loop.run_in_executor(None, export_cache.get_details, [st13])).get(st13)
+    if cached:
+        return cached
     try:
         async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
             await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
-            return await _fetch_detail(session, st13)
+            detail = await fetch_detail_once(session, st13)
+        if detail:   # salvat și pentru export (nu-l mai cerem încă o dată la TMview)
+            await loop.run_in_executor(None, export_cache.save_details, {st13: detail})
+        return detail
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
 
@@ -637,6 +646,7 @@ async def _run_check(request: "SearchRequest", max_tmview_attempts: int = 3) -> 
 async def check_trademark(request: SearchRequest):
     result = await _run_check(request)
     result["check_id"] = save_check(request, result)     # salvat în baza de date (vezi „Verificări salvate”)
+    asyncio.ensure_future(_prefetch_export_assets(result))
     return result
 
 
@@ -671,6 +681,29 @@ def _set_job(job_id: str, status: str, result: Optional[dict] = None, error: Opt
         db.close()
 
 
+_EXPORT_LISTS = ("results", "similar", "ended_marks", "terminated_marks", "expired_conflicts", "expired_similar")
+
+
+async def _prefetch_export_assets(result: dict) -> None:
+    """Imediat după o căutare: aduce în fundal detaliile TMview și imaginile mărcilor găsite (în
+    cache-ul din DB), ca exportul să fie gata în câteva secunde când utilizatorul apasă Export.
+    Traducerile NU — costă bani la Google și se fac doar dacă chiar se exportă. Concurență redusă
+    (4), ca să nu provocăm blocaje Imperva cât utilizatorul mai caută ceva."""
+    import agents.search_agent as _sa
+    import export as _export_mod
+    marks = [m for k in _EXPORT_LISTS for m in (result.get(k) or [])]
+    if not marks or not str(result.get("source", "")).startswith("live"):
+        return
+    try:
+        await asyncio.sleep(3)
+        t0 = datetime.utcnow()
+        enriched = await _sa.enrich_marks_with_detail(marks, concurrency=4)
+        await asyncio.get_event_loop().run_in_executor(None, _export_mod.prefetch_images, enriched)
+        print(f"[EXPORT-PREFETCH] {len(marks)} mărci pregătite în {(datetime.utcnow() - t0).total_seconds():.0f}s")
+    except Exception as e:
+        print(f"[EXPORT-PREFETCH] {type(e).__name__}: {e}")
+
+
 @app.post("/api/check/start")
 async def check_trademark_start(request: SearchRequest):
     import uuid
@@ -691,6 +724,7 @@ async def check_trademark_start(request: SearchRequest):
             result = await _run_check(request, max_tmview_attempts=3)
             result["check_id"] = save_check(request, result)     # salvat în baza de date
             _set_job(job_id, "done", result=result)
+            asyncio.ensure_future(_prefetch_export_assets(result))
         except HTTPException as e:
             _set_job(job_id, "error", error=e.detail)
         except Exception as e:
@@ -734,6 +768,10 @@ async def _run_export(request: ExportRequest):
     terminated_marks = request.terminated_marks
     include_expired = request.include_expired
 
+    # Cronometre pe etape (raportate în /api/export/status) — vezi export.EXPORT_TIMINGS.
+    import export as _export_mod
+    import time as _time
+    _t0 = _time.monotonic()
     # Enrich all marks with TMview detail (G&S text, representatives, exact dates, etc.)
     import agents.search_agent as _sa
     all_export_marks = results + similar + ended_marks + terminated_marks + expired_conflicts + expired_similar
@@ -758,7 +796,14 @@ async def _run_export(request: ExportRequest):
             expired_similar  = _enrich(expired_similar)
         except Exception as _e:
             print(f"[EXPORT] Detail enrichment failed: {_e} — exporting with available data")
+    _export_mod.EXPORT_TIMINGS["detalii_s"] = round(_time.monotonic() - _t0, 1)
 
+    _t1 = _time.monotonic()
+    _all_for_img = results + similar + ended_marks + terminated_marks + expired_conflicts + expired_similar
+    await asyncio.get_event_loop().run_in_executor(None, _export_mod.prefetch_images, _all_for_img)
+    _export_mod.EXPORT_TIMINGS["imagini_s"] = round(_time.monotonic() - _t1, 1)
+
+    _t2 = _time.monotonic()
     try:
         if fmt == "excel":
             data = build_excel(name, classes, offices, results, similar, expired_conflicts, expired_similar, include_expired=include_expired, ended_marks=ended_marks, terminated_marks=terminated_marks)
@@ -780,6 +825,8 @@ async def _run_export(request: ExportRequest):
         err = traceback.format_exc()
         print(f"[EXPORT ERROR] {fmt.upper()}:\n{err}")
         raise HTTPException(status_code=500, detail=f"Eroare generare {fmt.upper()}: {type(e).__name__}: {e}")
+    _export_mod.EXPORT_TIMINGS["document_s"] = round(_time.monotonic() - _t2, 1)
+    _export_mod.EXPORT_TIMINGS["total_s"] = round(_time.monotonic() - _t0, 1)
 
     return data, filename, media_type
 
@@ -813,10 +860,12 @@ async def export_start(request: ExportRequest):
         try:
             import export as _export_mod
             _export_mod.IMG_FAILURES.clear()
+            _export_mod.EXPORT_TIMINGS.clear()
             data, filename, media_type = await _run_export(request)
             _export_jobs[job_id] = {
                 "status": "done", "error": None,
                 "image_failures": list(_export_mod.IMG_FAILURES),
+                "timings": dict(_export_mod.EXPORT_TIMINGS),
                 "data": data, "filename": filename, "media_type": media_type,
             }
         except HTTPException as e:
@@ -833,7 +882,8 @@ async def export_status(job_id: str):
     job = _export_jobs.get(job_id)
     if not job:
         raise HTTPException(404, "Job de export negăsit — a expirat sau ID invalid.")
-    return {"status": job["status"], "error": job.get("error"), "image_failures": job.get("image_failures")}
+    return {"status": job["status"], "error": job.get("error"), "image_failures": job.get("image_failures"),
+            "timings": job.get("timings")}
 
 
 @app.get("/api/export/download")
