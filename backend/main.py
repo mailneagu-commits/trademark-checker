@@ -383,6 +383,32 @@ async def tm_detail(st13: str):
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+class _DetailBench(BaseModel):
+    st13s: List[str]
+    concurrency: int = 5
+
+
+@app.post("/api/debug/detail-bench")
+async def detail_bench(body: _DetailBench):
+    """Măsoară cererile de detaliu TMview (fără cache) la o anumită concurență — pentru a alege
+    concurența exportului pe date reale. Max 30 de mărci per test."""
+    import time as _t
+    import agents.search_agent as _sa
+    _sa.DETAIL_DIAG["fail"].clear(); _sa.DETAIL_DIAG["ok_s"].clear()
+    sem = asyncio.Semaphore(max(1, min(body.concurrency, 15)))
+    t0 = _t.monotonic()
+    async with _sa.AsyncSession(impersonate="chrome120", proxies=_sa._PROXIES, verify=not bool(_sa._PROXIES)) as session:
+        await session.get(_sa.TMVIEW_HOME, timeout=10, headers=_sa._build_headers())
+
+        async def one(st13):
+            async with sem:
+                return bool(await _sa._fetch_detail(session, st13))
+        res = await asyncio.gather(*(one(s) for s in body.st13s[:30]))
+    ok = sorted(_sa.DETAIL_DIAG["ok_s"])
+    return {"n": len(res), "ok": sum(res), "elapsed_s": round(_t.monotonic() - t0, 1),
+            "fail": dict(_sa.DETAIL_DIAG["fail"]), "median_s": ok[len(ok) // 2] if ok else None}
+
+
 @app.get("/api/session-status")
 async def session_status():
     return {"active": has_browser_session()}
