@@ -449,14 +449,20 @@ async def enrich_marks_with_detail(marks: list, concurrency: int = 10, fill_addr
     if em_failed:
         tv_fresh.update(await _tmview_details(em_failed, concurrency, budget_s=60))
     fresh = {**euipo_fresh, **tv_fresh}
+    # Salvăm imediat — un export pornit cât timp completăm adresele (mai jos, poate dura minute)
+    # trebuie să găsească deja detaliile în cache.
+    if fresh:
+        await loop.run_in_executor(None, export_cache.save_details, dict(fresh))
+        details.update(fresh)
+    fresh = {}
 
     if fill_addresses:
         # Adresele titularilor pentru detaliile din EUIPO (cache + aduse acum) — doar din TMview.
-        need = [s for s in st13s if _needs_address({**details, **fresh}.get(s, {}))]
+        need = [s for s in st13s if _needs_address(details.get(s, {}))]
         if need:
             tv_addr = await _tmview_details(need, concurrency, budget_s=240)
             for s, tv in tv_addr.items():
-                base = dict(fresh.get(s) or details.get(s) or {})
+                base = dict(details.get(s) or {})
                 if tv.get("applicants_detail"):
                     base["applicants_detail"] = tv["applicants_detail"]
                 if any(r.get("fullAddress") for r in tv.get("representatives") or []):
