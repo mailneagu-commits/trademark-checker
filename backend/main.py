@@ -409,6 +409,22 @@ async def detail_bench(body: _DetailBench):
             "fail": dict(_sa.DETAIL_DIAG["fail"]), "median_s": ok[len(ok) // 2] if ok else None}
 
 
+@app.get("/api/debug/euipo-raw")
+async def euipo_raw(app_num: str):
+    """Răspunsul brut al API-ului EUIPO pentru o marcă (structura câmpurilor) — diagnostic."""
+    import requests as _rq
+    from agents.euipo_agent import EUIPO_SEARCH_URL, EUIPO_CLIENT_ID, _get_access_token
+    def _get():
+        r = _rq.get(f"{EUIPO_SEARCH_URL}/{app_num}",
+                    headers={"Authorization": f"Bearer {_get_access_token()}",
+                             "X-IBM-Client-Id": EUIPO_CLIENT_ID, "Accept": "application/json"}, timeout=20)
+        return r.status_code, (r.json() if "json" in r.headers.get("content-type", "") else r.text[:300])
+    import time as _t
+    t0 = _t.monotonic()
+    code, body = await asyncio.get_event_loop().run_in_executor(None, _get)
+    return {"status": code, "elapsed_s": round(_t.monotonic() - t0, 2), "body": body}
+
+
 @app.get("/api/session-status")
 async def session_status():
     return {"active": has_browser_session()}
