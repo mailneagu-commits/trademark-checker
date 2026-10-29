@@ -53,18 +53,34 @@ def _parse_date(raw: str) -> str:
     return str(raw)[:10]
 
 
-def _calc_expiry(reg_date: str, app_date: str) -> str:
-    base = reg_date or app_date
+_ACTIVE_STATUS_WORDS = ("registered", "înregistrat", "inregistrat", "active", "renew", "reinnoire", "granted")
+
+
+def _calc_expiry(reg_date: str, app_date: str, office: str = "", status: str = "") -> str:
+    """Data de expirare estimată când TMview nu o dă. În UE/România durata de protecție (10 ani)
+    curge de la data depozitului; la Madrid (WO) și US de la înregistrare. O marcă încă
+    înregistrată după termenul estimat a fost reînnoită — mutăm estimarea la următorul termen
+    din viitor, altfel cardul ar arăta o marcă activă „expirată” din 2017."""
+    base = (reg_date or app_date) if office in ("WO", "US") else (app_date or reg_date)
     if not base:
         return ""
     try:
         dt = datetime.strptime(base[:10], "%Y-%m-%d")
-        expiry = dt.replace(year=dt.year + VALIDITY_YEARS)
+        expiry = _add_years(dt, VALIDITY_YEARS)
+        if any(w in (status or "").lower() for w in _ACTIVE_STATUS_WORDS):
+            today = datetime.now()
+            while expiry < today:
+                expiry = _add_years(expiry, VALIDITY_YEARS)
         return expiry.strftime("%Y-%m-%d")
     except Exception:
         return ""
 
 
+def _add_years(dt: datetime, years: int) -> datetime:
+    try:
+        return dt.replace(year=dt.year + years)
+    except ValueError:          # 29 februarie
+        return dt.replace(year=dt.year + years, day=28)
 
 
 class SimilarityAgent:
@@ -163,7 +179,9 @@ class SimilarityAgent:
         reg_date = _parse_date(tm.get("registrationDate", ""))
         # Use real expiryDate from detail endpoint if available, else calculate
         exp_raw  = _parse_date(tm.get("expiryDate", ""))
-        exp_date = exp_raw if exp_raw else _calc_expiry(reg_date, app_date)
+        exp_date = exp_raw if exp_raw else _calc_expiry(
+            reg_date, app_date, tm.get("tmOffice") or tm.get("office", ""),
+            tm.get("markCurrentStatusCode") or tm.get("tradeMarkStatus") or tm.get("status", ""))
 
         office_code = tm.get("tmOffice") or tm.get("office", "")
         office_name = OFFICE_NAMES.get(office_code, office_code)
