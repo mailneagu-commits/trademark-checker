@@ -205,6 +205,25 @@ def _prefetch_euipo_images(day: str) -> int:
     return n
 
 
+def _euipo_no_bulletin_reason(td: date_type) -> str:
+    """De ce nu există buletin EUIPO la data asta — după lista oficială de buletine (COPLA):
+    zi în care EUIPO nu publică (sărbătoare / zi de închidere) sau buletin încă nepublicat."""
+    try:
+        from scrapers.euipo_bulletin import _fetch_bulletin_list
+        dates = sorted({b["date"] for b in _fetch_bulletin_list(td.year)})
+    except Exception:
+        return ""
+    if not dates or td in dates:
+        return ""
+    if td > dates[-1]:
+        return f"Buletinul EUIPO din {td:%d.%m.%Y} nu a fost publicat încă (ultimul publicat: {dates[-1]:%d.%m.%Y})."
+    prev = max((d for d in dates if d < td), default=None)
+    nxt = min(d for d in dates if d > td)
+    near = ", ".join(f"{d:%d.%m.%Y}" for d in (prev, nxt) if d)
+    return (f"EUIPO nu a publicat buletin pe {td:%d.%m.%Y} (zi nelucrătoare la EUIPO). "
+            f"Buletinele din jur: {near}.")
+
+
 async def run_daily_monitor(date_str: str, sources=SOURCES, trigger: str = "manual") -> Dict:
     """Rulează monitorizarea pentru buletinele din `date_str` (ultima zi lucrătoare ≤ data)."""
     from routes.monitor import _bulletin_day, _load_bulletin_marks, _persist_bulletin
@@ -236,6 +255,8 @@ async def run_daily_monitor(date_str: str, sources=SOURCES, trigger: str = "manu
                 marks, info = await loop.run_in_executor(None, _fetch, source, td)
                 if not marks:
                     msg = info.get("error") or "Buletinul nu a fost publicat (încă) pentru această zi."
+                    if source == "euipo":
+                        msg = await loop.run_in_executor(None, _euipo_no_bulletin_reason, td) or msg
                     _set_run(source, day, status="no_bulletin", results=0, conflicts=0,
                              message=msg, finished_at=datetime.utcnow())
                     state.update({"phase": "fără buletin", "message": msg})
