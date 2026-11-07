@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ro"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/style.css"><link rel="icon" type="image/png" href="/favicon.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><script src="/app.js"></script>
+<title>Clasamentul reprezentanților — ProWatch</title>
+<meta name="description" content="Top reprezentanți în proprietate industrială după numărul de cereri de marcă publicate la OSIM.">
+</head><body>
+<main class="wrap" style="margin-top:24px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+    <h1 style="font-size:1.5rem;margin:0;">Top 10 reprezentanți ai lunii</h1>
+    <select id="month" style="width:auto;"></select></div>
+  <section class="two" style="grid-template-columns:2fr 1fr;">
+    <div class="card" id="top"><div class="empty-state">Se încarcă…</div></div>
+    <div class="card" id="side"></div>
+  </section>
+</main>
+<script>
+header("clasament");
+const MONTHS = ["ianuarie","februarie","martie","aprilie","mai","iunie","iulie","august","septembrie","octombrie","noiembrie","decembrie"];
+const ml = m => m ? `${MONTHS[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}` : "";
+async function load(month) {
+  try {
+    const d = await api("/api/clasament" + (month ? "?month=" + month : ""));
+    const sel = document.getElementById("month");
+    sel.innerHTML = d.months.map(m => `<option value="${m}" ${m === d.month ? "selected" : ""}>${ml(m)}</option>`).join("");
+    sel.onchange = () => load(sel.value);
+    document.getElementById("top").innerHTML = d.top.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>Reprezentant</th><th>Cereri publicate</th><th>Mărci înregistrate</th><th></th></tr></thead><tbody>${
+      d.top.map((t, i) => `<tr><td><b style="font-size:1.2rem;color:var(--brand);">${i + 1}</b></td><td><strong>${esc(t.representative)}</strong></td>
+        <td>${fmt(t.applications)}</td><td>${fmt(t.registrations)}</td>
+        <td><a href="/cauta.html?representative=${encodeURIComponent(t.representative)}">vezi mărcile →</a></td></tr>`).join("")}</tbody></table></div>`
+      : '<div class="empty-state">Nu sunt date pentru această lună.</div>';
+    document.getElementById("side").innerHTML = `<h2>Cererile lunii ${ml(d.month)}</h2>
+      <div class="stat"><b>${fmt(d.total)}</b><span>cereri publicate</span></div>
+      <div class="stat" style="margin-top:10px;"><b>${fmt(d.without_rep)}</b><span>depuse fără reprezentant</span></div>
+      <p class="muted small" style="margin-top:14px;">Cereri publicate = cererile de marcă publicate în BOPI în luna respectivă. Mărci înregistrate = mărcile reprezentantului publicate ca înregistrate în aceeași lună.</p>`;
+  } catch (e) { document.getElementById("top").innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
+}
+load(qs.get("month") || "");
+</script>
+</body></html>

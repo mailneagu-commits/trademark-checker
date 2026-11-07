@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ro"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/style.css"><link rel="icon" type="image/png" href="/favicon.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><script src="/app.js"></script>
+<title>Rezultate căutare — ProWatch</title>
+<meta name="robots" content="noindex">
+</head><body>
+<div class="hero" style="padding:28px 0 72px;"><div class="wrap"><h1 style="font-size:1.5rem;">Căutare mărci</h1></div></div>
+<main class="wrap">
+  <div id="search"></div>
+  <section><div id="summary" class="muted small" style="margin-bottom:8px;"></div>
+    <div class="card" id="results"><div class="empty-state">Se caută…</div></div>
+    <div class="pager" id="pager"></div></section>
+</main>
+<script>
+header("home");
+document.getElementById("search").innerHTML = searchForm();
+(async () => {
+  const p = new URLSearchParams(location.search);
+  const page = +(p.get("page") || 1);
+  try {
+    const d = await api("/api/search?" + p.toString());
+    const pages = Math.max(1, Math.ceil(d.total / d.size));
+    document.getElementById("summary").textContent = `${fmt(d.total)} rezultate · pagina ${page} din ${pages}`;
+    document.getElementById("results").innerHTML = resultsTable(d.results);
+    const go = n => { const q = new URLSearchParams(p); q.set("page", n); return "?" + q.toString(); };
+    document.getElementById("pager").innerHTML = `<span>${page > 1 ? `<a class="btn ghost" href="${go(page - 1)}">← Anterioare</a>` : ""}</span>
+      <span>${page < pages ? `<a class="btn ghost" href="${go(page + 1)}">Următoare →</a>` : ""}</span>`;
+  } catch (e) {
+    document.getElementById("results").innerHTML = `<div class="empty-state">${esc(e.message)}</div>`;
+  }
+})();
+</script>
+</body></html>

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ro"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/style.css"><link rel="icon" type="image/png" href="/favicon.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><script src="/app.js"></script>
+<title>Cereri de marcă publicate recent — ProWatch</title>
+<meta name="description" content="Cererile de înregistrare a mărcilor publicate zilnic de OSIM în BOPI.">
+</head><body>
+<main class="wrap" style="margin-top:24px;">
+  <h1 style="font-size:1.5rem;">Cereri de marcă publicate recent</h1>
+  <p class="muted">Cererile publicate zilnic de OSIM în BOPI. În 2 luni de la publicare, oricine se poate opune înregistrării.</p>
+  <div id="dates" class="chips" style="margin-bottom:14px;"></div>
+  <div class="card" id="results"><div class="empty-state">Se încarcă…</div></div>
+</main>
+<script>
+header("recente");
+async function load(day) {
+  try {
+    const r = await api("/api/recent" + (day ? "?day=" + day : ""));
+    document.getElementById("dates").innerHTML = r.dates.map(d =>
+      `<a href="?day=${d.date}" class="chip" style="text-decoration:none;padding:4px 10px;${d.date === r.date ? "background:var(--brand);color:#fff;" : ""}">${dmy(d.date)} · ${d.count}</a>`).join("");
+    document.getElementById("results").innerHTML = `<div class="muted small" style="margin-bottom:8px;">${r.results.length} cereri publicate pe ${dmy(r.date)}</div>` + resultsTable(r.results);
+  } catch (e) { document.getElementById("results").innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
+}
+load(qs.get("day") || "");
+</script>
+</body></html>

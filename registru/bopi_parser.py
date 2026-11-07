@@ -1,0 +1,245 @@
+"""
+Citirea buletinelor BOPI Mărci (OSIM) din PDF:
+
+- zilnic   (bopiDDMMYYYY.pdf, din 2022): cererile de marcă publicate
+- admise   (cereri_admise_DDMMYYYY.pdf, din 2023): cererile admise la înregistrare
+- lunar    (mrc_MM_YYYY.pdf): cap. 1 mărci înregistrate, cap. 2 cereri respinse, apoi tabele
+           (transferuri, reînnoiri, limitări) — din care etapa 1 folosește doar cap. 1 și 2
+
+Toate publică fiecare marcă ca bloc cu coduri INID — (210) nr. depozit, (111) nr. marcă,
+(151) dată, (732) titular, (740) reprezentant, (540) denumire, (531) Viena, (591) culori,
+(511) clase cu produse — pe pagini cu 2 coloane și un watermark (font Arial-Black).
+Textul coloanelor e citit în ordine, ca un flux continuu, ca produsele unei mărci care
+continuă pe coloana / pagina următoare să rămână la marca lor.
+"""
+import io
+import re
+from typing import Dict, Iterator, List, Optional, Tuple
+
+import pdfplumber
+
+WATERMARK = "Arial-Black"
+INID = ("111", "116", "141", "151", "156", "180", "181", "186", "210", "220", "230", "300",
+        "310", "320", "330", "511", "526", "531", "540", "541", "546", "550", "551", "554",
+        "555", "556", "557", "591", "641", "646", "732", "740", "750")
+RE_CODE = re.compile(r"\((" + "|".join(INID) + r")\)")
+RE_APP = re.compile(r"\(210\)\s*(M\s*\d{4}\s*\d{4,6})", re.I)
+RE_DATE = re.compile(r"(\d{1,2})[./](\d{1,2})[./](\d{4})")
+RE_SEP = re.compile(r"─{3,}")
+RE_HEADER = re.compile(r"^BULETINUL OFICIAL DE PROPRIETATE INDUSTRIAL", re.I)
+RE_GOODS_HEAD = re.compile(r"^\s*Produse\s+și/sau\s+servicii\s+grupate\s+pe\s+clase\s*:?", re.I)
+RE_CLASS = re.compile(r"(?:^|\n)\s*(\d{1,2})\s*\.\s+")
+
+# Capitolele buletinului lunar, după titlul paginii de capitol (ordinea contează: titlul cap. 2
+# conține și „PUBLICATE”, al cap. 1 și „PUBLICATE” și „ÎNREGISTRATE”).
+CHAPTERS = (
+    ("rejected", ("RESPINSE",)),
+    ("renewed", ("REÎNNOITE", "REINNOITE")),
+    ("withdrawn", ("RETRAGERI", "LIMITĂRI", "LIMITARI", "RETRASE")),
+    ("changes", ("MODIFICĂRI", "MODIFICARI", "TRANSMITERI")),
+    ("registered", ("ÎNREGISTRATE", "INREGISTRATE")),
+    ("published", ("PUBLICATE",)),
+)
+
+
+def compact_app(raw: str) -> str:
+    return re.sub(r"\s+", "", raw or "").upper()
+
+
+def display_app(app: str) -> str:
+    m = re.match(r"^M(\d{4})(\d+)$", app or "")
+    return f"M {m.group(1)} {m.group(2)}" if m else (app or "")
+
+
+def _iso(d: str) -> str:
+    m = RE_DATE.search(d or "")
+    if not m:
+        return ""
+    try:
+        return f"{int(m.group(3)):04d}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+    except ValueError:
+        return ""
+
+
+def _flat(s: str) -> str:
+    s = re.sub(r"-\n(?=[a-zăâîșţțş])", "", s or "")   # cuvinte despărțite la capăt de rând
+    return re.sub(r"\s+", " ", s).strip(" ,;")
+
+
+def _clean_lines(text: str) -> str:
+    out = []
+    for line in (text or "").split("\n"):
+        t = line.strip()
+        if not t or RE_HEADER.match(t) or re.fullmatch(r"\d{1,4}", t):
+            continue
+        if len(t) == 1 and t.isalpha():          # litere rătăcite din watermark
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def _chapter_of(page_text: str) -> Optional[Tuple[str, bool]]:
+    """Pagina de titlu a unui capitol / tabel: câteva rânduri, fără blocuri INID.
+    Întoarce (capitol, e_tabel) sau None."""
+    lines = [l.strip() for l in _clean_lines(page_text).split("\n") if l.strip()]
+    if not lines or len(lines) > 8 or RE_APP.search(page_text):
+        return None
+    head = " ".join(lines).upper()
+    for key, words in CHAPTERS:
+        if any(w in head for w in words):
+            return key, ("TABEL" in head)
+    return None
+
+
+def parse_block(block: str) -> Optional[Dict]:
+    """Un bloc INID → dict. `block` începe cu (210)."""
+    marks = list(RE_CODE.finditer(block))
+    seg: Dict[str, str] = {}
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(block)
+        seg.setdefault(m.group(1), block[m.end():end])
+    app_m = re.match(r"\s*(M\s*\d{4}\s*\d{4,6})", seg.get("210", ""))
+    if not app_m:
+        return None
+    rec: Dict = {"app_number": compact_app(app_m.group(1))}
+    if "111" in seg:
+        n = re.search(r"\d{3,7}", seg["111"])
+        rec["reg_number"] = n.group(0) if n else ""
+    if "151" in seg:
+        rec["date_151"] = _iso(seg["151"])
+    if "220" in seg:
+        rec["filing_date"] = _iso(seg["220"])
+    for code, key in (("732", "holder_address"), ("740", "representative_address")):
+        if code in seg:
+            rec[key] = _flat(seg[code])
+    name = _flat(seg.get("540", seg.get("541", seg.get("546", ""))))
+    # Declarația de neinvocare a unui drept exclusiv apare uneori lipită de denumire.
+    parts = re.split(r"\s+(?=(?:Prin scrisoarea|Prin adresa|Prin răspunsul|Solicitantul|Titularul)\b)", name, maxsplit=1)
+    rec["name"] = parts[0].strip()
+    if len(parts) > 1:
+        rec["disclaimer"] = parts[1].strip()
+    if "531" in seg:
+        rec["vienna"] = _flat(re.sub(r"Clasificare\s+Viena\s*:", "", seg["531"], flags=re.I))
+    if "591" in seg:
+        rec["colors"] = _flat(re.sub(r"Culori\s+revendicate\s*:", "", seg["591"], flags=re.I))
+    if "511" in seg:
+        g = RE_GOODS_HEAD.sub("", seg["511"].strip())
+        g = re.sub(r"^\s*clase\s*:", "", g, flags=re.I)
+        parts = RE_CLASS.split("\n" + g)
+        goods: Dict[str, str] = {}
+        for i in range(1, len(parts) - 1, 2):
+            c = int(parts[i])
+            if 1 <= c <= 45:
+                txt = _flat(parts[i + 1])
+                goods[str(c)] = (goods.get(str(c), "") + " " + txt).strip() if str(c) in goods else txt
+        rec["goods"] = goods
+        rec["classes"] = sorted(int(c) for c in goods)
+    for key in ("holder", "representative"):
+        full = rec.get(key + "_address", "")
+        if full:
+            rec[key] = full.split(",")[0].strip()
+    return rec
+
+
+def _thumb(page, img) -> Optional[bytes]:
+    try:
+        x0, top = max(img["x0"], 0), max(img["top"], 0)
+        x1, bottom = min(img["x1"], page.width), min(img["bottom"], page.height)
+        if x1 - x0 < 8 or bottom - top < 8:
+            return None
+        pil = page.crop((x0, top, x1, bottom)).to_image(resolution=150).original.convert("RGB")
+        pil.thumbnail((320, 320))
+        buf = io.BytesIO()
+        pil.save(buf, "WEBP", quality=80)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+RE_ANY_APP = re.compile(r"\bM\s?(\d{4})\s?(\d{5})\b")
+
+
+def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[str, Dict]]:
+    """Generează (capitol, marcă) pentru fiecare bloc INID din PDF.
+
+    daily → „published”; admise → „admitted”; monthly → „registered” dacă blocul are (111),
+    „rejected” dacă nr. de depozit apare în capitolul / tabelul cererilor respinse, altfel
+    „admitted” (în formatul 2022 cererile admise, respinse și mărcile înregistrate curg fără
+    pagini de titlu între ele). Paginile cu tabele și capitolele de modificări / reînnoiri /
+    retrageri sunt sărite."""
+    fixed = {"daily": "published", "admise": "admitted"}.get(kind)
+    stream: List[str] = []
+    images: Dict[str, bytes] = {}
+    rejected: set = set()
+    last_app = None
+    mode, is_table = "inid", False
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            clean = page.filter(lambda o: WATERMARK not in (o.get("fontname") or ""))
+            full = clean.extract_text() or ""
+            n_inid = len(RE_APP.findall(full))
+            if kind == "monthly":
+                h = _chapter_of(full)
+                if h:
+                    mode, is_table = h
+                elif is_table and (n_inid >= 2 or (n_inid and "(511)" in full)):
+                    is_table = False                      # după tabel au reînceput blocurile INID
+                if mode == "rejected":
+                    rejected.update(compact_app("M" + a + b) for a, b in RE_ANY_APP.findall(full))
+                if is_table or mode not in ("inid", "registered", "rejected", "published", "admitted"):
+                    page.flush_cache()
+                    continue
+            # Pagină-tabel fără titlu propriu (multe nr. de depozit, fără blocuri INID).
+            if n_inid <= 1 and len(RE_ANY_APP.findall(full)) >= 6:
+                page.flush_cache()
+                continue
+            # Antetul paginii e centrat peste ambele coloane — îl tăiem, altfel bucățile lui
+            # ajung în textul mărcilor din coloana stângă / dreaptă.
+            top0 = 0
+            try:
+                hdr = [h for h in clean.search(r"BULETINUL OFICIAL DE PROPRIETATE", regex=True)
+                       if h["top"] < page.height * 0.15]
+                if hdr:
+                    top0 = max(h["bottom"] for h in hdr) + 1
+                    # Al doilea rând al antetului: data / intervalul de date ale cererilor.
+                    dates = [d for d in clean.search(r"\d{2}[/.]\d{2}[/.]\d{4}", regex=True)
+                             if top0 - 2 <= d["top"] <= top0 + 16]
+                    if dates:
+                        top0 = max(d["bottom"] for d in dates) + 1
+            except Exception:
+                pass
+            for box in ((0, top0, page.width / 2, page.height), (page.width / 2, top0, page.width, page.height)):
+                col = clean.crop(box)
+                stream.append(_clean_lines(col.extract_text() or ""))
+                found = sorted(col.search(RE_APP.pattern, regex=True, case=False), key=lambda m: m["top"])
+                if want_images and col.images:
+                    for img in col.images:
+                        owner = None
+                        for m in found:
+                            if m["top"] <= img["top"]:
+                                owner = compact_app(m["groups"][0])
+                        owner = owner or last_app
+                        if owner and owner not in images:
+                            b = _thumb(page, img)
+                            if b:
+                                images[owner] = b
+                if found:
+                    last_app = compact_app(found[-1]["groups"][0])
+            page.flush_cache()
+
+    text = "\n".join(stream)
+    starts = [m.start() for m in RE_APP.finditer(text)]
+    for i, s in enumerate(starts):
+        block = text[s:starts[i + 1] if i + 1 < len(starts) else len(text)]
+        # Tot ce urmează după separatorul de după marcă nu mai e al ei.
+        parts = RE_SEP.split(block)
+        if "(511)" in parts[0] or len(parts) == 1:
+            block = parts[0]
+        rec = parse_block(block)
+        if not rec:
+            continue
+        if rec["app_number"] in images:
+            rec["image"] = images[rec["app_number"]]
+        chapter = fixed or ("registered" if rec.get("reg_number") else
+                            "rejected" if rec["app_number"] in rejected else "admitted")
+        yield chapter, rec

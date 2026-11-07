@@ -12,3 +12,6 @@ venv/
 monitor.db
 data/bulletins/
 data/watch_images/
+
+registru/registru.db
+registru/__pycache__/

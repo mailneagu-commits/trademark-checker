@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ro"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/style.css"><link rel="icon" type="image/png" href="/favicon.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><script src="/app.js"></script>
+<title>Marcă — ProWatch</title>
+</head><body>
+<main class="wrap" style="margin-top:24px;">
+  <p><a href="javascript:history.length>1?history.back():location.assign('/')">← Înapoi</a></p>
+  <div id="root"><div class="card empty-state">Se încarcă…</div></div>
+</main>
+<script>
+header("");
+(async () => {
+  const app = decodeURIComponent(location.pathname.split("/").pop() || qs.get("app") || "");
+  const root = document.getElementById("root");
+  try {
+    const m = await api("/api/mark/" + encodeURIComponent(app));
+    document.title = `${m.name || m.app} — ${m.app} — ProWatch`;
+    const fact = (k, v) => v ? `<div class="fact"><small>${k}</small><b>${v}</b></div>` : "";
+    const goods = Object.entries(m.goods || {}).sort((a, b) => +a[0] - +b[0]);
+    root.innerHTML = `
+      <div class="card mhead">
+        <div class="logo-box">${m.image ? `<img src="${esc(m.image)}" alt="${esc(m.name)}">` : `<span class="muted" style="font-size:1.4rem;font-weight:800;text-align:center;">${esc(m.name)}</span>`}</div>
+        <div>
+          <h1>${esc(m.name || "(marcă figurativă)")}</h1>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">${statusBadge(m.status)}<span class="muted small">${esc(m.mark_type)} · OSIM</span></div>
+          <div class="facts">
+            ${fact("Nr. depozit (210)", esc(m.app))}
+            ${fact("Data depozit", dmy(m.filing_date))}
+            ${fact("Publicată (BOPI)", dmy(m.publication_date))}
+            ${fact("Nr. înregistrare (111)", esc(m.reg_number))}
+            ${fact("Înregistrată (BOPI)", dmy(m.reg_date))}
+            ${fact("Expiră", dmy(m.expiry_date))}
+          </div>
+          <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn" onclick="togglePick('${esc(m.app)}', true);openLead('info')">Solicită informații despre această marcă</button>
+            <a class="btn ghost" href="/cauta.html?name=${encodeURIComponent(m.name || "")}&mode=similar">Mărci asemănătoare</a>
+          </div>
+        </div>
+      </div>
+      <section class="two">
+        <div class="card"><h2>Titular (732)</h2><p style="margin:0;"><a href="/cauta.html?holder=${encodeURIComponent(m.holder)}"><strong>${esc(m.holder)}</strong></a><br><span class="muted small">${esc(m.holder_address)}</span></p></div>
+        <div class="card"><h2>Reprezentant (740)</h2>${m.representative ? `<p style="margin:0;"><a href="/cauta.html?representative=${encodeURIComponent(m.representative)}"><strong>${esc(m.representative)}</strong></a><br><span class="muted small">${esc(m.representative_address)}</span></p>` : '<p class="muted" style="margin:0;">Fără reprezentant.</p>'}</div>
+      </section>
+      ${m.vienna || m.colors ? `<section class="card"><div class="facts" style="margin:0;">${fact("Clasificare Viena (531)", esc(m.vienna))}${fact("Culori revendicate (591)", esc(m.colors))}</div></section>` : ""}
+      ${m.disclaimer ? `<section class="card"><h2>Mențiuni</h2><p style="margin:0;">${esc(m.disclaimer)}</p></section>` : ""}
+      <section class="card goods"><h2>Produse și servicii (511) · ${goods.length} ${goods.length === 1 ? "clasă" : "clase"}</h2>
+        ${goods.map(([c, t]) => `<div class="row"><div class="cls">${c}</div><div>${esc(t)}</div></div>`).join("") || '<p class="muted">—</p>'}</section>
+      <section class="card"><h2>Apariții în BOPI</h2><ul class="timeline">${(m.events || []).map(e =>
+        `<li><strong>${esc(e.bopi)}</strong> — ${esc(e.chapter)}</li>`).join("")}</ul></section>`;
+  } catch (e) {
+    root.innerHTML = `<div class="card empty-state">${esc(e.message)}</div>`;
+  }
+})();
+</script>
+</body></html>
