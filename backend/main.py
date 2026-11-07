@@ -912,7 +912,7 @@ async def export_download(job_id: str):
 async def _no_cache_html(request, call_next):
     # Paginile HTML se schimbă la fiecare deploy — fără asta browserul arată versiunea veche din cache.
     response = await call_next(request)
-    if response.headers.get("content-type", "").startswith("text/html"):
+    if response.headers.get("content-type", "").startswith(("text/html", "text/javascript", "application/javascript")):
         response.headers["Cache-Control"] = "no-cache"
     return response
 

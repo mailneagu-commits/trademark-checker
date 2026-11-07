@@ -37,6 +37,23 @@
 <div class="wrap" id="root"><div class="state">⏳ Se încarcă marca… <span id="t"></span></div></div>
 <script src="bulletin-view.js"></script>
 <script>
+// Titular / reprezentant: numele îngroșat pe primul rând, adresa dedesubt (ca în tabelele de monitorizare).
+const _toks = t => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+const _LEGAL = /^(s\.?\s?a\.?|s\.?\s?r\.?\s?l\.?|s\.?\s?l\.?|s\.?\s?p\.?\s?a\.?|ltd\.?|limited|gmbh|ag|bv|b\.v\.|lda\.?|llc|inc\.?|oy|ab|as|a\/s|kft\.?|sas|sarl|eood|ood|s\.?\s?c\.?\s?a\.?)$/i;
+function party(text, names) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  const segs = t.split(/,\s*/), want = (names || []).filter(Boolean).map(_toks);
+  let k = 0;
+  for (let i = 1; i <= Math.min(4, segs.length) && !k; i++)
+    if (want.includes(_toks(segs.slice(0, i).join(" ")))) k = i;
+  if (!k && !want.length && segs.length > 1) k = 1;
+  if (!k) return want.includes(_toks(t)) ? `<strong>${_bEsc(t)}</strong>` : _bEsc(t);
+  while (k < segs.length - 1 && _LEGAL.test(segs[k].trim())) k++;
+  const rest = segs.slice(k).join(", ");
+  return `<strong>${_bEsc(segs.slice(0, k).join(", "))}</strong>` + (rest ? `<br><span style="color:#555">${_bEsc(rest)}</span>` : "");
+}
+
 (async function () {
   const q = new URLSearchParams(location.search);
   const source = q.get("source"), date = q.get("date"), app = q.get("app");
@@ -73,7 +90,11 @@
       ["541", m.tmName], ["731", m.applicantAddress || (m.applicantName || []).join("; ")], ["740", reps],
       ["list_511", bulletinClassNumbers(m)],
     ].filter(([, v]) => v !== "" && v != null);
-    const inidHtml = `<table class="inid">${inid.map(([k, v]) => `<tr><th>${k}</th><td>${_bEsc(v).replace(/,\s+(?=\S)/g, k === "731" || k === "740" ? ",<br>" : ", ")}</td></tr>`).join("")}
+    const names = {
+      "731": (m.applicants || []).map(a => a.name).filter(Boolean).concat(m.applicantName || []),
+      "740": (m.representatives || []).map(r => r.fullName || r.name).filter(Boolean),
+    };
+    const inidHtml = `<table class="inid">${inid.map(([k, v]) => `<tr><th>${k}</th><td>${names[k] ? party(v, names[k]) : _bEsc(v)}</td></tr>`).join("")}
       ${Object.keys(goods).length ? Object.entries(goods).map(([c, t]) => `<tr><th>${_bEsc(c)}</th><td>${_bEsc(t)}</td></tr>`).join("") : ""}</table>`;
     root.innerHTML = `
       <div class="links"><a href="#" onclick="if(history.length>1){history.back()}else{window.close()}return false;">Back</a>

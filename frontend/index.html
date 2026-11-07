@@ -3810,7 +3810,7 @@ function renderDaily(source) {
   const el = document.getElementById(source === "osim" ? "dailyOsim" : "dailyEuipo");
   const data = (_dailyRuns || {})[source] || { runs: [], years: [] };
   const title = source === "osim" ? "Monitor OSIM" : "Monitor EUIPO";
-  const link = (type, d, label) => `<a href="/monitor-table.html?type=${type}&source=${source}&date=${d}" target="_blank">${label}</a>`;
+  const link = (type, d, label) => `<a href="/monitor-table.html?type=${type}&source=${source}&date=${d}&v=2" target="_blank">${label}</a>`;
   const years = data.years.length
     ? data.years.map(y => `<tr><td>${y.year}</td><td>${y.results} <span class="dm">(${y.days} zile)</span></td><td>${y.conflicts}</td></tr>`).join("")
     : `<tr><td colspan="3" class="dm" style="text-align:center;">No data available in table</td></tr>`;
