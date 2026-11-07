@@ -1,27 +1,36 @@
 <!DOCTYPE html>
 <html lang="ro"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/style.css"><link rel="icon" type="image/png" href="/favicon.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><script src="/app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="/style.css"><link rel="icon" type="image/png" href="/favicon.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><script src="/app.js"></script>
 <title>ProWatch — verificare mărci OSIM</title>
 <meta name="description" content="Caută gratuit mărci înregistrate și cereri de marcă publicate la OSIM: după denumire, titular, reprezentant sau clasă Nisa.">
 </head><body>
 <div class="hero"><div class="wrap">
-  <h1>Verifică mărcile înregistrate <span>în România</span></h1>
-  <p>Caută gratuit în mărcile și cererile de marcă publicate de OSIM în Buletinul Oficial de Proprietate Industrială — după denumire, titular, reprezentant sau clasă Nisa.</p>
+  <span class="badge">ProWatch · Registrul mărcilor OSIM</span>
+  <h1>Verifică mărcile<br>înregistrate <span>în România.</span></h1>
+  <ul>
+    <li>Mărci înregistrate și cereri de marcă publicate de OSIM</li>
+    <li>Căutare după denumire, titular, reprezentant sau clasă Nisa</li>
+    <li>Actualizat zilnic din Buletinul Oficial de Proprietate Industrială</li>
+  </ul>
+  <div id="search"></div>
 </div></div>
 <main class="wrap">
-  <div id="search"></div>
-  <section class="stats" id="stats"></section>
-  <section class="two">
-    <div class="card cta-card"><h3>Informații actualizate despre o marcă</h3>
-      <p>Bifați mărcile din rezultate sau scrieți-ne despre ce marcă e vorba — vă trimitem situația juridică actuală și datele titularului.</p>
-      <button class="btn" onclick="openLead('info')">Solicită informații</button></div>
-    <div class="card cta-card"><h3>Cercetare de disponibilitate</h3>
-      <p>Înainte de a depune o marcă, aflați dacă există mărci anterioare identice sau asemănătoare care s-ar putea opune.</p>
-      <button class="btn alt" onclick="openLead('cercetare')">Solicită o cercetare</button></div>
+  <section class="stats" id="stats" style="margin-top:0;"></section>
+  <section class="dark-band">
+    <span class="badge">Ce facem</span>
+    <h2>Înregistrare, verificare și monitorizare mărci<br>OSIM, EUIPO, WIPO</h2>
+    <div class="two">
+      <div class="card cta-card"><h3>Informații actualizate despre o marcă</h3>
+        <p>Bifați mărcile din rezultate sau scrieți-ne despre ce marcă e vorba — vă trimitem situația juridică actuală și datele titularului.</p>
+        <div class="more"><button class="link-more" onclick="openLead('info')">Solicită informații</button></div></div>
+      <div class="card cta-card"><h3>Cercetare de disponibilitate</h3>
+        <p>Înainte de a depune o marcă, aflați dacă există mărci anterioare identice sau asemănătoare care s-ar putea opune înregistrării.</p>
+        <div class="more"><button class="link-more" onclick="openLead('cercetare')">Solicită o cercetare</button></div></div>
+    </div>
   </section>
   <section id="week"></section>
   <section><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">
-    <h2 id="recentTitle">Cereri publicate recent</h2><a href="/recente.html">toate cererile recente →</a></div>
+    <div><span class="badge light">BOPI</span><h2 id="recentTitle">Cereri publicate recent</h2></div><a href="/recente.html">toate cererile recente →</a></div>
     <div class="card" id="recent"><div class="empty-state">Se încarcă…</div></div></section>
 </main>
 <script>
@@ -33,14 +42,14 @@ document.getElementById("search").innerHTML = searchForm();
     document.getElementById("stats").innerHTML = [
       [s.marks, "mărci și cereri"], [s.holders, "titulari"], [s.representatives, "reprezentanți"],
       [s.by_status["Înregistrată"] || 0, "mărci înregistrate"]].map(([n, t]) =>
-      `<div class="card stat"><b>${fmt(n)}</b><span>${t}</span></div>`).join("");
+      `<div class="stat"><b>${fmt(n)}</b><span>${t}</span></div>`).join("");
     const w = s.week;
-    if (w && w.published) document.getElementById("week").innerHTML = `<h2>Statistica săptămânii ${dmy(w.from)} – ${dmy(w.to)}</h2>
+    if (w && w.published) document.getElementById("week").innerHTML = `<span class="badge light">Statistici</span><h2>Statistica săptămânii ${dmy(w.from)} – ${dmy(w.to)}</h2>
       <div class="stats">
-        <div class="card stat"><b>${fmt(w.published)}</b><span>cereri publicate</span></div>
-        <div class="card stat"><b>${fmt(w.many_classes)}</b><span>cu ≥ 3 clase Nisa</span></div>
-        <div class="card stat"><b>${fmt(w.figurative)}</b><span>figurative / combinate</span></div>
-        <div class="card stat"><b>${fmt(w.verbal)}</b><span>verbale</span></div></div>
+        <div class="stat"><b>${fmt(w.published)}</b><span>cereri publicate</span></div>
+        <div class="stat"><b>${fmt(w.many_classes)}</b><span>cu ≥ 3 clase Nisa</span></div>
+        <div class="stat"><b>${fmt(w.figurative)}</b><span>figurative / combinate</span></div>
+        <div class="stat"><b>${fmt(w.verbal)}</b><span>verbale</span></div></div>
       <div class="card" style="margin-top:14px;"><strong>Cele mai solicitate clase</strong>
         <div class="tbl-wrap"><table class="tbl" style="margin-top:6px;"><tbody>${w.top_classes.map(c =>
           `<tr><td style="width:70px;"><span class="chip">${c.class}</span></td><td>${fmt(c.count)} cereri</td>

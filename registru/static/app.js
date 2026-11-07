@@ -73,12 +73,12 @@ function header(active) {
     <header class="top"><div class="wrap">
       <a class="brand" href="/" aria-label="${SITE.name} — prima pagină"><img src="/prowatch-logo.png" alt="${SITE.name}" width="160" height="40"><small>${SITE.tagline}</small></a>
       <nav class="nav">${links.map(([h, t, k]) => `<a href="${h}" class="${k === active ? "on" : ""}">${t}</a>`).join("")}
-        <a href="#" class="cta" onclick="openLead('cercetare');return false;">Solicită o cercetare</a></nav>
+        <a href="#" class="cta" onclick="openLead('cercetare');return false;">Cercetare</a></nav>
     </div></header>`);
   document.body.insertAdjacentHTML("beforeend", `
     <footer><div class="wrap fgrid">
       <img src="/protectmark-logo.png" alt="ProtectMark — intellectual property attorneys" width="110" height="64">
-      <div><div><strong style="color:var(--ink);">${esc(SITE.name)}</strong> este un serviciu ProtectMark. Datele provin din Buletinul Oficial de Proprietate Industrială (BOPI), secțiunea Mărci, publicat de OSIM.</div>
+      <div><div><strong>${esc(SITE.name)}</strong> este un serviciu ProtectMark. Datele provin din Buletinul Oficial de Proprietate Industrială (BOPI), secțiunea Mărci, publicat de OSIM.</div>
       <div class="small" style="margin-top:6px;">Informațiile au caracter orientativ și nu înlocuiesc o cercetare de disponibilitate făcută de un consilier în proprietate industrială. Pentru situația juridică oficială a unei mărci consultați OSIM.</div></div>
     </div></footer>
 ` + LEAD_UI);
