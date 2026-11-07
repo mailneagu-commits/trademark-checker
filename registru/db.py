@@ -86,6 +86,25 @@ class SourceFile(Base):
     processed_at  = Column(DateTime, default=datetime.utcnow)
 
 
+class MarkChange(Base):
+    """Un rând din tabelele buletinului lunar (transfer, reînnoire, radiere, licență, limitare,
+    modificarea reprezentării). Se păstrează și pentru mărcile care nu sunt încă în bază (mai vechi
+    de 2022), ca să poată fi aplicate când va fi adăugată arhiva."""
+    __tablename__ = "mark_changes"
+
+    id            = Column(Integer, primary_key=True)
+    kind          = Column(String, default="", index=True)
+    app_number    = Column(String, default="", index=True)
+    reg_number    = Column(String, default="", index=True)
+    old_value     = Column(Text, default="")
+    new_value     = Column(Text, default="")
+    expiry        = Column(String, default="")
+    title         = Column(String, default="")
+    bulletin_date = Column(String, default="", index=True)
+    label         = Column(String, default="")
+    applied       = Column(Boolean, default=False)
+
+
 class Lead(Base):
     """O solicitare trimisă de un vizitator: informații despre mărci bifate / cercetare."""
     __tablename__ = "leads"
@@ -108,8 +127,30 @@ def get_db():
         db.close()
 
 
+def _fix_disclaimers():
+    """Corectează mărcile încărcate înainte ca declarația art. 22 să fie separată de denumire."""
+    from bopi_parser import split_disclaimer
+    db = SessionLocal()
+    try:
+        n = 0
+        q = db.query(Mark).filter(Mark.name.like("%conformitate%") | Mark.name.like("%Conform %") |
+                                  Mark.name.like("%Potrivit%"))
+        for m in q:
+            name, disc = split_disclaimer(m.name)
+            if disc:
+                m.name, m.name_norm = name, norm(name)
+                m.disclaimer = (m.disclaimer + " " + disc).strip() if m.disclaimer else disc
+                n += 1
+        db.commit()
+        if n:
+            print(f"[DB] Declarații separate de denumire: {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
+    _fix_disclaimers()
     if IS_PG:
         # Căutare „conține” rapidă pe sute de mii de rânduri: index trigram.
         with engine.begin() as c:

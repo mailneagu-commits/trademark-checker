@@ -91,6 +91,17 @@ def _chapter_of(page_text: str) -> Optional[Tuple[str, bool]]:
     return None
 
 
+# Declarația de neinvocare a unui drept exclusiv (art. 22 din Legea 84/1998) apare uneori
+# lipită de denumirea mărcii, imediat după ea.
+RE_DISCLAIMER = re.compile(r"\s+(?=(?:Prin scrisoarea|Prin adresa|Prin răspunsul|Solicitantul|Titularul|"
+                           r"În conformitate|In conformitate|Conform (?:art|adresei|prevederilor)|Potrivit)\b)")
+
+
+def split_disclaimer(name: str) -> Tuple[str, str]:
+    parts = RE_DISCLAIMER.split(name or "", maxsplit=1)
+    return parts[0].strip(), (parts[1].strip() if len(parts) > 1 else "")
+
+
 def parse_block(block: str) -> Optional[Dict]:
     """Un bloc INID → dict. `block` începe cu (210)."""
     marks = list(RE_CODE.finditer(block))
@@ -113,11 +124,9 @@ def parse_block(block: str) -> Optional[Dict]:
         if code in seg:
             rec[key] = _flat(seg[code])
     name = _flat(seg.get("540", seg.get("541", seg.get("546", ""))))
-    # Declarația de neinvocare a unui drept exclusiv apare uneori lipită de denumire.
-    parts = re.split(r"\s+(?=(?:Prin scrisoarea|Prin adresa|Prin răspunsul|Solicitantul|Titularul)\b)", name, maxsplit=1)
-    rec["name"] = parts[0].strip()
-    if len(parts) > 1:
-        rec["disclaimer"] = parts[1].strip()
+    rec["name"], disclaimer = split_disclaimer(name)
+    if disclaimer:
+        rec["disclaimer"] = disclaimer
     if "531" in seg:
         rec["vienna"] = _flat(re.sub(r"Clasificare\s+Viena\s*:", "", seg["531"], flags=re.I))
     if "591" in seg:
@@ -243,3 +252,100 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
         chapter = fixed or ("registered" if rec.get("reg_number") else
                             "rejected" if rec["app_number"] in rejected else "admitted")
         yield chapter, rec
+
+
+# ── Tabelele din buletinul lunar: transferuri, reînnoiri, radieri, licențe ──────
+
+RE_TITLE = re.compile(r"^(Tabel|Modific|MODIFIC|Cesiun|CESIUN|Fuziun|FUZIUN|Licen|LICEN|LISTA|Lista|RETRAG|Retrag|"
+                      r"Radier|RADIER|Mărci radiate|Cereri retrase)", re.I)
+RE_APP_CELL = re.compile(r"M\s*(\d{4})\s*(\d{4,6})")
+
+
+def _cell(c) -> str:
+    return re.sub(r"\s+", " ", (c or "").replace("\n", " ")).strip()
+
+
+def _change_kind(title: str, header: str) -> Optional[str]:
+    h, t = header.lower(), title.upper()
+    if "expir" in h and "marc" in h:
+        return "renewal"
+    if "vechea reprezentare" in h:
+        return "representation"
+    if "licen" in h or "LICEN" in t:
+        return "license"
+    if "titular vechi" in h or "cedent" in h:
+        return ("Cesiune" if "CESIUN" in t else "Fuziune" if "FUZIUN" in t else
+                "Modificare adresă titular" if "ADRES" in t else "Modificare titular")
+    if "limitare" in h or "LIMIT" in t:
+        return "limitation"
+    if "RADIAT" in t:
+        return "radiated"
+    if "RETRAS" in t or "RETRAGER" in t:
+        return "withdrawn"
+    return None
+
+
+def _ids(cell: str) -> Tuple[str, str]:
+    """(nr. depozit, nr. marcă) dintr-o celulă ca „M 2004 08656 064710” sau „000589 013573”."""
+    m = RE_APP_CELL.search(cell)
+    rest = cell[m.end():] if m else cell
+    app = f"M{m.group(1)}{m.group(2)}" if m else ""
+    nums = re.findall(r"\d{5,7}", rest)
+    if not m and len(nums) >= 2:          # format vechi: nr. depozit fără „M”, apoi nr. marcă
+        return "", nums[1].lstrip("0")
+    return app, (nums[0].lstrip("0") if nums else "")
+
+
+def parse_changes(path: str) -> Iterator[Dict]:
+    """Rândurile tabelelor de modificări / reînnoiri / radieri / licențe / limitări."""
+    mode, title = "inid", ""
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            clean = page.filter(lambda o: WATERMARK not in (o.get("fontname") or ""))
+            full = clean.extract_text() or ""
+            h = _chapter_of(full)
+            if h:
+                mode = h[0]
+            if mode not in ("changes", "renewed", "withdrawn"):
+                page.flush_cache()
+                continue
+            for line in _clean_lines(full).split("\n")[:6]:
+                if RE_TITLE.match(line.strip()):
+                    title = line.strip()
+                    break
+            for table in clean.extract_tables():
+                if not table or len(table) < 2:
+                    continue
+                header = " ".join(_cell(c) for c in table[0])
+                kind = _change_kind(title, header)
+                if not kind:
+                    continue
+                for row in table[1:]:
+                    cells = [_cell(c) for c in row]
+                    if kind == "representation" and len(cells) > 1:
+                        # Nr. din registru (adesea gol) + nr. cererii în coloana a doua.
+                        cells = [cells[1] + " " + cells[0]] + cells[1:]
+                    if not cells or not cells[0].strip() or cells[0].startswith("("):
+                        continue
+                    rec: Dict = {"kind": kind, "title": title}
+                    if kind == "renewal":
+                        rec["reg_number"] = re.sub(r"\D.*$", "", cells[0]).lstrip("0")
+                        rec["expiry"] = _iso(cells[1] if len(cells) > 1 else "")
+                        rec["new"] = cells[3] if len(cells) > 3 else ""
+                        if not rec["reg_number"]:
+                            continue
+                    else:
+                        app, reg = _ids(cells[0])
+                        if kind in ("radiated", "withdrawn") and len(cells) > 2:
+                            reg = reg or re.sub(r"\D", "", cells[2]).lstrip("0")
+                        if not (app or reg):
+                            continue
+                        rec.update(app_number=app, reg_number=reg)
+                        if kind in ("Cesiune", "Fuziune", "Modificare titular", "Modificare adresă titular"):
+                            rec["old"], rec["new"] = (cells[2] if len(cells) > 2 else ""), (cells[3] if len(cells) > 3 else "")
+                        elif kind == "representation":
+                            rec["old"], rec["new"] = (cells[2] if len(cells) > 2 else ""), (cells[3] if len(cells) > 3 else "")
+                        elif kind == "license":
+                            rec["new"] = " · ".join(c for c in cells[3:6] if c)
+                    yield rec
+            page.flush_cache()

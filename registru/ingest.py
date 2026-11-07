@@ -16,8 +16,8 @@ from typing import Dict, List, Optional
 
 import requests
 
-from bopi_parser import parse_pdf
-from db import Mark, MarkImage, SessionLocal, SourceFile, norm
+from bopi_parser import parse_changes, parse_pdf
+from db import Mark, MarkChange, MarkImage, SessionLocal, SourceFile, norm
 
 OSIM = "https://www.osim.ro"
 INDEX_PAGE = OSIM + "/buletinul-oficial-de-proprietate-industriala-marci"
@@ -70,6 +70,9 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
             part = f" partea {m.group(2).upper()}" if m.group(2) else ""
             out.append({"url": url, "kind": "monthly", "date": _month_end(y, mo),
                         "label": f"BOPI {mo:02d}/{y}{part}"})
+            # Tabelele aceluiași buletin (transferuri, reînnoiri, radieri...) — pas separat.
+            out.append({"url": url + "#changes", "kind": "changes", "date": _month_end(y, mo),
+                        "label": f"BOPI {mo:02d}/{y}{part}"})
     d = START
     while d <= today:
         if d.weekday() < 5:
@@ -77,7 +80,7 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
                         "label": f"BOPI {d:%d.%m.%Y}"})
         d += timedelta(days=1)
     # Aceeași zi: întâi publicarea, apoi admiterea, apoi buletinul lunar.
-    order = {"daily": 0, "admise": 1, "monthly": 2}
+    order = {"daily": 0, "admise": 1, "monthly": 2, "changes": 3}
     out.sort(key=lambda s: (s["date"], order[s["kind"]], s["url"]))
     return out
 
@@ -138,8 +141,67 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     m.updated_at = datetime.utcnow()
 
 
+CHANGE_LABEL = {
+    "renewal": "Reînnoire", "representation": "Modificarea reprezentării mărcii", "license": "Licență înscrisă",
+    "limitation": "Limitare la cererea titularului", "radiated": "Radiată la cererea titularului",
+    "withdrawn": "Cerere retrasă",
+}
+
+
+def _apply_change(db, m: Mark, c: MarkChange) -> None:
+    label = CHANGE_LABEL.get(c.kind, c.kind)
+    detail = ""
+    if c.kind in ("Cesiune", "Fuziune", "Modificare titular", "Modificare adresă titular") and c.new_value:
+        m.holder_address = c.new_value
+        m.holder = c.new_value.split(",")[0].strip()
+        m.holder_norm = norm(m.holder)
+        detail = f"titular nou: {m.holder}"
+    elif c.kind == "representation" and c.new_value:
+        detail = f"„{c.old_value}” → „{c.new_value}”"
+        if norm(c.new_value) != norm(m.name):
+            m.name, m.name_norm = c.new_value, norm(c.new_value)
+    elif c.kind == "renewal":
+        detail = f"valabilă până la {c.expiry[8:10]}.{c.expiry[5:7]}.{c.expiry[:4]}" if c.expiry else ""
+    elif c.kind == "license":
+        detail = c.new_value[:200]
+    elif c.kind in ("radiated", "withdrawn"):
+        m.status, m.status_date = ("Radiată" if c.kind == "radiated" else "Retrasă"), c.bulletin_date
+    ev = {"date": c.bulletin_date, "bopi": c.label, "chapter": label}
+    if detail:
+        ev["detail"] = detail
+    if c.kind == "renewal" and c.expiry:
+        ev["expiry"] = c.expiry
+    if ev not in (m.events or []):
+        m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+    m.updated_at = datetime.utcnow()
+    c.applied = True
+
+
+def _process_changes(db, path: str, src: Dict) -> int:
+    n = 0
+    bdate = src["date"].isoformat()
+    for r in parse_changes(path):
+        c = MarkChange(kind=r["kind"], app_number=r.get("app_number", ""), reg_number=r.get("reg_number", ""),
+                       old_value=r.get("old", ""), new_value=r.get("new", ""), expiry=r.get("expiry", ""),
+                       title=r.get("title", ""), bulletin_date=bdate, label=src["label"])
+        db.add(c)
+        m = db.get(Mark, c.app_number) if c.app_number else None
+        if m is None and c.reg_number:
+            m = db.query(Mark).filter(Mark.reg_number == c.reg_number).first()
+        if m is not None:
+            _apply_change(db, m, c)
+        n += 1
+        if n % 200 == 0:
+            db.commit()
+    return n
+
+
 def expiry_of(m: Mark) -> str:
-    """Protecția durează 10 ani de la data depozitului (Legea 84/1998, art. 39)."""
+    """Protecția durează 10 ani de la data depozitului (Legea 84/1998, art. 39); o reînnoire
+    publicată în BOPI o prelungește."""
+    renewals = [e["expiry"] for e in (m.events or []) if e.get("expiry")]
+    if renewals:
+        return max(renewals)
     if m.status != "Înregistrată" or not m.filing_date:
         return ""
     exp = _add_years(m.filing_date, 10)
@@ -150,6 +212,7 @@ def expiry_of(m: Mark) -> str:
 # ── Procesarea unui PDF ─────────────────────────────────────────────────────────
 
 def _download(url: str) -> Optional[str]:
+    url = url.split("#", 1)[0]
     r = requests.get(url, headers=UA, timeout=600, stream=True)
     if r.status_code == 404:
         return None
@@ -178,11 +241,14 @@ def process_source(src: Dict) -> int:
                 db.commit()
             return 0
         n = 0
-        for chapter, rec in parse_pdf(path, src["kind"]):
-            _upsert(db, chapter, rec, src)
-            n += 1
-            if n % 200 == 0:
-                db.commit()
+        if src["kind"] == "changes":
+            n = _process_changes(db, path, src)
+        else:
+            for chapter, rec in parse_pdf(path, src["kind"]):
+                _upsert(db, chapter, rec, src)
+                n += 1
+                if n % 200 == 0:
+                    db.commit()
         db.merge(SourceFile(url=src["url"], kind=src["kind"], label=src["label"],
                             bulletin_date=src["date"].isoformat(), status="ok", marks=n,
                             processed_at=datetime.utcnow()))

@@ -46,7 +46,7 @@ header("");
       <section class="card goods"><h2>Produse și servicii (511) · ${goods.length} ${goods.length === 1 ? "clasă" : "clase"}</h2>
         ${goods.map(([c, t]) => `<div class="row"><div class="cls">${c}</div><div>${esc(t)}</div></div>`).join("") || '<p class="muted">—</p>'}</section>
       <section class="card"><h2>Apariții în BOPI</h2><ul class="timeline">${(m.events || []).map(e =>
-        `<li><strong>${esc(e.bopi)}</strong> — ${esc(e.chapter)}</li>`).join("")}</ul></section>`;
+        `<li><strong>${esc(e.bopi)}</strong> — ${esc(e.chapter)}${e.detail ? ` <span class="muted">(${esc(e.detail)})</span>` : ""}</li>`).join("")}</ul></section>`;
   } catch (e) {
     root.innerHTML = `<div class="card empty-state">${esc(e.message)}</div>`;
   }
