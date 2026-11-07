@@ -327,6 +327,38 @@ async def debug_tmview():
     return results
 
 
+@app.get("/api/tm-regsearch")
+async def tm_regsearch(numbers: str, office: str = "RO"):
+    """Caută în TMview mărci după nr. de înregistrare (pentru ProWatch: denumirile mărcilor OSIM
+    reînnoite, înregistrate înainte de 2001, care lipsesc din listele de reînnoiri BOPI)."""
+    from agents.search_agent import AsyncSession, TMVIEW_URL, TMVIEW_HOME, _PROXIES, _build_headers, HAS_CURL_CFFI
+    import asyncio as _aio
+    if not HAS_CURL_CFFI:
+        return {"error": "curl_cffi not available"}
+    nums = [n.strip() for n in numbers.split(",") if n.strip()][:50]
+    out = {}
+    async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
+        await session.get(TMVIEW_HOME, timeout=15, headers=_build_headers())
+        for n in nums:
+            payload = {"page": "1", "pageSize": "10", "criteria": "F", "basicSearch": n, "newPage": True,
+                       "offices": [office],
+                       "fields": ["ST13", "tmName", "tmOffice", "applicationNumber", "registrationNumber",
+                                  "applicantName", "niceClass", "tradeMarkStatus", "expiryDate", "applicationDate",
+                                  "markImageURI"]}
+            try:
+                r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=30)
+                d = r.json() if r.status_code == 200 else {}
+                hits = [t for t in d.get("tradeMarks", [])
+                        if str(t.get("registrationNumber") or "").lstrip("0") == n.lstrip("0")]
+                out[n] = {"status": r.status_code, "total": d.get("total"), "hits": hits[:3],
+                          "first": [{k: t.get(k) for k in ("ST13", "tmName", "registrationNumber", "applicationNumber")}
+                                    for t in d.get("tradeMarks", [])[:3]]}
+            except Exception as e:
+                out[n] = {"error": f"{type(e).__name__}: {e}"}
+            await _aio.sleep(0.5)
+    return out
+
+
 @app.get("/api/debug-tm-detail")
 async def debug_tm_detail(st13: str):
     """Returnează raw JSON de la TMview pentru un ST13 dat — pentru diagnosticare designatedCountries."""
