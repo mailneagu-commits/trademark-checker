@@ -406,6 +406,14 @@
   .dtable a { color:#00c; }
   .dtable .dm { color:#999; font-size:.78rem; }
   .dtable .dc { color:#c0392b; }
+  .dtable a.dbtn { display:inline-block; padding:4px 10px; border-radius:6px; border:1.5px solid #0f3460; color:#0f3460;
+                   background:#fff; text-decoration:none; font-weight:600; font-size:.8rem; white-space:nowrap; }
+  .dtable a.dbtn:hover { background:#0f3460; color:#fff; }
+  .dtable a.dbtn.conf { border-color:#c0392b; color:#c0392b; }
+  .dtable a.dbtn.conf:hover { background:#c0392b; color:#fff; }
+  .dtable a.dbtn.zero { border-color:#ccc; color:#888; }
+  .dtable a.dbtn.open { background:#0f3460; color:#fff; }
+  .dtable a.dbtn.conf.open { background:#c0392b; color:#fff; }
   .dpager { display:flex; justify-content:flex-end; align-items:center; gap:8px; font-size:.8rem; color:#666; }
   </style>
 </head>
@@ -714,8 +722,8 @@
     </div>
     <div id="dailyStatus" style="display:none;margin-bottom:12px;font-size:.84rem;"></div>
     <div class="daily-grid">
-      <div id="dailyOsim"></div>
-      <div id="dailyEuipo"></div>
+      <div id="dailyOsim"><div class="dm" style="text-align:center;color:#999;padding:20px;">⏳ Se încarcă rezultatele salvate…</div></div>
+      <div id="dailyEuipo"><div class="dm" style="text-align:center;color:#999;padding:20px;">⏳ Se încarcă rezultatele salvate…</div></div>
     </div>
     <div id="dailyView" style="display:none;margin-top:18px;border-top:1px solid #e3e8f2;padding-top:14px;position:relative;left:50%;transform:translateX(-50%);width:min(1560px, calc(100vw - 40px));">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
@@ -3829,12 +3837,14 @@ function openDailyTable(type, source, d, scroll = true) {
   if (fr.getAttribute("src") !== url) fr.src = url;
   view.style.display = "";
   try { localStorage.setItem("dailyView", JSON.stringify({ type, source, d })); } catch (e) {}
+  if (_dailyRuns) { renderDaily("osim"); renderDaily("euipo"); }
   if (scroll) view.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function closeDailyTable() {
   document.getElementById("dailyView").style.display = "none";
   document.getElementById("dailyFrame").removeAttribute("src");
   try { localStorage.removeItem("dailyView"); } catch (e) {}
+  if (_dailyRuns) { renderDaily("osim"); renderDaily("euipo"); }
 }
 function restoreDailyTable() {
   try {
@@ -3851,8 +3861,13 @@ function renderDaily(source) {
   const el = document.getElementById(source === "osim" ? "dailyOsim" : "dailyEuipo");
   const data = (_dailyRuns || {})[source] || { runs: [], years: [] };
   const title = source === "osim" ? "Monitor OSIM" : "Monitor EUIPO";
-  const link = (type, d, label) => `<a href="/monitor-table.html?type=${type}&source=${source}&date=${d}&v=2"
+  const cur = (() => { try { return JSON.parse(localStorage.getItem("dailyView") || "null"); } catch (e) { return null; } })();
+  const link = (type, d, label, extra = "") => {
+    const open = cur && cur.type === type && cur.source === source && cur.d === d
+      && document.getElementById("dailyView").style.display !== "none";
+    return `<a class="dbtn ${extra}${open ? " open" : ""}" href="/monitor-table.html?type=${type}&source=${source}&date=${d}&v=2"
       onclick="openDailyTable('${type}','${source}','${d}');return false;">${label}</a>`;
+  };
   const years = data.years.length
     ? data.years.map(y => `<tr><td>${y.year}</td><td>${y.results} <span class="dm">(${y.days} zile)</span></td><td>${y.conflicts}</td></tr>`).join("")
     : `<tr><td colspan="3" class="dm" style="text-align:center;">No data available in table</td></tr>`;
@@ -3860,8 +3875,8 @@ function renderDaily(source) {
   const pg = Math.min(_dailyPage[source], pages - 1);
   const runs = data.runs.slice(pg * DAILY_PAGE_SIZE, (pg + 1) * DAILY_PAGE_SIZE);
   const rows = runs.length ? runs.map(r => {
-    if (r.status === "ok") return `<tr><td>${_dmy(r.date)}</td><td>${link("results", r.date, "results")} #${r.results}</td>
-        <td>${link("conflicts", r.date, "conflicts")}${r.conflicts ? ` <strong class="dc">${r.conflicts}</strong>` : ' <span class="dm">0</span>'}</td></tr>`;
+    if (r.status === "ok") return `<tr><td>${_dmy(r.date)}</td><td>${link("results", r.date, `📋 Results (${r.results})`)}</td>
+        <td>${link("conflicts", r.date, `⚠️ Conflicts (${r.conflicts})`, r.conflicts ? "conf" : "zero")}</td></tr>`;
     const label = { running: "⏳ în curs…", no_bulletin: "fără buletin", error: "❌ eroare" }[r.status] || r.status;
     return `<tr><td>${_dmy(r.date)}</td><td colspan="2" class="dm" title="${escHtml(r.message)}">${label}${r.message ? " — " + escHtml(r.message).slice(0, 200) : ""}</td></tr>`;
   }).join("") : `<tr><td colspan="3" class="dm" style="text-align:center;">Nicio rulare încă — alegeți o dată și apăsați „Pornește monitorizarea”.</td></tr>`;
