@@ -665,7 +665,19 @@ async def get_bulletin_mark(source: str, date: str, app_num: str):
         except Exception:
             pass
         mark = _find() or mark
-    return {**mark, "_links": _mark_links(source, date, mark)}
+    # apply_cached_detail scoate adresa reprezentantului (tabelele vechi arătau doar numele);
+    # pagina mărcii o arată, ca în fișa din buletin — o luăm din marca salvată.
+    rep_addr = mark.get("representativeAddress")
+    if not rep_addr:
+        try:
+            from datetime import date as date_type
+            day = _bulletin_day(source, date_type.fromisoformat(date))
+            raw = next((x for x in bulletin_store.load_bulletin_marks(source, day)
+                        if str(x.get("applicationNumber", "")) == app_num), {})
+            rep_addr = raw.get("representativeAddress")
+        except Exception:
+            rep_addr = None
+    return {**mark, "representativeAddress": rep_addr, "_links": _mark_links(source, date, mark)}
 
 
 def _mark_links(source: str, date: str, mark: Dict) -> Dict:

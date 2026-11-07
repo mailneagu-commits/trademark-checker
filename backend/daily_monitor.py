@@ -179,6 +179,32 @@ def _merge_euipo_addresses(day: str) -> int:
     return n
 
 
+def _prefetch_euipo_images(day: str) -> int:
+    """Logo-urile mărcilor EUIPO vin din API la prima afișare (~0,3 s fiecare); le aducem și le
+    salvăm în DB de la rulare, ca tabelele Results / Conflicts să se deschidă imediat."""
+    from fastapi import HTTPException
+    from routes.monitor import get_bulletin_image
+    from scrapers import bulletin_store
+    from monitor_models import BulletinMark
+
+    db = SessionLocal()
+    try:
+        apps = [r.application_number for r in db.query(BulletinMark).filter_by(source="euipo", bulletin_date=day)
+                if (r.data or {}).get("markImageURI")]
+    finally:
+        db.close()
+    n = 0
+    for app in apps:
+        if bulletin_store.has_image("euipo", app):
+            continue
+        try:
+            get_bulletin_image("euipo", app)
+            n += 1
+        except HTTPException:
+            pass
+    return n
+
+
 async def run_daily_monitor(date_str: str, sources=SOURCES, trigger: str = "manual") -> Dict:
     """Rulează monitorizarea pentru buletinele din `date_str` (ultima zi lucrătoare ≤ data)."""
     from routes.monitor import _bulletin_day, _load_bulletin_marks, _persist_bulletin
@@ -239,6 +265,12 @@ async def run_daily_monitor(date_str: str, sources=SOURCES, trigger: str = "manu
                 print(f"[DAILY] Adrese EUIPO completate din PDF: {n}")
             except Exception as e:
                 print(f"[DAILY] Adrese EUIPO din PDF: {type(e).__name__}: {e}")
+            _job["sources"]["euipo"]["phase"] = "gata (se salvează logo-urile…)"
+            try:
+                n = await loop.run_in_executor(None, _prefetch_euipo_images, summary["euipo"]["day"])
+                print(f"[DAILY] Logo-uri EUIPO salvate: {n}")
+            except Exception as e:
+                print(f"[DAILY] Logo-uri EUIPO: {type(e).__name__}: {e}")
             _job["sources"]["euipo"]["phase"] = "gata"
     finally:
         _job["running"] = False

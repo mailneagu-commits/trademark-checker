@@ -58,6 +58,13 @@ def save_bulletin_marks(source: str, bulletin_date: str, marks: List[Dict]) -> D
                 continue
             else:
                 updated += 1
+            # Adresele din PDF-ul EUIPO (731/740) se adaugă după salvare (daily_monitor) — o
+            # resalvare din fișiere, care nu le are, nu trebuie să le șteargă.
+            if row.data:
+                m = dict(m)
+                for k in ("applicantAddress", "representativeAddress"):
+                    if not m.get(k) and row.data.get(k):
+                        m[k] = row.data[k]
             row.position         = pos
             row.trademark_name   = m.get("tmName") or ""
             row.applicant        = _applicant_text(m)
