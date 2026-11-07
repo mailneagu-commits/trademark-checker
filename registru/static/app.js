@@ -23,7 +23,7 @@ const markLink = r => `/marca/${encodeURIComponent(r.app_number)}`;
 
 // Mod încorporat (?embed=1): pagina rulează într-un iframe pe protectmark.ro — fără antet și
 // subsol proprii, linkurile păstrează modul, iar înălțimea e trimisă paginii-gazdă.
-const EMBED = qs.get("embed") === "1" || sessionStorage.getItem("pwEmbed") === "1";
+const EMBED = window.self !== window.top && (qs.get("embed") === "1" || sessionStorage.getItem("pwEmbed") === "1");
 if (EMBED) {
   try { sessionStorage.setItem("pwEmbed", "1"); } catch (e) {}
   document.documentElement.classList.add("embed");
