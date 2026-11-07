@@ -41,7 +41,7 @@ document.getElementById("search").innerHTML = searchForm();
     const s = await api("/api/stats");
     document.getElementById("stats").innerHTML = [
       [s.marks, "mărci și cereri"], [s.holders, "titulari"], [s.representatives, "reprezentanți"],
-      [s.by_status["Înregistrată"] || 0, "mărci înregistrate"]].map(([n, t]) =>
+      [s.valid || 0, "mărci valabile"]].map(([n, t]) =>
       `<div class="stat"><b>${fmt(n)}</b><span>${t}</span></div>`).join("");
     const w = s.week;
     if (w && w.published) document.getElementById("week").innerHTML = `<span class="badge light">Statistici</span><h2>Statistica săptămânii ${dmy(w.from)} – ${dmy(w.to)}</h2>

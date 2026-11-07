@@ -25,10 +25,17 @@ INID = ("111", "116", "141", "151", "156", "180", "181", "186", "210", "220", "2
 RE_CODE = re.compile(r"\((" + "|".join(INID) + r")\)")
 RE_APP = re.compile(r"\(210\)\s*(M\s*\d{4}\s*\d{4,6})", re.I)
 RE_DATE = re.compile(r"(\d{1,2})[./](\d{1,2})[./](\d{4})")
-RE_SEP = re.compile(r"─{3,}")
+RE_SEP = re.compile(r"─{3,}|(?:\(cid:\d+\)){3,}")
+RE_CID = re.compile(r"\(cid:\d+\)")
+# Buletinele mai vechi (≈2008–2015) folosesc o codare veche pentru diacritice.
+LEGACY = str.maketrans({"ª": "Ș", "º": "ș", "Þ": "Ț", "þ": "ț", "ã": "ă", "Ã": "Ă"})
+# Buletinele ≈2005–2009 (font WPMultinational): diacriticele apar ca glife fără cod Unicode.
+CID_LETTERS = {"(cid:213)": "ș", "(cid:212)": "Ș", "(cid:219)": "ț", "(cid:218)": "Ț",
+               "(cid:124)": "ă", "(cid:123)": "Ă"}
 RE_HEADER = re.compile(r"^BULETINUL OFICIAL DE PROPRIETATE INDUSTRIAL", re.I)
 RE_GOODS_HEAD = re.compile(r"^\s*Produse\s+și/sau\s+servicii\s+grupate\s+pe\s+clase\s*:?", re.I)
-RE_CLASS = re.compile(r"(?:^|\n)\s*(\d{1,2})\s*\.\s+")
+# „35. Publicitate…” sau, în buletinele mai vechi, „35 Publicitate…” (fără punct).
+RE_CLASS = re.compile(r"(?:^|\n)\s*(\d{1,2})\s*(?:\.\s+|\s+(?=[A-ZĂÂÎȘȚŞŢ]))")
 
 # Capitolele buletinului lunar, după titlul paginii de capitol (ordinea contează: titlul cap. 2
 # conține și „PUBLICATE”, al cap. 1 și „PUBLICATE” și „ÎNREGISTRATE”).
@@ -62,7 +69,9 @@ def _iso(d: str) -> str:
 
 
 def _flat(s: str) -> str:
-    s = re.sub(r"-\n(?=[a-zăâîșţțş])", "", s or "")   # cuvinte despărțite la capăt de rând
+    s = RE_CID.sub("", s or "")
+    s = re.sub(r"(\S)\1{7,}", "", s)                    # linii-separator citite ca litere repetate
+    s = re.sub(r"-\n(?=[a-zăâîșţțş])", "", s)   # cuvinte despărțite la capăt de rând
     return re.sub(r"\s+", " ", s).strip(" ,;")
 
 
@@ -237,6 +246,11 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
             page.flush_cache()
 
     text = "\n".join(stream)
+    if text.count("º") + text.count("ª") + text.count("þ") > 20:
+        text = text.translate(LEGACY)
+    if "(cid:" in text:
+        for k, v in CID_LETTERS.items():
+            text = text.replace(k, v)
     starts = [m.start() for m in RE_APP.finditer(text)]
     for i, s in enumerate(starts):
         block = text[s:starts[i + 1] if i + 1 < len(starts) else len(text)]

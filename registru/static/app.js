@@ -15,7 +15,7 @@ async function api(path, opts) {
 
 function statusBadge(s) {
   const cls = { "Înregistrată": "ok", "Cerere publicată": "pub", "Admisă la înregistrare": "adm", "Respinsă": "bad",
-                "Radiată": "bad", "Retrasă": "bad" }[s] || "pub";
+                "Radiată": "bad", "Retrasă": "bad", "Expirată": "bad" }[s] || "pub";
   return s ? `<span class="st ${cls}">${esc(s)}</span>` : "";
 }
 const chips = cl => `<div class="chips">${(cl || []).map(c => `<span class="chip">${c}</span>`).join("")}</div>`;
@@ -167,8 +167,10 @@ function searchForm() {
       <label><input type="radio" name="mode" value="contains" ${qs.get("mode") !== "similar" ? "checked" : ""}> conține textul</label>
       <label><input type="radio" name="mode" value="similar" ${qs.get("mode") === "similar" ? "checked" : ""}> denumiri asemănătoare</label>
       <label>Stare: <select name="status" style="width:auto;padding:4px 8px;">
-        ${["", "Înregistrată", "Cerere publicată", "Admisă la înregistrare", "Respinsă", "Radiată", "Retrasă"].map(s =>
-          `<option value="${s}" ${qs.get("status") === s ? "selected" : ""}>${s || "toate"}</option>`).join("")}</select></label>
+        ${[["", "toate"], ["Valabile", "valabile (înregistrate, neexpirate)"], ["Înregistrată", "înregistrate"], ["Expirată", "expirate"],
+           ["Cerere publicată", "cereri publicate"], ["Admisă la înregistrare", "admise la înregistrare"], ["Respinsă", "respinse"],
+           ["Radiată", "radiate"], ["Retrasă", "retrase"]].map(([v, t]) =>
+          `<option value="${v}" ${qs.get("status") === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
     </div>
   </form>`;
 }

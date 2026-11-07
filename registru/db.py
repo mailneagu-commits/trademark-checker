@@ -48,6 +48,7 @@ class Mark(Base):
     publication_date = Column(String, default="", index=True)
     reg_number       = Column(String, default="", index=True)
     reg_date         = Column(String, default="", index=True)
+    expiry_date      = Column(String, default="", index=True)   # calculată: depozit + 10 ani / ultima reînnoire
     holder           = Column(Text, default="")
     holder_norm      = Column(Text, default="", index=True)
     holder_address   = Column(Text, default="")
@@ -148,8 +149,27 @@ def _fix_disclaimers():
         db.close()
 
 
+def _ensure_columns():
+    from sqlalchemy import inspect
+    have = {c["name"] for c in inspect(engine).get_columns("marks")}
+    if "expiry_date" not in have:
+        with engine.begin() as c:
+            c.execute(text("ALTER TABLE marks ADD COLUMN expiry_date VARCHAR DEFAULT ''"))
+            c.execute(text("CREATE INDEX IF NOT EXISTS ix_marks_expiry_date ON marks (expiry_date)"))
+        from ingest import expiry_of
+        db = SessionLocal()
+        try:
+            for m in db.query(Mark).filter(Mark.status == "Înregistrată").yield_per(1000):
+                m.expiry_date = expiry_of(m)
+            db.commit()
+        finally:
+            db.close()
+        print("[DB] Coloana marks.expiry_date adăugată și completată")
+
+
 def init_db():
     Base.metadata.create_all(engine)
+    _ensure_columns()
     _fix_disclaimers()
     if IS_PG:
         # Căutare „conține” rapidă pe sute de mii de rânduri: index trigram.

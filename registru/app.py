@@ -50,12 +50,18 @@ async def _cache_headers(request: Request, call_next):
 
 # ── Serializare ─────────────────────────────────────────────────────────────────
 
+def _status(m: Mark) -> str:
+    if m.status == "Înregistrată" and m.expiry_date and m.expiry_date < date.today().isoformat():
+        return "Expirată"
+    return m.status
+
+
 def _row(m: Mark) -> dict:
     return {
         "app_number": m.app_number, "app": display_app(m.app_number), "name": m.name,
-        "status": m.status, "mark_type": m.mark_type, "filing_date": m.filing_date,
+        "status": _status(m), "mark_type": m.mark_type, "filing_date": m.filing_date,
         "publication_date": m.publication_date, "reg_number": m.reg_number, "reg_date": m.reg_date,
-        "expiry_date": ingest.expiry_of(m), "holder": m.holder, "representative": m.representative,
+        "expiry_date": m.expiry_date or ingest.expiry_of(m), "holder": m.holder, "representative": m.representative,
         "classes": m.classes or [], "image": f"/api/image/{m.app_number}" if m.has_image else "",
     }
 
@@ -94,7 +100,9 @@ def stats(db: Session = Depends(get_db)):
             "verbal": sum(1 for r in rows if not r.has_image),
             "top_classes": [{"class": c, "count": n} for c, n in cls.most_common(5)],
         }
-    return {"marks": total, "holders": holders, "representatives": reps, "by_status": by_status,
+    valid = db.query(func.count(Mark.app_number)).filter(Mark.status == "Înregistrată",
+                                                        Mark.expiry_date >= date.today().isoformat()).scalar() or 0
+    return {"marks": total, "holders": holders, "representatives": reps, "by_status": by_status, "valid": valid,
             "last_bulletin": last, "week": week}
 
 
@@ -123,7 +131,14 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
     if r:
         q = q.filter(Mark.rep_norm.contains(r))
     wanted = [int(c) for c in classes.replace(";", ",").replace(" ", ",").split(",") if c.strip().isdigit()]
-    if status:
+    today = date.today().isoformat()
+    if status == "Valabile":
+        q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date >= today)
+    elif status == "Expirată":
+        q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date != "", Mark.expiry_date < today)
+    elif status == "Înregistrată":
+        q = q.filter(Mark.status == "Înregistrată", or_(Mark.expiry_date == "", Mark.expiry_date >= today))
+    elif status:
         q = q.filter(Mark.status == status)
     order.append(Mark.filing_date.desc())
     if wanted:

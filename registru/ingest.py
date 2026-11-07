@@ -22,7 +22,8 @@ from db import Mark, MarkChange, MarkImage, SessionLocal, SourceFile, norm
 OSIM = "https://www.osim.ro"
 INDEX_PAGE = OSIM + "/buletinul-oficial-de-proprietate-industriala-marci"
 DAILY_URL = OSIM + "/images/Publicatii/Marci/{y}/bopi{d:%d%m%Y}.pdf"
-START = date(2022, 1, 1)
+START = date(2022, 1, 1)                 # buletine zilnice + formatul lunar actual
+ARCHIVE_START = int(os.environ.get("ARCHIVE_START", "2005"))   # arhiva lunară mai veche
 UA = {"User-Agent": "Mozilla/5.0 (registru marci; contact: protectmark)"}
 
 STATUS = {
@@ -64,10 +65,11 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
                 out.append({"url": url, "kind": "admise", "date": d,
                             "label": f"Cereri admise {d:%d.%m.%Y}"})
             continue
-        m = re.match(r"mrc_(\d{1,2})[-_](?:partea-(\w+)_)?(\d{4})\.pdf$", name)
-        if m and int(m.group(3)) >= START.year:
-            y, mo = int(m.group(3)), int(m.group(1))
-            part = f" partea {m.group(2).upper()}" if m.group(2) else ""
+        ym = _archive_month(href)
+        if ym:
+            y, mo, part = ym
+            if y < ARCHIVE_START:
+                continue
             out.append({"url": url, "kind": "monthly", "date": _month_end(y, mo),
                         "label": f"BOPI {mo:02d}/{y}{part}"})
             # Tabelele aceluiași buletin (transferuri, reînnoiri, radieri...) — pas separat.
@@ -79,10 +81,35 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
             out.append({"url": DAILY_URL.format(y=d.year, d=d), "kind": "daily", "date": d,
                         "label": f"BOPI {d:%d.%m.%Y}"})
         d += timedelta(days=1)
-    # Aceeași zi: întâi publicarea, apoi admiterea, apoi buletinul lunar.
+    # Întâi perioada curentă (2022 →), cronologic; apoi arhiva, de la nou la vechi, ca mărcile
+    # valabile recente să apară primele. Aceeași zi: publicare, admitere, buletin lunar, tabele.
     order = {"daily": 0, "admise": 1, "monthly": 2, "changes": 3}
-    out.sort(key=lambda s: (s["date"], order[s["kind"]], s["url"]))
-    return out
+    cur = sorted((x for x in out if x["date"] >= START), key=lambda s: (s["date"], order[s["kind"]], s["url"]))
+    old = sorted((x for x in out if x["date"] < START), key=lambda s: (-s["date"].toordinal(), order[s["kind"]], s["url"]))
+    return cur + old
+
+
+def _archive_month(href: str):
+    """(an, lună, parte) pentru un buletin lunar: mrc_12_2025.pdf, mrc_12-partea-II_2022.pdf,
+    mrc_01_09_full.pdf, mrc_01-17.pdf, mrc_8_2016.pdf, mrc1201.pdf, mrc01041.pdf …"""
+    name = href.rsplit("/", 1)[-1].lower()
+    if not name.startswith("mrc"):
+        return None
+    folder = href.rsplit("/", 2)[-2] if href.count("/") >= 2 else ""
+    fy = re.match(r"^(\d{4})m?$", folder)
+    m = re.match(r"mrc_(\d{1,2})[-_](?:partea-(\w+)_)?(\d{4})\.pdf$", name)
+    if m:
+        return int(m.group(3)), int(m.group(1)), (f" partea {m.group(2).upper()}" if m.group(2) else "")
+    m = re.match(r"mrc_?(\d{1,2})[-_]?(\d{2})(?:\d)?(?:_full)?\.pdf$", name)
+    if m:
+        mo, yy = int(m.group(1)), int(m.group(2))
+        y = int(fy.group(1)) if fy else 2000 + yy
+        if 1 <= mo <= 12:
+            return y, mo, ""
+    m = re.match(r"mrc_?(\d{1,2})[-_](\d{4})\.pdf$", name)
+    if m and 1 <= int(m.group(1)) <= 12:
+        return int(m.group(2)), int(m.group(1)), ""
+    return None
 
 
 # ── Salvarea unei mărci ─────────────────────────────────────────────────────────
@@ -106,6 +133,10 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
         db.add(m)
         db.flush()
     bdate = src["date"].isoformat()
+    # Arhiva se procesează după buletinele noi: un buletin mai vechi decât ce știm deja despre
+    # marcă doar completează câmpurile goale, nu le suprascrie.
+    newest = max((e.get("date", "") for e in (m.events or [])), default="")
+    is_newer = bdate >= newest
     # (151) apare la toate tipurile de buletin și e data de depozit a cererii.
     if rec.get("date_151") and not m.filing_date:
         m.filing_date = rec["date_151"]
@@ -113,9 +144,9 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
         m.filing_date = rec["filing_date"]
     for f in ("name", "holder", "holder_address", "representative", "representative_address",
               "vienna", "colors", "disclaimer"):
-        if rec.get(f):
+        if rec.get(f) and (is_newer or not getattr(m, f)):
             setattr(m, f, rec[f])
-    if rec.get("goods"):
+    if rec.get("goods") and (is_newer or not m.goods):
         m.goods = rec["goods"]
         m.classes = rec["classes"]
     m.name_norm = norm(m.name)
@@ -125,11 +156,14 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
         m.publication_date = bdate
     if chapter == "registered":
         m.reg_number = rec.get("reg_number") or m.reg_number
-        m.reg_date = bdate
+        m.reg_date = m.reg_date if (m.reg_date and m.reg_date < bdate) else bdate
     new_status = STATUS.get(chapter, "")
-    if new_status and (_RANK.get(new_status, 0) >= _RANK.get(m.status, 0) or chapter == "rejected"):
+    if new_status and bdate >= (m.status_date or "") and \
+            (_RANK.get(new_status, 0) >= _RANK.get(m.status, 0) or chapter == "rejected"):
         if not (m.status == "Înregistrată" and chapter != "registered"):
             m.status, m.status_date = new_status, bdate
+    elif new_status and not m.status:
+        m.status, m.status_date = new_status, bdate
     if rec.get("image") and not m.has_image:
         db.merge(MarkImage(app_number=app, data=rec["image"], content_type="image/webp"))
         m.has_image = True
@@ -138,7 +172,22 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     ev = {"date": bdate, "bopi": src["label"], "chapter": CHAPTER_LABEL.get(chapter, chapter)}
     if ev not in (m.events or []):
         m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+    if chapter == "registered":
+        _apply_pending(db, m)
+    m.expiry_date = expiry_of(m)
     m.updated_at = datetime.utcnow()
+
+
+def _apply_pending(db, m: Mark) -> None:
+    """Modificările (transferuri, reînnoiri, radieri) publicate înainte ca marca să ajungă în bază —
+    ex. o reînnoire din 2025 a unei mărci încărcate acum din arhiva 2015."""
+    q = db.query(MarkChange).filter(MarkChange.applied == False)  # noqa: E712
+    conds = [MarkChange.app_number == m.app_number]
+    if m.reg_number:
+        conds.append(MarkChange.reg_number == m.reg_number)
+    from sqlalchemy import or_
+    for c in q.filter(or_(*conds)).order_by(MarkChange.bulletin_date):
+        _apply_change(db, m, c)
 
 
 CHANGE_LABEL = {
@@ -151,7 +200,9 @@ CHANGE_LABEL = {
 def _apply_change(db, m: Mark, c: MarkChange) -> None:
     label = CHANGE_LABEL.get(c.kind, c.kind)
     detail = ""
-    if c.kind in ("Cesiune", "Fuziune", "Modificare titular", "Modificare adresă titular") and c.new_value:
+    newest = max((e.get("date", "") for e in (m.events or [])), default="")
+    if c.kind in ("Cesiune", "Fuziune", "Modificare titular", "Modificare adresă titular") and c.new_value \
+            and c.bulletin_date >= newest:
         m.holder_address = c.new_value
         m.holder = c.new_value.split(",")[0].strip()
         m.holder_norm = norm(m.holder)
@@ -164,7 +215,7 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
         detail = f"valabilă până la {c.expiry[8:10]}.{c.expiry[5:7]}.{c.expiry[:4]}" if c.expiry else ""
     elif c.kind == "license":
         detail = c.new_value[:200]
-    elif c.kind in ("radiated", "withdrawn"):
+    elif c.kind in ("radiated", "withdrawn") and c.bulletin_date >= (m.status_date or ""):
         m.status, m.status_date = ("Radiată" if c.kind == "radiated" else "Retrasă"), c.bulletin_date
     ev = {"date": c.bulletin_date, "bopi": c.label, "chapter": label}
     if detail:
@@ -173,6 +224,7 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
         ev["expiry"] = c.expiry
     if ev not in (m.events or []):
         m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+    m.expiry_date = expiry_of(m)
     m.updated_at = datetime.utcnow()
     c.applied = True
 
