@@ -1,8 +1,14 @@
 """
-Notificare pe email la fiecare solicitare primită pe site. Se configurează din variabilele
-de mediu (Railway): SMTP_HOST, SMTP_PORT (465 = SSL, 587 = STARTTLS), SMTP_USER,
-SMTP_PASSWORD, SMTP_FROM (implicit SMTP_USER) și LEAD_EMAIL (destinatarul).
-Fără SMTP_USER / SMTP_PASSWORD solicitările se salvează doar în baza de date.
+Notificare pe email la fiecare solicitare primită pe site. Railway blochează conexiunile SMTP
+(porturile 25/465/587) pe planurile Hobby, așa că trimiterea merge prin API-ul HTTP al unui
+serviciu de email, după variabila setată în Railway:
+
+  BREVO_API_KEY   — Brevo (brevo.com), plan gratuit 300 emailuri/zi
+  RESEND_API_KEY  — Resend (resend.com), plan gratuit 100 emailuri/zi
+  SMTP_*          — SMTP clasic (doar pe planurile Railway care permit SMTP)
+
+MAIL_FROM = expeditorul (implicit SMTP_USER / noreply@protectmark.ro), LEAD_EMAIL = destinatarul.
+Fără niciuna, solicitările se salvează doar în baza de date.
 """
 import os
 import smtplib
@@ -32,11 +38,48 @@ def settings() -> dict:
             "port": int(_env("SMTP_PORT", "587") or 587), "user": user}
 
 
+def provider() -> str:
+    if _env("BREVO_API_KEY"):
+        return "brevo"
+    if _env("RESEND_API_KEY"):
+        return "resend"
+    if _env("SMTP_USER") and os.environ.get("SMTP_PASSWORD"):
+        return "smtp"
+    return ""
+
+
 def available() -> bool:
-    return bool(_env("SMTP_USER") and os.environ.get("SMTP_PASSWORD"))
+    return bool(provider())
+
+
+def _sender() -> str:
+    return _env("MAIL_FROM") or _env("SMTP_FROM") or _env("SMTP_USER") or "noreply@protectmark.ro"
+
+
+def _send_api(subject: str, html: str, reply_to: str = "") -> None:
+    import requests
+    sender = _sender()
+    if provider() == "brevo":
+        body = {"sender": {"name": "ProWatch", "email": sender}, "to": [{"email": LEAD_EMAIL}],
+                "subject": subject, "htmlContent": html}
+        if reply_to:
+            body["replyTo"] = {"email": reply_to}
+        r = requests.post("https://api.brevo.com/v3/smtp/email", json=body, timeout=30,
+                          headers={"api-key": _env("BREVO_API_KEY"), "accept": "application/json"})
+    else:
+        body = {"from": f"ProWatch <{sender}>", "to": [LEAD_EMAIL], "subject": subject, "html": html}
+        if reply_to:
+            body["reply_to"] = reply_to
+        r = requests.post("https://api.resend.com/emails", json=body, timeout=30,
+                          headers={"Authorization": f"Bearer {_env('RESEND_API_KEY')}"})
+    if r.status_code >= 300:
+        raise RuntimeError(f"{provider()} HTTP {r.status_code}: {r.text[:300]}")
 
 
 def _send(subject: str, html: str, reply_to: str = "") -> None:
+    if provider() in ("brevo", "resend"):
+        _send_api(subject, html, reply_to)
+        return
     cfg = settings()
     host, port, user = cfg["host"], cfg["port"], cfg["user"]
     password = os.environ["SMTP_PASSWORD"].strip("\r\n")
