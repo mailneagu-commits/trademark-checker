@@ -213,6 +213,16 @@ def _admin(x_admin_token: str = Header("")):
         raise HTTPException(403, "Acces interzis.")
 
 
+@app.get("/api/status")
+def public_status(db: Session = Depends(get_db)):
+    """Progresul încărcării buletinelor (fără detalii sensibile)."""
+    by = dict(db.query(SourceFile.status, func.count(SourceFile.url)).group_by(SourceFile.status).all())
+    last = db.query(func.max(SourceFile.bulletin_date)).filter(SourceFile.status == "ok").scalar()
+    return {"running": ingest.job["running"], "current": ingest.job["current"], "done": ingest.job["done"],
+            "total": ingest.job["total"], "sources": by, "last_bulletin": last,
+            "marks": db.query(func.count(Mark.app_number)).scalar() or 0}
+
+
 @app.get("/api/admin/ingest", dependencies=[Depends(_admin)])
 def ingest_status(db: Session = Depends(get_db)):
     by = dict(db.query(SourceFile.status, func.count(SourceFile.url)).group_by(SourceFile.status).all())
