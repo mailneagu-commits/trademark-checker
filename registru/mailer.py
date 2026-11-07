@@ -123,3 +123,17 @@ def notify_lead(kind: str, name: str, email: str, phone: str, message: str, mark
             last.update(error=f"{type(e).__name__}: {e}", error_at=datetime.utcnow().isoformat() + "Z")
             print(f"[mail] Eroare la trimiterea notificării: {e}")
     threading.Thread(target=run, daemon=True).start()
+
+
+def keepalive() -> None:
+    """Brevo dezactivează o cheie API nefolosită 90 de zile. O citire săptămânală a statisticilor
+    de trimitere (permisă de dreptul „Transactional email”) o ține activă, fără să trimită nimic."""
+    if provider() != "brevo":
+        return
+    import requests
+    try:
+        r = requests.get("https://api.brevo.com/v3/smtp/statistics/aggregatedReport", timeout=30,
+                         headers={"api-key": _env("BREVO_API_KEY"), "accept": "application/json"})
+        print(f"[mail] Brevo keepalive: HTTP {r.status_code}")
+    except Exception as e:
+        print(f"[mail] Brevo keepalive: {type(e).__name__}: {e}")

@@ -32,6 +32,8 @@ def _startup():
     # Buletinul zilnic apare după-amiaza; reîncercăm seara dacă întârzie.
     sched.add_job(ingest.start_background, "cron", day_of_week="mon-fri", hour="16,19", minute=30,
                   id="bopi_ingest")
+    import mailer
+    sched.add_job(mailer.keepalive, "cron", day_of_week="mon", hour=9, id="brevo_keepalive")
     sched.start()
     if os.environ.get("AUTO_INGEST", "1") == "1":
         ingest.start_background()
