@@ -23,7 +23,7 @@ OSIM = "https://www.osim.ro"
 INDEX_PAGE = OSIM + "/buletinul-oficial-de-proprietate-industriala-marci"
 DAILY_URL = OSIM + "/images/Publicatii/Marci/{y}/bopi{d:%d%m%Y}.pdf"
 START = date(2022, 1, 1)                 # buletine zilnice + formatul lunar actual
-ARCHIVE_START = int(os.environ.get("ARCHIVE_START", "2005"))   # arhiva lunară mai veche
+ARCHIVE_START = int(os.environ.get("ARCHIVE_START", "2001"))   # arhiva lunară mai veche
 UA = {"User-Agent": "Mozilla/5.0 (registru marci; contact: protectmark)"}
 
 STATUS = {

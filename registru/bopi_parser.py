@@ -249,6 +249,12 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
             page.flush_cache()
 
     text = "\n".join(stream)
+    seen_tab: set = set()
+    if kind == "monthly" and len(RE_APP.findall(text)) < 30:
+        # Buletinele 2001–2004 nu au fișe INID (doar câteva izolate), ci tabelul mărcilor înregistrate.
+        for chapter, rec in parse_old_tables(path):
+            seen_tab.add(rec["app_number"])
+            yield chapter, rec
     if text.count("º") + text.count("ª") + text.count("þ") > 20:
         text = text.translate(LEGACY)
     if "(cid:" in text:
@@ -262,7 +268,7 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
         if "(511)" in parts[0] or len(parts) == 1:
             block = parts[0]
         rec = parse_block(block)
-        if not rec:
+        if not rec or rec["app_number"] in seen_tab:
             continue
         if rec["app_number"] in images:
             rec["image"] = images[rec["app_number"]]
@@ -368,4 +374,68 @@ def parse_changes(path: str) -> Iterator[Dict]:
                         elif kind == "license":
                             rec["new"] = " · ".join(c for c in cells[3:6] if c)
                     yield rec
+            page.flush_cache()
+
+
+# ── Buletinele 2001–2004: mărcile înregistrate apar doar în tabel ───────────────
+# Antet: Nr. depozit (210) | Data depozit (151) | Nr. marcă (111) | Titular (732) | Denumire (540) | Clase (511)
+TABLE_CODES = ("(210)", "(151)", "(111)", "(732)", "(540)", "(511)")
+
+
+def parse_old_tables(path: str) -> Iterator[Tuple[str, Dict]]:
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            words = page.extract_words(keep_blank_chars=False, use_text_flow=False)
+            codes = {w["text"]: w for w in words if w["text"] in TABLE_CODES}
+            if len(codes) < 6:
+                page.flush_cache()
+                continue
+            head_bottom = max(w["bottom"] for w in codes.values())
+            # Codurile sunt centrate deasupra coloanelor: granița dintre două coloane e la mijlocul
+            # distanței dintre centrele codurilor.
+            body = sorted((w for w in words if w["top"] > head_bottom + 1), key=lambda w: (round(w["top"]), w["x0"]))
+            # Codurile sunt centrate deasupra coloanelor; începutul real al unei coloane e marginea
+            # stângă cea mai frecventă a cuvintelor dintre centrul codului anterior și centrul ei.
+            from collections import Counter
+            centers = [(codes[c]["x0"] + codes[c]["x1"]) / 2 for c in TABLE_CODES]
+            lefts = Counter(round(w["x0"]) for w in body)
+            xs = [0]
+            for k in range(1, len(centers)):
+                cand = [(n, x) for x, n in lefts.items() if centers[k - 1] < x <= centers[k]]
+                xs.append((max(cand)[1] - 2) if cand else (centers[k - 1] + centers[k]) / 2)
+
+            def col(w):
+                i = 0
+                for k, x in enumerate(xs):
+                    if w["x0"] >= x:
+                        i = k
+                return i
+
+            # Rândurile încep la „M” din prima coloană; fiecare cuvânt aparține rândului care
+            # începe deasupra lui (titularul / denumirea / clasele continuă pe rândurile următoare).
+            starts = sorted(w["top"] for w in body if col(w) == 0 and w["text"] == "M")
+            rows: List[List[List[str]]] = [[[] for _ in TABLE_CODES] for _ in starts]
+            for w in sorted(body, key=lambda w: (w["top"], w["x0"])):
+                i = -1
+                for k, t in enumerate(starts):
+                    if w["top"] >= t - 6:
+                        i = k
+                    else:
+                        break
+                if i >= 0:
+                    rows[i][col(w)].append(w["text"])
+            for r in rows:
+                dep = " ".join(r[0])
+                m = re.match(r"M\s*(\d{4})\s*(\d{4,6})", dep)
+                if not m:
+                    continue
+                reg = re.sub(r"\D", "", " ".join(r[2])).lstrip("0")
+                classes = sorted({int(x) for x in re.findall(r"\d{1,2}", " ".join(r[5])) if 1 <= int(x) <= 45})
+                holder = _flat(" ".join(r[3])).translate(LEGACY)
+                name = _flat(" ".join(r[4])).translate(LEGACY)
+                yield "registered", {
+                    "app_number": f"M{m.group(1)}{m.group(2)}", "reg_number": reg,
+                    "date_151": _iso(" ".join(r[1])), "holder": holder, "holder_address": holder,
+                    "name": name, "classes": classes, "goods": {str(c): "" for c in classes},
+                }
             page.flush_cache()
