@@ -121,3 +121,6 @@ footer .fgrid > div { flex: 1; min-width: 260px; }
 html.embed body { background: transparent; }
 html.embed .hero { padding: 24px 0 64px; }
 html.embed footer { display: none; }
+
+#leadcount { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 560px) { #leadcount { max-width: 30vw; } }

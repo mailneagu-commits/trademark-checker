@@ -167,27 +167,6 @@ def recent(day: str = "", db: Session = Depends(get_db)):
             "results": [_row(m) for m in rows]}
 
 
-@app.get("/api/clasament")
-def clasament(month: str = "", db: Session = Depends(get_db)):
-    months = sorted({d[:7] for (d,) in db.query(Mark.publication_date).filter(Mark.publication_date != "")
-                     .group_by(Mark.publication_date)}, reverse=True)
-    month = month or (months[1] if len(months) > 1 else (months[0] if months else ""))
-    if not month:
-        return {"month": "", "months": [], "top": [], "total": 0, "without_rep": 0}
-    lo, hi = month + "-01", month + "-31"
-    apps = db.query(Mark.representative, Mark.rep_norm).filter(Mark.publication_date >= lo,
-                                                                Mark.publication_date <= hi).all()
-    regs = Counter(rn for (rn,) in db.query(Mark.rep_norm).filter(Mark.reg_date >= lo, Mark.reg_date <= hi))
-    by = Counter(rn for _, rn in apps if rn)
-    names = {}
-    for rep, rn in apps:
-        names.setdefault(rn, rep)
-    top = [{"representative": names[rn], "applications": c, "registrations": regs.get(rn, 0)}
-           for rn, c in by.most_common(10)]
-    return {"month": month, "months": months[:24], "top": top, "total": len(apps),
-            "without_rep": sum(1 for _, rn in apps if not rn)}
-
-
 class LeadIn(BaseModel):
     kind: str = "info"
     name: str

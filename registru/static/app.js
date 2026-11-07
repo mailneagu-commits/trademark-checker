@@ -45,7 +45,9 @@ if (EMBED) {
 
 // Bara „Solicită informații” și fereastra de solicitare — în ambele moduri (site / încorporat).
 const LEAD_UI = `
-    <div class="leadbar" id="leadbar"><span id="leadcount"></span><button class="btn alt" onclick="openLead('info')">Solicită informații</button></div>
+    <div class="leadbar" id="leadbar"><span id="leadcount"></span>
+      <button class="btn alt" onclick="openLead('info')">Solicită informații</button>
+      <button class="btn ghost" style="color:#fff;border-color:rgba(255,255,255,.5);padding:8px 12px;" onclick="clearPicked()" title="Golește selecția">✕ Golește</button></div>
     <div class="modal" id="leadModal" onclick="if(event.target===this)closeLead()"><div class="card">
       <h2 id="leadTitle">Solicită informații</h2>
       <p class="muted small" id="leadIntro"></p>
@@ -66,7 +68,7 @@ function header(active) {
     document.body.insertAdjacentHTML("beforeend", LEAD_UI);
     return;
   }
-  const links = [["/", "Căutare", "home"], ["/recente.html", "Cereri recente", "recente"], ["/clasament.html", "Clasament", "clasament"]];
+  const links = [["/", "Căutare", "home"], ["/recente.html", "Cereri recente", "recente"]];
   document.body.insertAdjacentHTML("afterbegin", `
     <header class="top"><div class="wrap">
       <a class="brand" href="/" aria-label="${SITE.name} — prima pagină"><img src="/prowatch-logo.png" alt="${SITE.name}" width="160" height="40"><small>${SITE.tagline}</small></a>
@@ -93,31 +95,43 @@ function updateLeadbar() {
   const bar = document.getElementById("leadbar");
   if (!bar) return;
   bar.classList.toggle("on", picked.size > 0);
-  document.getElementById("leadcount").textContent = `${picked.size} ${picked.size === 1 ? "marcă selectată" : "mărci selectate"}`;
+  document.getElementById("leadcount").textContent =
+    `${picked.size} ${picked.size === 1 ? "marcă selectată" : "mărci selectate"}: ${[...picked].join(", ")}`;
+  document.querySelectorAll("input.pick").forEach(c => c.checked = picked.has(c.dataset.app));
 }
-let leadKind = "info";
-function openLead(kind) {
+function clearPicked() {
+  picked.clear();
+  try { sessionStorage.removeItem("picked"); } catch (e) {}
+  updateLeadbar();
+}
+let leadKind = "info", leadMarks = null;
+// marks: mărcile pentru această solicitare (ex. butonul de pe pagina unei mărci) — fără să modifice
+// selecția din liste; dacă lipsește, se folosesc mărcile bifate.
+function openLead(kind, marks) {
   leadKind = kind;
+  leadMarks = marks || null;
+  const list = leadMarks || [...picked];
   document.getElementById("leadTitle").textContent = kind === "cercetare" ? "Solicită o cercetare de disponibilitate" : "Solicită informații despre mărci";
   document.getElementById("leadIntro").textContent = kind === "cercetare"
     ? "Spuneți-ne denumirea pe care vreți s-o înregistrați și clasele de produse/servicii — vă trimitem o cercetare de anterioritate."
-    : (picked.size ? `Mărcile selectate: ${[...picked].join(", ")}. Vă trimitem situația juridică actuală și datele titularului.` : "Spuneți-ne despre ce marcă doriți informații.");
+    : (list.length ? `${list.length === 1 ? "Marca" : "Mărcile"}: ${list.join(", ")}. Vă trimitem situația juridică actuală și datele titularului.` : "Spuneți-ne despre ce marcă doriți informații.");
   document.getElementById("msgLabel").textContent = kind === "cercetare" ? "Denumirea mărcii, clasele, detalii" : "Mesaj";
   document.getElementById("leadMsg").innerHTML = "";
   document.getElementById("leadModal").classList.add("on");
 }
-function closeLead() { document.getElementById("leadModal").classList.remove("on"); }
+function closeLead() { document.getElementById("leadModal").classList.remove("on"); leadMarks = null; }
 async function sendLead(e) {
   e.preventDefault();
   const f = new FormData(e.target), msg = document.getElementById("leadMsg");
+  const fromList = !leadMarks;
+  const marks = leadKind === "info" ? (leadMarks || [...picked]) : [];
   try {
     await api("/api/lead", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: leadKind, name: f.get("name"), email: f.get("email"), phone: f.get("phone"),
-                             message: f.get("message"), marks: leadKind === "info" ? [...picked] : [] }) });
+                             message: f.get("message"), marks }) });
     msg.innerHTML = `<div class="note ok">Mulțumim! Am primit solicitarea și revenim în cel mai scurt timp.</div>`;
     e.target.reset();
-    if (leadKind === "info") { picked.clear(); sessionStorage.removeItem("picked"); updateLeadbar();
-      document.querySelectorAll("input.pick").forEach(c => c.checked = false); }
+    if (leadKind === "info" && fromList) clearPicked();
   } catch (err) { msg.innerHTML = `<div class="note err">${esc(err.message)}</div>`; }
 }
 
@@ -126,7 +140,7 @@ function resultsTable(rows) {
   if (!rows.length) return `<div class="empty-state">Niciun rezultat.</div>`;
   return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th></th><th>Marcă</th><th>Nr. depozit</th><th>Titular</th><th>Clase</th><th>Stare</th><th>Data depozit</th></tr></thead><tbody>
     ${rows.map(r => `<tr>
-      <td><input type="checkbox" class="pick" ${picked.has(r.app) ? "checked" : ""} onchange="togglePick('${esc(r.app)}', this.checked)" aria-label="Selectează ${esc(r.name)}"></td>
+      <td><input type="checkbox" class="pick" data-app="${esc(r.app)}" ${picked.has(r.app) ? "checked" : ""} onchange="togglePick('${esc(r.app)}', this.checked)" aria-label="Selectează ${esc(r.name)}"></td>
       <td class="img"><a href="${markLink(r)}">${thumb(r)}</a></td>
       <td><a class="mname" href="${markLink(r)}">${esc(r.name || "(figurativă)")}</a><div class="muted small">${esc(r.mark_type)}</div></td>
       <td style="white-space:nowrap;">${esc(r.app)}</td>
