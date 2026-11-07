@@ -63,6 +63,8 @@ def _row(m: Mark) -> dict:
         "publication_date": m.publication_date, "reg_number": m.reg_number, "reg_date": m.reg_date,
         "expiry_date": m.expiry_date or ingest.expiry_of(m), "holder": m.holder, "representative": m.representative,
         "classes": m.classes or [], "image": f"/api/image/{m.app_number}" if m.has_image else "",
+        # Mărci reînnoite înregistrate înainte de arhiva disponibilă: denumirea nu apare în BOPI.
+        "placeholder": "denumire necunoscută — marcă reînnoită" if m.app_number.startswith("R") else "",
     }
 
 

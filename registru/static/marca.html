@@ -21,7 +21,8 @@ header("");
       <div class="card mhead">
         <div class="logo-box">${m.image ? `<img src="${esc(m.image)}" alt="${esc(m.name)}">` : `<span class="muted" style="font-size:1.4rem;font-weight:800;text-align:center;">${esc(m.name)}</span>`}</div>
         <div>
-          <h1>${esc(m.name || "(marcă figurativă)")}</h1>
+          <h1>${esc(m.name || (m.placeholder ? m.app : "(marcă figurativă)"))}</h1>
+          ${m.placeholder ? `<p class="muted small" style="margin:-4px 0 10px;">Marcă reînnoită, înregistrată înainte de 2005 — denumirea nu apare în listele de reînnoiri publicate în BOPI.</p>` : ""}
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">${statusBadge(m.status)}<span class="muted small">${esc(m.mark_type)} · OSIM</span></div>
           <div class="facts">
             ${fact("Nr. depozit (210)", esc(m.app))}

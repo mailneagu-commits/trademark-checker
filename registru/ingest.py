@@ -173,6 +173,7 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     if ev not in (m.events or []):
         m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
     if chapter == "registered":
+        _merge_stub(db, m)
         _apply_pending(db, m)
     m.expiry_date = expiry_of(m)
     m.updated_at = datetime.utcnow()
@@ -229,9 +230,45 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
     c.applied = True
 
 
+def _renewal_stub(db, c: MarkChange) -> Optional[Mark]:
+    """O marcă reînnoită care nu e (încă) în bază — înregistrată înainte de arhiva disponibilă.
+    O păstrăm după nr. de marcă, cu titularul, clasele și noua expirare; denumirea lipsește
+    din listele de reînnoiri. Când apare marca originală, se unesc (vezi _merge_stub)."""
+    if not c.reg_number or not c.expiry or c.expiry < date.today().isoformat():
+        return None
+    key = f"R{c.reg_number}"
+    m = db.get(Mark, key)
+    if m is None:
+        classes = [int(x) for x in re.findall(r"\d{1,2}", c.old_value or "") if 1 <= int(x) <= 45]
+        m = Mark(app_number=key, reg_number=c.reg_number, status="Înregistrată", status_date=c.bulletin_date,
+                 holder=c.new_value, holder_norm=norm(c.new_value), holder_address=c.new_value,
+                 classes=classes, goods={}, events=[], mark_type="")
+        db.add(m)
+        db.flush()
+    return m
+
+
+def _merge_stub(db, m: Mark) -> None:
+    """Marca originală a apărut (arhivă) — preia reînnoirile păstrate pe nr. de marcă."""
+    if not m.reg_number:
+        return
+    stub = db.get(Mark, f"R{m.reg_number}")
+    if stub is None or stub is m:
+        return
+    for ev in stub.events or []:
+        if ev not in (m.events or []):
+            m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+    if not m.classes and stub.classes:
+        m.classes = stub.classes
+    db.delete(stub)
+
+
 def _process_changes(db, path: str, src: Dict) -> int:
     n = 0
     bdate = src["date"].isoformat()
+    # Reprocesare fără dubluri.
+    db.query(MarkChange).filter(MarkChange.label == src["label"], MarkChange.bulletin_date == bdate)\
+        .delete(synchronize_session=False)
     for r in parse_changes(path):
         c = MarkChange(kind=r["kind"], app_number=r.get("app_number", ""), reg_number=r.get("reg_number", ""),
                        old_value=r.get("old", ""), new_value=r.get("new", ""), expiry=r.get("expiry", ""),
@@ -240,6 +277,8 @@ def _process_changes(db, path: str, src: Dict) -> int:
         m = db.get(Mark, c.app_number) if c.app_number else None
         if m is None and c.reg_number:
             m = db.query(Mark).filter(Mark.reg_number == c.reg_number).first()
+        if m is None and c.kind == "renewal":
+            m = _renewal_stub(db, c)
         if m is not None:
             _apply_change(db, m, c)
         n += 1

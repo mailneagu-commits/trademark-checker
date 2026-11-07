@@ -167,10 +167,27 @@ def _ensure_columns():
         print("[DB] Coloana marks.expiry_date adăugată și completată")
 
 
+def _reprocess_old_changes():
+    """Reînnoirile citite înainte să păstrăm clasele (old_value gol) — tabelele lunare respective
+    se reprocesează o dată, ca mărcile reînnoite fără marcă în bază să intre cu clasele lor."""
+    db = SessionLocal()
+    try:
+        stale = db.query(MarkChange.label).filter(MarkChange.kind == "renewal", MarkChange.old_value == "").distinct().all()
+        labels = [l for (l,) in stale]
+        if labels:
+            n = db.query(SourceFile).filter(SourceFile.kind == "changes", SourceFile.label.in_(labels))\
+                .delete(synchronize_session=False)
+            db.commit()
+            print(f"[DB] Tabele de modificări de reprocesat (clase la reînnoiri): {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
     _fix_disclaimers()
+    _reprocess_old_changes()
     if IS_PG:
         # Căutare „conține” rapidă pe sute de mii de rânduri: index trigram.
         with engine.begin() as c:

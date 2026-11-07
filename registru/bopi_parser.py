@@ -55,7 +55,10 @@ def compact_app(raw: str) -> str:
 
 def display_app(app: str) -> str:
     m = re.match(r"^M(\d{4})(\d+)$", app or "")
-    return f"M {m.group(1)} {m.group(2)}" if m else (app or "")
+    if m:
+        return f"M {m.group(1)} {m.group(2)}"
+    r = re.match(r"^R(\d+)$", app or "")       # marcă reînnoită, cunoscută doar după nr. de marcă
+    return f"marca nr. {r.group(1)}" if r else (app or "")
 
 
 def _iso(d: str) -> str:
@@ -346,6 +349,9 @@ def parse_changes(path: str) -> Iterator[Dict]:
                         rec["reg_number"] = re.sub(r"\D.*$", "", cells[0]).lstrip("0")
                         rec["expiry"] = _iso(cells[1] if len(cells) > 1 else "")
                         rec["new"] = cells[3] if len(cells) > 3 else ""
+                        # Clasele reînnoite („-” = nespecificate), păstrate pentru mărcile care nu
+                        # sunt încă în bază (înregistrate înainte de arhiva disponibilă).
+                        rec["old"] = ", ".join(re.findall(r"\d{1,2}", cells[2] if len(cells) > 2 else "")) or "-"
                         if not rec["reg_number"]:
                             continue
                     else:
