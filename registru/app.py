@@ -225,6 +225,38 @@ def public_status(db: Session = Depends(get_db)):
             "marks": db.query(func.count(Mark.app_number)).scalar() or 0}
 
 
+@app.get("/api/quality")
+def quality(db: Session = Depends(get_db)):
+    """Raport de calitate a datelor citite din BOPI (doar date publice): câte mărci au câmpuri
+    lipsă sau suspecte, cu exemple, ca problemele de citire a PDF-urilor să fie găsite ușor."""
+    import re as _re
+    checks = {
+        "fara_denumire_si_fara_logo": lambda m: not m.name and not m.has_image,
+        "fara_clase": lambda m: not (m.classes or []),
+        "fara_titular": lambda m: not m.holder,
+        "fara_data_depozit": lambda m: not m.filing_date,
+        "denumire_lunga": lambda m: len(m.name or "") > 70,
+        "denumire_cu_coduri_inid": lambda m: bool(_re.search(r"\(\d{3}\)|Clasificare|Produse și|BULETIN", m.name or "")),
+        "titular_lung": lambda m: len(m.holder or "") > 90,
+        "titular_fara_adresa": lambda m: bool(m.holder) and m.holder_address == m.holder,
+        "inregistrata_fara_nr": lambda m: m.status == "Înregistrată" and not m.reg_number,
+        "clase_fara_produse": lambda m: any(not (m.goods or {}).get(str(c)) for c in (m.classes or [])),
+    }
+    counts = {k: 0 for k in checks}
+    examples = {k: [] for k in checks}
+    total = 0
+    for m in db.query(Mark).yield_per(2000):
+        total += 1
+        for k, f in checks.items():
+            if f(m):
+                counts[k] += 1
+                if len(examples[k]) < 12:
+                    examples[k].append({"app": m.app_number, "name": (m.name or "")[:120],
+                                        "holder": (m.holder or "")[:100], "status": m.status,
+                                        "bopi": (m.events or [{}])[-1].get("bopi", "")})
+    return {"total": total, "counts": counts, "examples": examples}
+
+
 @app.get("/api/admin/ingest", dependencies=[Depends(_admin)])
 def ingest_status(db: Session = Depends(get_db)):
     by = dict(db.query(SourceFile.status, func.count(SourceFile.url)).group_by(SourceFile.status).all())
