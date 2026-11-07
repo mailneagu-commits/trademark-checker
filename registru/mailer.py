@@ -12,6 +12,8 @@ from email.utils import formataddr
 from html import escape
 
 LEAD_EMAIL = os.environ.get("LEAD_EMAIL", "mailneagu@gmail.com")
+# Rezultatul ultimei trimiteri — pentru /api/mail-status (fără parole).
+last: dict = {"ok_at": None, "error": None, "error_at": None}
 
 
 def available() -> bool:
@@ -54,8 +56,11 @@ def notify_lead(kind: str, name: str, email: str, phone: str, message: str, mark
             + "</table><p style='font-family:Arial;font-size:12px;color:#999'>Trimis de pe www.prowatch.ro</p>")
 
     def run():
+        from datetime import datetime
         try:
             _send(f"[ProWatch] {title} — {name}", html, reply_to=email)
+            last.update(ok_at=datetime.utcnow().isoformat() + "Z", error=None)
         except Exception as e:
+            last.update(error=f"{type(e).__name__}: {e}", error_at=datetime.utcnow().isoformat() + "Z")
             print(f"[mail] Eroare la trimiterea notificării: {e}")
     threading.Thread(target=run, daemon=True).start()

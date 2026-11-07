@@ -225,6 +225,13 @@ def public_status(db: Session = Depends(get_db)):
             "marks": db.query(func.count(Mark.app_number)).scalar() or 0}
 
 
+@app.get("/api/mail-status")
+def mail_status():
+    import mailer
+    return {"configured": mailer.available(), "host": os.environ.get("SMTP_HOST", "smtp.gmail.com"),
+            "port": os.environ.get("SMTP_PORT", "587"), "last": mailer.last}
+
+
 @app.get("/api/quality")
 def quality(db: Session = Depends(get_db)):
     """Raport de calitate a datelor citite din BOPI (doar date publice): câte mărci au câmpuri
