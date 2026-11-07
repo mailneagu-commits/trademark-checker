@@ -23,8 +23,12 @@
   td { padding:8px; border-bottom:1px solid #e3e3e3; vertical-align:middle; font-size:.84rem; }
   tbody tr:nth-child(odd) td { background:#f7f7f7; }
   tbody tr td:first-child { background:#efefef; }
-  td.multi { white-space:pre-line; min-width:180px; max-width:280px; }
-  td.name { min-width:130px; }
+  td.multi { min-width:220px; max-width:300px; line-height:1.35; }
+  td.multi .who { font-weight:600; }
+  td.multi .addr { display:block; color:#555; font-size:.8rem; margin-top:2px; }
+  td.name { min-width:120px; max-width:220px; font-weight:600; }
+  td.cls { max-width:140px; white-space:normal; }
+  td.imgc { width:124px; min-width:124px; }
   td.mark { background:#eef5fd !important; }
   td.monitor { background:#e9e8f7 !important; }
   td.num { text-align:center; white-space:nowrap; }
@@ -57,32 +61,42 @@ const SRC_LABEL = SOURCE === "osim" ? "OSIM (BOPI)" : "EUIPO";
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const dmy = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || ""); };
 const cls = a => (a && a.length) ? `[${a.join(", ")}]` : "";
-// Adresele vin pe un singur rând, cu virgule — le punem pe rânduri, ca în buletin.
-const lines = t => esc(t).replace(/,\s+(?=\S)/g, ",\n");
+// Titular / reprezentant: numele îngroșat pe primul rând, adresa dedesubt (textul începe de obicei cu numele).
+const norm = t => String(t || "").toLowerCase().replace(/\s+/g, " ").trim();
+function party(text, names) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  const n = (names || []).filter(Boolean).sort((a, b) => b.length - a.length)
+    .find(n => norm(t).startsWith(norm(n)));
+  if (!n) return (names || []).some(x => norm(x) === norm(t)) ? `<span class="who">${esc(t)}</span>` : esc(t);
+  const rest = t.slice(n.replace(/\s+/g, " ").trim().length).replace(/^[\s,;]+/, "");
+  return `<span class="who">${esc(t.slice(0, t.length - rest.length).replace(/[\s,;]+$/, ""))}</span>` +
+         (rest ? `<span class="addr">${esc(rest)}</span>` : "");
+}
 const img = u => u ? `<img src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">` : "";
 const idLink = r => `<a class="id" href="${esc(r.link)}" target="_blank">${esc(r.application_number)}</a>`;
 
 const COLS = {
   results: [
     { h: "210",      key: r => r.application_number, cell: r => `<td class="num">${idLink(r)}</td>` },
-    { h: "img",      key: r => r.image ? 0 : 1,      cell: r => `<td>${img(r.image)}</td>` },
+    { h: "img",      key: r => r.image ? 0 : 1,      cell: r => `<td class="imgc">${img(r.image)}</td>` },
     { h: "220",      key: r => r.application_date,   cell: r => `<td class="num">${dmy(r.application_date)}</td>` },
     { h: "442",      key: r => r.publication_date,   cell: r => `<td class="num">${dmy(r.publication_date)}</td>` },
     { h: "541",      key: r => (r.name || "").toLowerCase(), cell: r => `<td class="name">${esc(r.name)}</td>` },
-    { h: "731",      key: r => (r.applicant || "").toLowerCase(), cell: r => `<td class="multi">${lines(r.applicant)}</td>` },
-    { h: "740",      key: r => (r.representative || "").toLowerCase(), cell: r => `<td class="multi">${lines(r.representative)}</td>` },
-    { h: "list_511", key: r => (r.classes || [])[0] || 0, cell: r => `<td>${cls(r.classes)}</td>` },
+    { h: "731",      key: r => (r.applicant || "").toLowerCase(), cell: r => `<td class="multi">${party(r.applicant, r.applicant_names)}</td>` },
+    { h: "740",      key: r => (r.representative || "").toLowerCase(), cell: r => `<td class="multi">${party(r.representative, r.representative_names)}</td>` },
+    { h: "list_511", key: r => (r.classes || [])[0] || 0, cell: r => `<td class="cls">${cls(r.classes)}</td>` },
   ],
   conflicts: [
     { h: "like",           key: r => -r.like, cell: r => `<td class="num">${r.like.toFixed(2)}${r.identical ? '<span class="ident">identică</span>' : ''}</td>` },
     { h: "Nr. Depozit",    key: r => r.application_number, cell: r => `<td class="num">${idLink(r)}</td>` },
-    { h: "Titular",        key: r => (r.applicant || "").toLowerCase(), cell: r => `<td class="multi">${lines(r.applicant)}</td>` },
-    { h: "Reprezentant",   key: r => (r.representative || "").toLowerCase(), cell: r => `<td class="multi">${lines(r.representative) || "(-)"}</td>` },
-    { h: "Clase",          key: r => (r.classes || [])[0] || 0, cell: r => `<td>${cls(r.classes)}</td>` },
-    { h: "Img",            key: r => r.image ? 0 : 1, cell: r => `<td>${img(r.image)}</td>` },
+    { h: "Titular",        key: r => (r.applicant || "").toLowerCase(), cell: r => `<td class="multi">${party(r.applicant, r.applicant_names)}</td>` },
+    { h: "Reprezentant",   key: r => (r.representative || "").toLowerCase(), cell: r => `<td class="multi">${party(r.representative, r.representative_names) || "(-)"}</td>` },
+    { h: "Clase",          key: r => (r.classes || [])[0] || 0, cell: r => `<td class="cls">${cls(r.classes)}</td>` },
+    { h: "Img",            key: r => r.image ? 0 : 1, cell: r => `<td class="imgc">${img(r.image)}</td>` },
     { h: "Denumire marcă", key: r => (r.name || "").toLowerCase(), cell: r => `<td class="name mark">${esc(r.name)}</td>` },
     { h: "monitor",        key: r => (r.monitor.name || "").toLowerCase(), cell: r => `<td class="name monitor">${esc(r.monitor.name)}</td>` },
-    { h: "monitor_clase",  key: r => (r.monitor.classes || [])[0] || 0, cell: r => `<td>${cls(r.monitor.classes)}</td>` },
+    { h: "monitor_clase",  key: r => (r.monitor.classes || [])[0] || 0, cell: r => `<td class="cls">${cls(r.monitor.classes)}</td>` },
     { h: "monitor_name",   key: r => (r.monitor.holder || "").toLowerCase(),
       cell: r => `<td>${esc(r.monitor.holder)}${r.monitor.portfolio ? `<br><span class="pf">${esc(r.monitor.portfolio)}${r.monitor.application_number ? " · " + esc(r.monitor.application_number) : ""}</span>` : ""}</td>` },
     { h: "monitor_like",   key: r => r.monitor.monitor_like, cell: r => `<td class="num">${Number(r.monitor.monitor_like ?? 0.6).toFixed(1)}</td>` },

@@ -98,6 +98,10 @@ def _mark_row(source: str, day: str, row: BulletinMark) -> Dict:
         "name":               row.trademark_name or "",
         "applicant":          _applicant_block(m),
         "representative":     _representative_block(m),
+        "applicant_names":    [a.get("name", "") for a in (m.get("applicants") or []) if a.get("name")]
+                              or list(m.get("applicantName") or []),
+        "representative_names": [r.get("name") or r.get("fullName") or "" for r in (m.get("representatives") or [])
+                                 if r.get("name") or r.get("fullName")],
         "classes":            [int(c) if str(c).isdigit() else c for c in (row.nice_classes or [])],
         "link":               f"/mark.html?source={source}&date={day}&app={row.application_number}",
     }
