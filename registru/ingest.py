@@ -390,6 +390,7 @@ def run_ingest(limit: Optional[int] = None) -> None:
         _lock.release()
     try:
         enrich_renewed()
+        enrich_logos()
     except Exception:
         traceback.print_exc()
 
@@ -402,6 +403,54 @@ def start_background(limit: Optional[int] = None) -> bool:
 
 
 # ── Denumirile mărcilor reînnoite înregistrate înainte de arhivă (TMview) ─────────
+
+def _fetch_logo(db, m: Mark, st13: str) -> bool:
+    """Logo-ul din TMview, prin aplicația de monitorizare (TMview blochează cererile directe)."""
+    try:
+        r = requests.get(f"{MONITOR_API}/api/tm-image", params={"st13": st13}, timeout=90)
+    except Exception:
+        return False
+    # 1458 octeți = imaginea-substitut TMview pentru mărcile fără logo.
+    if r.status_code != 200 or not r.headers.get("content-type", "").startswith("image") or len(r.content) <= 1600:
+        return False
+    try:
+        import io
+        from PIL import Image
+        pil = Image.open(io.BytesIO(r.content)).convert("RGB")
+        pil.thumbnail((320, 320))
+        buf = io.BytesIO()
+        pil.save(buf, "WEBP", quality=80)
+        data, ct = buf.getvalue(), "image/webp"
+    except Exception:
+        data, ct = r.content, r.headers["content-type"]
+    db.merge(MarkImage(app_number=m.app_number, data=data, content_type=ct))
+    m.has_image = True
+    m.mark_type = "Combinată" if m.name else "Figurativă"
+    return True
+
+
+def enrich_logos(limit: int = 300) -> int:
+    """Logo-urile mărcilor deja completate din TMview înainte să aducem și imaginile."""
+    db = SessionLocal()
+    n = 0
+    try:
+        q = db.query(Mark).filter(Mark.app_number.like("R%"), Mark.name != "", Mark.has_image == False,  # noqa: E712
+                                  Mark.tmview_checked != "", ~Mark.tmview_checked.like("%img")).limit(limit)
+        for m in q:
+            ev = next((e for e in (m.events or []) if e.get("bopi") == "TMview"), None)
+            st13 = (ev or {}).get("st13") or ""
+            if not st13 and ev:
+                dep = re.sub(r"\D", "", ev.get("detail", ""))
+                st13 = f"RO50000000{dep.zfill(7)}" if dep else ""
+            if st13 and _fetch_logo(db, m, st13):
+                n += 1
+            m.tmview_checked = (m.tmview_checked or "") + "|img"
+            db.commit()
+    finally:
+        db.close()
+    return n
+
+
 # Listele de reînnoiri din BOPI nu conțin denumirea. O luăm din TMview, după nr. de
 # înregistrare, prin aplicația de monitorizare (are deja accesul la TMview).
 MONITOR_API = os.environ.get("MONITOR_API", "https://web-production-c898f.up.railway.app")
@@ -438,7 +487,7 @@ def enrich_renewed(limit: int = 600) -> None:
                     res = data.get(reg) or {}
                     if "error" in res or not res:
                         continue                        # reîncercăm la rularea următoare
-                    m.tmview_checked = today
+                    m.tmview_checked = today + "|img"
                     hits = res.get("hits") or []
                     if hits:
                         t = hits[0]
@@ -451,18 +500,11 @@ def enrich_renewed(limit: int = 600) -> None:
                             m.holder = t["applicantName"][0]
                             m.holder_norm = norm(m.holder)
                         m.mark_type = "Verbală" if m.name else m.mark_type
-                        if t.get("markImageURI"):
-                            try:
-                                img = requests.get(t["markImageURI"], timeout=30, headers=UA)
-                                if img.status_code == 200 and img.headers.get("content-type", "").startswith("image"):
-                                    db.merge(MarkImage(app_number=m.app_number, data=img.content,
-                                                       content_type=img.headers["content-type"]))
-                                    m.has_image = True
-                                    m.mark_type = "Combinată" if m.name else "Figurativă"
-                            except Exception:
-                                pass
+                        st13 = t.get("ST13") or ""
+                        if t.get("markImageURI") and st13:
+                            _fetch_logo(db, m, st13)
                         ev = {"date": today, "bopi": "TMview", "chapter": "Denumire preluată din TMview",
-                              "detail": f"nr. depozit {t.get('applicationNumber') or ''}".strip()}
+                              "detail": f"nr. depozit {t.get('applicationNumber') or ''}".strip(), "st13": st13}
                         m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
                         enrich_job["found"] += 1
                     enrich_job["done"] += 1
