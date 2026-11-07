@@ -24,7 +24,11 @@ def _env(name: str, default: str = "") -> str:
 def settings() -> dict:
     user = _env("SMTP_USER")
     domain = user.split("@")[-1] if "@" in user else ""
-    return {"host": _env("SMTP_HOST", f"mail.{domain}" if domain else "smtp.gmail.com"),
+    # Serverul de email al găzduirii cyberfolks pentru protectmark.ro (mail.protectmark.ro duce la
+    # serverul web, unde portul 465 nu răspunde din Railway).
+    default_host = ("cloud341.c-f.ro" if domain == "protectmark.ro" else
+                    f"mail.{domain}" if domain else "smtp.gmail.com")
+    return {"host": _env("SMTP_HOST") or _env("SMTP_SERVER") or default_host,
             "port": int(_env("SMTP_PORT", "587") or 587), "user": user}
 
 
