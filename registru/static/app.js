@@ -21,20 +21,29 @@ const chips = cl => `<div class="chips">${(cl || []).map(c => `<span class="chip
 const thumb = r => r.image ? `<img class="thumb" src="${esc(r.image)}" alt="" loading="lazy">` : `<div class="thumb empty">—</div>`;
 const markLink = r => `/marca/${encodeURIComponent(r.app_number)}`;
 
-function header(active) {
-  const links = [["/", "Căutare", "home"], ["/recente.html", "Cereri recente", "recente"], ["/clasament.html", "Clasament", "clasament"]];
-  document.body.insertAdjacentHTML("afterbegin", `
-    <header class="top"><div class="wrap">
-      <a class="brand" href="/" aria-label="${SITE.name} — prima pagină"><img src="/prowatch-logo.png" alt="${SITE.name}" width="160" height="40"><small>${SITE.tagline}</small></a>
-      <nav class="nav">${links.map(([h, t, k]) => `<a href="${h}" class="${k === active ? "on" : ""}">${t}</a>`).join("")}
-        <a href="#" class="cta" onclick="openLead('cercetare');return false;">Solicită o cercetare</a></nav>
-    </div></header>`);
-  document.body.insertAdjacentHTML("beforeend", `
-    <footer><div class="wrap fgrid">
-      <img src="/protectmark-logo.png" alt="ProtectMark — intellectual property attorneys" width="110" height="64">
-      <div><div><strong style="color:var(--ink);">${esc(SITE.name)}</strong> este un serviciu ProtectMark. Datele provin din Buletinul Oficial de Proprietate Industrială (BOPI), secțiunea Mărci, publicat de OSIM.</div>
-      <div class="small" style="margin-top:6px;">Informațiile au caracter orientativ și nu înlocuiesc o cercetare de disponibilitate făcută de un consilier în proprietate industrială. Pentru situația juridică oficială a unei mărci consultați OSIM.</div></div>
-    </div></footer>
+// Mod încorporat (?embed=1): pagina rulează într-un iframe pe protectmark.ro — fără antet și
+// subsol proprii, linkurile păstrează modul, iar înălțimea e trimisă paginii-gazdă.
+const EMBED = qs.get("embed") === "1" || sessionStorage.getItem("pwEmbed") === "1";
+if (EMBED) {
+  try { sessionStorage.setItem("pwEmbed", "1"); } catch (e) {}
+  document.documentElement.classList.add("embed");
+  const sendHeight = () => parent.postMessage({ prowatchHeight: document.documentElement.scrollHeight }, "*");
+  window.addEventListener("load", sendHeight);
+  new ResizeObserver(sendHeight).observe(document.documentElement);
+  document.addEventListener("click", e => {
+    const a = e.target.closest && e.target.closest("a[href]");
+    if (!a || a.target || a.origin !== location.origin) return;
+    const u = new URL(a.href);
+    if (!u.searchParams.has("embed")) { u.searchParams.set("embed", "1"); a.href = u.toString(); }
+  }, true);
+  document.addEventListener("submit", e => {
+    if (e.target.method === "get" && !e.target.querySelector("input[name=embed]"))
+      e.target.insertAdjacentHTML("beforeend", '<input type="hidden" name="embed" value="1">');
+  }, true);
+}
+
+// Bara „Solicită informații” și fereastra de solicitare — în ambele moduri (site / încorporat).
+const LEAD_UI = `
     <div class="leadbar" id="leadbar"><span id="leadcount"></span><button class="btn alt" onclick="openLead('info')">Solicită informații</button></div>
     <div class="modal" id="leadModal" onclick="if(event.target===this)closeLead()"><div class="card">
       <h2 id="leadTitle">Solicită informații</h2>
@@ -48,7 +57,28 @@ function header(active) {
         <div style="display:flex;gap:8px;justify-content:flex-end;"><button type="button" class="btn ghost" onclick="closeLead()">Renunță</button><button class="btn">Trimite</button></div>
         <p class="muted small" style="margin:0;">Datele trimise sunt folosite doar pentru a vă răspunde la această solicitare.</p>
       </form>
-    </div></div>`);
+    </div></div>`;
+
+function header(active) {
+  if (EMBED) {
+    // Încorporat în protectmark.ro: fără antet și subsol proprii (le are pagina-gazdă).
+    document.body.insertAdjacentHTML("beforeend", LEAD_UI);
+    return;
+  }
+  const links = [["/", "Căutare", "home"], ["/recente.html", "Cereri recente", "recente"], ["/clasament.html", "Clasament", "clasament"]];
+  document.body.insertAdjacentHTML("afterbegin", `
+    <header class="top"><div class="wrap">
+      <a class="brand" href="/" aria-label="${SITE.name} — prima pagină"><img src="/prowatch-logo.png" alt="${SITE.name}" width="160" height="40"><small>${SITE.tagline}</small></a>
+      <nav class="nav">${links.map(([h, t, k]) => `<a href="${h}" class="${k === active ? "on" : ""}">${t}</a>`).join("")}
+        <a href="#" class="cta" onclick="openLead('cercetare');return false;">Solicită o cercetare</a></nav>
+    </div></header>`);
+  document.body.insertAdjacentHTML("beforeend", `
+    <footer><div class="wrap fgrid">
+      <img src="/protectmark-logo.png" alt="ProtectMark — intellectual property attorneys" width="110" height="64">
+      <div><div><strong style="color:var(--ink);">${esc(SITE.name)}</strong> este un serviciu ProtectMark. Datele provin din Buletinul Oficial de Proprietate Industrială (BOPI), secțiunea Mărci, publicat de OSIM.</div>
+      <div class="small" style="margin-top:6px;">Informațiile au caracter orientativ și nu înlocuiesc o cercetare de disponibilitate făcută de un consilier în proprietate industrială. Pentru situația juridică oficială a unei mărci consultați OSIM.</div></div>
+    </div></footer>
+` + LEAD_UI);
 }
 
 // ── Mărci bifate + solicitare ────────────────────────────────────────────────
@@ -127,3 +157,4 @@ function searchForm() {
     </div>
   </form>`;
 }
+

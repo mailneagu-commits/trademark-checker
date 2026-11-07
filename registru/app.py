@@ -247,6 +247,22 @@ def leads(db: Session = Depends(get_db)):
 
 # ── Pagini ──────────────────────────────────────────────────────────────────────
 
+@app.get("/robots.txt")
+def robots():
+    # Până la lansare (INDEXING=1 în Railway) site-ul nu e indexat de motoarele de căutare.
+    if os.environ.get("INDEXING") == "1":
+        return Response("User-agent: *\nAllow: /\n", media_type="text/plain")
+    return Response("User-agent: *\nDisallow: /\n", media_type="text/plain")
+
+
+@app.middleware("http")
+async def _noindex(request: Request, call_next):
+    resp = await call_next(request)
+    if os.environ.get("INDEXING") != "1":
+        resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
+
+
 @app.get("/marca/{app_number}")
 def mark_page(app_number: str):
     return FileResponse(os.path.join(STATIC, "marca.html"))

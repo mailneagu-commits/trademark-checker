@@ -116,3 +116,8 @@ footer .fgrid img { height: 64px; width: auto; }
 footer .fgrid > div { flex: 1; min-width: 260px; }
 .empty-state { text-align: center; color: var(--muted); padding: 32px 10px; }
 .tbl td a { white-space: nowrap; }
+
+/* Mod încorporat (iframe pe protectmark.ro) */
+html.embed body { background: transparent; }
+html.embed .hero { padding: 24px 0 64px; }
+html.embed footer { display: none; }
