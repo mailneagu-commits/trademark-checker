@@ -56,6 +56,7 @@ const P = new URLSearchParams(location.search);
 const TYPE = P.get("type") === "conflicts" ? "conflicts" : "results";
 const SOURCE = P.get("source") === "euipo" ? "euipo" : "osim";
 const DATE = P.get("date") || "";
+const EMBED = P.get("embed") === "1" && window.parent !== window;
 const SRC_LABEL = SOURCE === "osim" ? "OSIM (BOPI)" : "EUIPO";
 
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -82,7 +83,7 @@ function party(text, names) {
   return `<span class="who">${esc(who)}</span>` + (rest ? `<span class="addr">${esc(rest)}</span>` : "");
 }
 const img = u => u ? `<img src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">` : "";
-const idLink = r => `<a class="id" href="${esc(r.link)}" target="_blank">${esc(r.application_number)}</a>`;
+const idLink = r => `<a class="id" href="${esc(r.link)}"${EMBED ? "" : ' target="_blank"'}>${esc(r.application_number)}</a>`;
 
 const COLS = {
   results: [
@@ -133,6 +134,7 @@ function render() {
     const i = +th.dataset.i;
     sortDir = i === sortIdx ? -sortDir : 1; sortIdx = i; render();
   });
+  if (EMBED) parent.postMessage({ mtHeight: document.documentElement.scrollHeight }, location.origin);
   document.getElementById("sub").textContent =
     `${q ? list.length + " din " : ""}${rows.length} ${TYPE === "conflicts" ? "conflicte" : "mărci"} · buletin ${dmy(DATE)}`;
 }
@@ -141,7 +143,7 @@ function render() {
   document.title = `${TYPE === "conflicts" ? "Conflicts" : "Results"} ${SRC_LABEL} ${dmy(DATE)}`;
   document.getElementById("title").innerHTML =
     `${TYPE === "conflicts" ? "Conflicts" : "Results"} — ${SRC_LABEL} · ${esc(dmy(DATE))}` +
-    ` <a style="font-size:.8rem;font-weight:400;margin-left:10px;" href="?type=${TYPE === "conflicts" ? "results" : "conflicts"}&source=${SOURCE}&date=${encodeURIComponent(DATE)}">${TYPE === "conflicts" ? "Results" : "Conflicts"} →</a>`;
+    ` <a style="font-size:.8rem;font-weight:400;margin-left:10px;" href="?type=${TYPE === "conflicts" ? "results" : "conflicts"}&source=${SOURCE}&date=${encodeURIComponent(DATE)}${EMBED ? "&embed=1" : ""}">${TYPE === "conflicts" ? "Results" : "Conflicts"} →</a>`;
   try {
     const r = await fetch(`/api/monitor/daily/${TYPE}?source=${SOURCE}&date=${encodeURIComponent(DATE)}`);
     const d = await r.json();

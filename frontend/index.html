@@ -717,6 +717,16 @@
       <div id="dailyOsim"></div>
       <div id="dailyEuipo"></div>
     </div>
+    <div id="dailyView" style="display:none;margin-top:18px;border-top:1px solid #e3e8f2;padding-top:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+        <strong id="dailyViewTitle" style="color:#0f3460;"></strong>
+        <span style="display:flex;gap:8px;">
+          <a id="dailyViewTab" class="btn-sm" target="_blank" style="text-decoration:none;">↗ Tab nou</a>
+          <button class="btn-sm" onclick="closeDailyTable()">✕ Închide</button>
+        </span>
+      </div>
+      <iframe id="dailyFrame" title="Tabel monitorizare" style="width:100%;height:600px;border:1px solid #e3e8f2;border-radius:8px;background:#fff;"></iframe>
+    </div>
   </div>
 
   <!-- Import + Template bar -->
@@ -3800,17 +3810,49 @@ async function loadDailyRuns() {
     const r = await fetch("/api/monitor/daily/runs");
     _dailyRuns = await r.json();
     renderDaily("osim"); renderDaily("euipo");
+    restoreDailyTable();
   } catch (e) {
     document.getElementById("dailyOsim").innerHTML = '<div class="import-err" style="font-size:.84rem;">Eroare la încărcarea rulărilor.</div>';
   }
   pollDailyStatus(true);
 }
 
+// Tabelele Results / Conflicts se deschid în pagină, sub Monitor OSIM / EUIPO; ultimul tabel deschis
+// e ținut minte (localStorage) și redeschis la reîncărcarea paginii.
+function openDailyTable(type, source, d, scroll = true) {
+  const url = `/monitor-table.html?type=${type}&source=${source}&date=${d}&embed=1`;
+  const view = document.getElementById("dailyView");
+  document.getElementById("dailyViewTitle").textContent =
+    `${type === "conflicts" ? "Conflicts" : "Results"} — ${source === "osim" ? "OSIM (BOPI)" : "EUIPO"} · ${_dmy(d)}`;
+  document.getElementById("dailyViewTab").href = url.replace("&embed=1", "");
+  const fr = document.getElementById("dailyFrame");
+  if (fr.getAttribute("src") !== url) fr.src = url;
+  view.style.display = "";
+  try { localStorage.setItem("dailyView", JSON.stringify({ type, source, d })); } catch (e) {}
+  if (scroll) view.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function closeDailyTable() {
+  document.getElementById("dailyView").style.display = "none";
+  document.getElementById("dailyFrame").removeAttribute("src");
+  try { localStorage.removeItem("dailyView"); } catch (e) {}
+}
+function restoreDailyTable() {
+  try {
+    const v = JSON.parse(localStorage.getItem("dailyView") || "null");
+    if (v && !document.getElementById("dailyFrame").getAttribute("src")) openDailyTable(v.type, v.source, v.d, false);
+  } catch (e) {}
+}
+window.addEventListener("message", e => {
+  if (e.origin === location.origin && e.data && e.data.mtHeight)
+    document.getElementById("dailyFrame").style.height = Math.min(Math.max(e.data.mtHeight + 20, 300), Math.round(window.innerHeight * 0.85)) + "px";
+});
+
 function renderDaily(source) {
   const el = document.getElementById(source === "osim" ? "dailyOsim" : "dailyEuipo");
   const data = (_dailyRuns || {})[source] || { runs: [], years: [] };
   const title = source === "osim" ? "Monitor OSIM" : "Monitor EUIPO";
-  const link = (type, d, label) => `<a href="/monitor-table.html?type=${type}&source=${source}&date=${d}&v=2" target="_blank">${label}</a>`;
+  const link = (type, d, label) => `<a href="/monitor-table.html?type=${type}&source=${source}&date=${d}&v=2"
+      onclick="openDailyTable('${type}','${source}','${d}');return false;">${label}</a>`;
   const years = data.years.length
     ? data.years.map(y => `<tr><td>${y.year}</td><td>${y.results} <span class="dm">(${y.days} zile)</span></td><td>${y.conflicts}</td></tr>`).join("")
     : `<tr><td colspan="3" class="dm" style="text-align:center;">No data available in table</td></tr>`;
