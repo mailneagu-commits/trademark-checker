@@ -38,6 +38,9 @@
   .err { color:#c0392b; }
   .ident { display:inline-block; margin-left:4px; padding:1px 6px; border-radius:8px; background:#fdecea; color:#c0392b; font-size:.68rem; font-weight:700; }
   .pf { color:#5b7bb5; font-size:.74rem; }
+  td.cls { min-width:90px; }
+  body.embed .wrap { padding:10px 12px; }
+  body.embed .top h1 { display:none; }
 </style>
 </head>
 <body>
@@ -140,6 +143,7 @@ function render() {
 }
 
 (async () => {
+  if (EMBED) document.body.classList.add("embed");
   document.title = `${TYPE === "conflicts" ? "Conflicts" : "Results"} ${SRC_LABEL} ${dmy(DATE)}`;
   document.getElementById("title").innerHTML =
     `${TYPE === "conflicts" ? "Conflicts" : "Results"} — ${SRC_LABEL} · ${esc(dmy(DATE))}` +

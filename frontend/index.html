@@ -717,7 +717,7 @@
       <div id="dailyOsim"></div>
       <div id="dailyEuipo"></div>
     </div>
-    <div id="dailyView" style="display:none;margin-top:18px;border-top:1px solid #e3e8f2;padding-top:14px;">
+    <div id="dailyView" style="display:none;margin-top:18px;border-top:1px solid #e3e8f2;padding-top:14px;position:relative;left:50%;transform:translateX(-50%);width:min(1560px, calc(100vw - 40px));">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
         <strong id="dailyViewTitle" style="color:#0f3460;"></strong>
         <span style="display:flex;gap:8px;">
@@ -3863,7 +3863,7 @@ function renderDaily(source) {
     if (r.status === "ok") return `<tr><td>${_dmy(r.date)}</td><td>${link("results", r.date, "results")} #${r.results}</td>
         <td>${link("conflicts", r.date, "conflicts")}${r.conflicts ? ` <strong class="dc">${r.conflicts}</strong>` : ' <span class="dm">0</span>'}</td></tr>`;
     const label = { running: "⏳ în curs…", no_bulletin: "fără buletin", error: "❌ eroare" }[r.status] || r.status;
-    return `<tr><td>${_dmy(r.date)}</td><td colspan="2" class="dm" title="${escHtml(r.message)}">${label}${r.message ? " — " + escHtml(r.message).slice(0, 90) : ""}</td></tr>`;
+    return `<tr><td>${_dmy(r.date)}</td><td colspan="2" class="dm" title="${escHtml(r.message)}">${label}${r.message ? " — " + escHtml(r.message).slice(0, 200) : ""}</td></tr>`;
   }).join("") : `<tr><td colspan="3" class="dm" style="text-align:center;">Nicio rulare încă — alegeți o dată și apăsați „Pornește monitorizarea”.</td></tr>`;
   const pager = pages > 1 ? `<div class="dpager">
       <button class="btn-sm" ${pg === 0 ? "disabled" : ""} onclick="_dailyPage.${source}=${pg - 1};renderDaily('${source}')">Previous</button>
