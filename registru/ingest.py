@@ -388,6 +388,10 @@ def run_ingest(limit: Optional[int] = None) -> None:
     finally:
         job.update(running=False, current="", finished_at=datetime.utcnow().isoformat() + "Z")
         _lock.release()
+    try:
+        enrich_renewed()
+    except Exception:
+        traceback.print_exc()
 
 
 def start_background(limit: Optional[int] = None) -> bool:
@@ -395,3 +399,75 @@ def start_background(limit: Optional[int] = None) -> bool:
         return False
     threading.Thread(target=run_ingest, kwargs={"limit": limit}, daemon=True).start()
     return True
+
+
+# ── Denumirile mărcilor reînnoite înregistrate înainte de arhivă (TMview) ─────────
+# Listele de reînnoiri din BOPI nu conțin denumirea. O luăm din TMview, după nr. de
+# înregistrare, prin aplicația de monitorizare (are deja accesul la TMview).
+MONITOR_API = os.environ.get("MONITOR_API", "https://web-production-c898f.up.railway.app")
+enrich_job: Dict = {"running": False, "done": 0, "found": 0, "last": None}
+
+
+def enrich_renewed(limit: int = 600) -> None:
+    if enrich_job["running"]:
+        return
+    enrich_job.update(running=True, done=0, found=0)
+    try:
+        today = date.today().isoformat()
+        db = SessionLocal()
+        try:
+            todo = [m.reg_number for m in db.query(Mark).filter(Mark.app_number.like("R%"), Mark.name == "",
+                                                               Mark.tmview_checked == "").limit(limit)]
+        finally:
+            db.close()
+        for i in range(0, len(todo), 25):
+            batch = todo[i:i + 25]
+            try:
+                r = requests.get(f"{MONITOR_API}/api/tm-regsearch", timeout=600,
+                                 params={"numbers": ",".join(batch), "mode": "registrationNumber"})
+                data = r.json() if r.status_code == 200 else {}
+            except Exception as e:
+                print(f"[ENRICH] {type(e).__name__}: {e}")
+                break
+            db = SessionLocal()
+            try:
+                for reg in batch:
+                    m = db.get(Mark, f"R{reg}")
+                    if m is None:
+                        continue
+                    res = data.get(reg) or {}
+                    if "error" in res or not res:
+                        continue                        # reîncercăm la rularea următoare
+                    m.tmview_checked = today
+                    hits = res.get("hits") or []
+                    if hits:
+                        t = hits[0]
+                        m.name = (t.get("tmName") or "").strip()
+                        m.name_norm = norm(m.name)
+                        m.filing_date = m.filing_date or (t.get("applicationDate") or "")[:10]
+                        if not m.classes and t.get("niceClass"):
+                            m.classes = sorted(int(c) for c in t["niceClass"] if str(c).isdigit())
+                        if not m.holder and t.get("applicantName"):
+                            m.holder = t["applicantName"][0]
+                            m.holder_norm = norm(m.holder)
+                        m.mark_type = "Verbală" if m.name else m.mark_type
+                        if t.get("markImageURI"):
+                            try:
+                                img = requests.get(t["markImageURI"], timeout=30, headers=UA)
+                                if img.status_code == 200 and img.headers.get("content-type", "").startswith("image"):
+                                    db.merge(MarkImage(app_number=m.app_number, data=img.content,
+                                                       content_type=img.headers["content-type"]))
+                                    m.has_image = True
+                                    m.mark_type = "Combinată" if m.name else "Figurativă"
+                            except Exception:
+                                pass
+                        ev = {"date": today, "bopi": "TMview", "chapter": "Denumire preluată din TMview",
+                              "detail": f"nr. depozit {t.get('applicationNumber') or ''}".strip()}
+                        m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+                        enrich_job["found"] += 1
+                    enrich_job["done"] += 1
+                db.commit()
+            finally:
+                db.close()
+    finally:
+        enrich_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")

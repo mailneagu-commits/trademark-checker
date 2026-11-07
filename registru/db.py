@@ -49,6 +49,7 @@ class Mark(Base):
     reg_number       = Column(String, default="", index=True)
     reg_date         = Column(String, default="", index=True)
     expiry_date      = Column(String, default="", index=True)   # calculată: depozit + 10 ani / ultima reînnoire
+    tmview_checked   = Column(String, default="")              # data căutării denumirii în TMview (mărci reînnoite vechi)
     holder           = Column(Text, default="")
     holder_norm      = Column(Text, default="", index=True)
     holder_address   = Column(Text, default="")
@@ -152,6 +153,9 @@ def _fix_disclaimers():
 def _ensure_columns():
     from sqlalchemy import inspect
     have = {c["name"] for c in inspect(engine).get_columns("marks")}
+    if "tmview_checked" not in have:
+        with engine.begin() as c:
+            c.execute(text("ALTER TABLE marks ADD COLUMN tmview_checked VARCHAR DEFAULT ''"))
     if "expiry_date" not in have:
         with engine.begin() as c:
             c.execute(text("ALTER TABLE marks ADD COLUMN expiry_date VARCHAR DEFAULT ''"))

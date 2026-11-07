@@ -34,6 +34,8 @@ def _startup():
                   id="bopi_ingest")
     import mailer
     sched.add_job(mailer.keepalive, "cron", day_of_week="mon", hour=9, id="brevo_keepalive")
+    # Denumirile mărcilor reînnoite vechi, din TMview — în fiecare oră, în paralel cu încărcarea.
+    sched.add_job(ingest.enrich_renewed, "interval", hours=1, id="tmview_enrich")
     sched.start()
     if os.environ.get("AUTO_INGEST", "1") == "1":
         ingest.start_background()
@@ -64,7 +66,7 @@ def _row(m: Mark) -> dict:
         "expiry_date": m.expiry_date or ingest.expiry_of(m), "holder": m.holder, "representative": m.representative,
         "classes": m.classes or [], "image": f"/api/image/{m.app_number}" if m.has_image else "",
         # Mărci reînnoite înregistrate înainte de arhiva disponibilă: denumirea nu apare în BOPI.
-        "placeholder": "denumire necunoscută — marcă reînnoită" if m.app_number.startswith("R") else "",
+        "placeholder": "denumire necunoscută — marcă reînnoită" if m.app_number.startswith("R") and not m.name else "",
     }
 
 
@@ -218,8 +220,11 @@ def public_status(db: Session = Depends(get_db)):
     """Progresul încărcării buletinelor (fără detalii sensibile)."""
     by = dict(db.query(SourceFile.status, func.count(SourceFile.url)).group_by(SourceFile.status).all())
     last = db.query(func.max(SourceFile.bulletin_date)).filter(SourceFile.status == "ok").scalar()
+    stubs = db.query(func.count(Mark.app_number)).filter(Mark.app_number.like("R%")).scalar() or 0
+    named = db.query(func.count(Mark.app_number)).filter(Mark.app_number.like("R%"), Mark.name != "").scalar() or 0
     return {"running": ingest.job["running"], "current": ingest.job["current"], "done": ingest.job["done"],
             "total": ingest.job["total"], "sources": by, "last_bulletin": last,
+            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job,
             "marks": db.query(func.count(Mark.app_number)).scalar() or 0}
 
 
