@@ -229,7 +229,7 @@ def public_status(db: Session = Depends(get_db)):
 def mail_status():
     import mailer
     return {"configured": mailer.available(), **mailer.settings(),
-            "raw_host_set": "SMTP_HOST" in os.environ, "last": mailer.last}
+            "raw_host": repr(os.environ.get("SMTP_HOST")), "last": mailer.last}
 
 
 @app.get("/api/quality")
