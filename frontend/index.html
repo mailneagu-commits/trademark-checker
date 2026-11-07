@@ -3088,7 +3088,7 @@ async function setBulletinPrefetch(enabled) {
 }
 
 async function deleteAllSavedBulletins(n) {
-  if (!confirm(`Ștergi toate cele ${n} buletine salvate (mărcile și imaginile lor)? Descărcarea automată se oprește. Nu se poate anula.`)) return;
+  if (!confirm(`Ștergi toate cele ${n} buletine salvate (mărcile și imaginile lor)? Zilele din Monitorizare zilnică (results / conflicts) se păstrează. Descărcarea automată se oprește. Nu se poate anula.`)) return;
   const msg = document.getElementById("savedBulletinsMsg");
   if (msg) msg.textContent = "⏳ se șterge…";
   try {

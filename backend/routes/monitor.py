@@ -758,9 +758,22 @@ def delete_all_saved_bulletins(db: Session = Depends(get_db)):
     ulterioară să le ia de la zero. Oprește și descărcarea automată, altfel s-ar umple iar."""
     import shutil
     from scrapers import osim_bulletin, euipo_bulletin
+    from monitor_models import MonitorRun
     _set_bulletin_prefetch(False)
-    marks  = db.query(BulletinMark).delete(synchronize_session=False)
-    images = db.query(BulletinImage).delete(synchronize_session=False)
+    # Buletinele zilelor monitorizate rămân: pe ele se sprijină tabelele Results / Conflicts
+    # din Monitorizare, care trebuie să poată fi consultate oricând ulterior.
+    kept_days = {(r.source, r.bulletin_date) for r in db.query(MonitorRun.source, MonitorRun.bulletin_date)}
+    marks = images = 0
+    days = db.query(BulletinMark.source, BulletinMark.bulletin_date).distinct().all()
+    for src, day in days:
+        if (src, day) not in kept_days:
+            marks += db.query(BulletinMark).filter_by(source=src, bulletin_date=day).delete(synchronize_session=False)
+    for src in {d[0] for d in days} | {r[0] for r in db.query(BulletinImage.source).distinct()}:
+        keep = [a for (a,) in db.query(BulletinMark.application_number).filter_by(source=src).distinct()]
+        q = db.query(BulletinImage).filter(BulletinImage.source == src)
+        if keep:
+            q = q.filter(~BulletinImage.application_number.in_(keep))
+        images += q.delete(synchronize_session=False)
     db.commit()
     # PostgreSQL nu micșorează fișierele tabelelor la DELETE — doar VACUUM FULL dă spațiul înapoi
     # (Railway taxează volumul după spațiul ocupat). Rulează în afara unei tranzacții.
