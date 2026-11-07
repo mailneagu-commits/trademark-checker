@@ -76,10 +76,8 @@ def _applicant_block(m: Dict) -> str:
     addr = (m.get("applicantAddress") or "").strip()
     names = [a.get("name", "") for a in (m.get("applicants") or []) if a.get("name")] \
         or list(m.get("applicantName") or [])
-    if addr:
-        return addr if not names or addr.lower().startswith(names[0].lower()[:10]) \
-            else names[0] + ", " + addr
-    return "; ".join(names)
+    # Adresa din buletin (OSIM 732 / EUIPO 731 din PDF) începe deja cu numele titularului.
+    return addr or "; ".join(names)
 
 
 def _representative_block(m: Dict) -> str:
