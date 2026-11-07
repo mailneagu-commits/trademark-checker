@@ -62,16 +62,24 @@ const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const dmy = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || ""); };
 const cls = a => (a && a.length) ? `[${a.join(", ")}]` : "";
 // Titular / reprezentant: numele îngroșat pe primul rând, adresa dedesubt (textul începe de obicei cu numele).
-const norm = t => String(t || "").toLowerCase().replace(/\s+/g, " ").trim();
+const toks = t => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+// Formele juridice care urmează după virgulă fac parte din nume („J. PEREIRA DA CRUZ, S.A.”).
+const LEGAL = /^(s\.?\s?a\.?|s\.?\s?r\.?\s?l\.?|s\.?\s?l\.?|s\.?\s?p\.?\s?a\.?|ltd\.?|limited|gmbh|ag|bv|b\.v\.|lda\.?|llc|inc\.?|oy|ab|as|a\/s|kft\.?|sas|sarl|eood|ood|s\.?\s?c\.?\s?a\.?)$/i;
 function party(text, names) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
   if (!t) return "";
-  const n = (names || []).filter(Boolean).sort((a, b) => b.length - a.length)
-    .find(n => norm(t).startsWith(norm(n)));
-  if (!n) return (names || []).some(x => norm(x) === norm(t)) ? `<span class="who">${esc(t)}</span>` : esc(t);
-  const rest = t.slice(n.replace(/\s+/g, " ").trim().length).replace(/^[\s,;]+/, "");
-  return `<span class="who">${esc(t.slice(0, t.length - rest.length).replace(/[\s,;]+$/, ""))}</span>` +
-         (rest ? `<span class="addr">${esc(rest)}</span>` : "");
+  const segs = t.split(/,\s*/);
+  // Câte segmente (separate prin virgulă) de la început formează numele — și în altă ordine („Pengam, Franck”).
+  let k = 0;
+  const want = (names || []).filter(Boolean).map(toks);
+  for (let i = 1; i <= Math.min(4, segs.length) && !k; i++)
+    if (want.includes(toks(segs.slice(0, i).join(" ")))) k = i;
+  if (!k && !want.length && segs.length > 1) k = 1;   // fără nume cunoscut: primul segment
+  if (!k) return want.includes(toks(t)) ? `<span class="who">${esc(t)}</span>` : esc(t);
+  while (k < segs.length - 1 && LEGAL.test(segs[k].trim())) k++;
+  const who = segs.slice(0, k).join(", "), rest = segs.slice(k).join(", ");
+  return `<span class="who">${esc(who)}</span>` + (rest ? `<span class="addr">${esc(rest)}</span>` : "");
 }
 const img = u => u ? `<img src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">` : "";
 const idLink = r => `<a class="id" href="${esc(r.link)}" target="_blank">${esc(r.application_number)}</a>`;
