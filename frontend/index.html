@@ -711,7 +711,7 @@
         <label for="dailyDate">Data buletinului:</label>
         <input type="date" id="dailyDate" style="padding:6px 8px;border:1.5px solid #d0d9ee;border-radius:7px;font-size:.84rem;">
         <select id="dailySource" style="padding:6px 8px;border:1.5px solid #d0d9ee;border-radius:7px;font-size:.84rem;">
-          <option value="both">OSIM + EUIPO</option><option value="osim">Doar OSIM</option><option value="euipo">Doar EUIPO</option>
+          <option value="both">OSIM + EUIPO</option><option value="all">OSIM + EUIPO + WIPO</option><option value="osim">Doar OSIM</option><option value="euipo">Doar EUIPO</option><option value="wipo">Doar WIPO (gazeta de joi)</option>
         </select>
         <button class="btn-primary" id="dailyRunBtn" style="padding:8px 16px;font-size:.84rem;" onclick="startDailyRun()">▶ Pornește monitorizarea</button>
       </div>
@@ -724,6 +724,7 @@
     <div class="daily-grid">
       <div id="dailyOsim"><div class="dm" style="text-align:center;color:#999;padding:20px;">⏳ Se încarcă rezultatele salvate…</div></div>
       <div id="dailyEuipo"><div class="dm" style="text-align:center;color:#999;padding:20px;">⏳ Se încarcă rezultatele salvate…</div></div>
+      <div id="dailyWipo"><div class="dm" style="text-align:center;color:#999;padding:20px;">⏳ Se încarcă rezultatele salvate…</div></div>
     </div>
     <div id="dailyView" style="display:none;margin-top:18px;border-top:1px solid #e3e8f2;padding-top:14px;position:relative;left:50%;transform:translateX(-50%);width:min(1560px, calc(100vw - 40px));">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
@@ -3838,7 +3839,7 @@ async function loadDailyRuns() {
   try {
     const r = await fetch("/api/monitor/daily/runs");
     _dailyRuns = await r.json();
-    renderDaily("osim"); renderDaily("euipo");
+    renderDaily("osim"); renderDaily("euipo"); renderDaily("wipo");
     restoreDailyTable();
   } catch (e) {
     document.getElementById("dailyOsim").innerHTML = '<div class="import-err" style="font-size:.84rem;">Eroare la încărcarea rulărilor.</div>';
@@ -3852,20 +3853,20 @@ function openDailyTable(type, source, d, scroll = true) {
   const url = `/monitor-table.html?type=${type}&source=${source}&date=${d}&embed=1`;
   const view = document.getElementById("dailyView");
   document.getElementById("dailyViewTitle").textContent =
-    `${type === "conflicts" ? "Conflicts" : "Results"} — ${source === "osim" ? "OSIM (BOPI)" : "EUIPO"} · ${_dmy(d)}`;
+    `${type === "conflicts" ? "Conflicts" : "Results"} — ${{ osim: "OSIM (BOPI)", euipo: "EUIPO", wipo: "WIPO (Madrid)" }[source]} · ${_dmy(d)}`;
   document.getElementById("dailyViewTab").href = url.replace("&embed=1", "");
   const fr = document.getElementById("dailyFrame");
   if (fr.getAttribute("src") !== url) fr.src = url;
   view.style.display = "";
   try { localStorage.setItem("dailyView", JSON.stringify({ type, source, d })); } catch (e) {}
-  if (_dailyRuns) { renderDaily("osim"); renderDaily("euipo"); }
+  if (_dailyRuns) { renderDaily("osim"); renderDaily("euipo"); renderDaily("wipo"); }
   if (scroll) view.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function closeDailyTable() {
   document.getElementById("dailyView").style.display = "none";
   document.getElementById("dailyFrame").removeAttribute("src");
   try { localStorage.removeItem("dailyView"); } catch (e) {}
-  if (_dailyRuns) { renderDaily("osim"); renderDaily("euipo"); }
+  if (_dailyRuns) { renderDaily("osim"); renderDaily("euipo"); renderDaily("wipo"); }
 }
 function restoreDailyTable() {
   try {
@@ -3879,9 +3880,9 @@ window.addEventListener("message", e => {
 });
 
 function renderDaily(source) {
-  const el = document.getElementById(source === "osim" ? "dailyOsim" : "dailyEuipo");
+  const el = document.getElementById({ osim: "dailyOsim", euipo: "dailyEuipo", wipo: "dailyWipo" }[source]);
   const data = (_dailyRuns || {})[source] || { runs: [], years: [] };
-  const title = source === "osim" ? "Monitor OSIM" : "Monitor EUIPO";
+  const title = { osim: "Monitor OSIM", euipo: "Monitor EUIPO", wipo: "Monitor WIPO (RO + UE desemnate)" }[source];
   const cur = (() => { try { return JSON.parse(localStorage.getItem("dailyView") || "null"); } catch (e) { return null; } })();
   const link = (type, d, label, extra = "") => {
     const open = cur && cur.type === type && cur.source === source && cur.d === d
@@ -3949,7 +3950,7 @@ async function pollDailyStatus(quiet) {
     st.innerHTML = `<div class="import-ok">✓ Monitorizare terminată pentru ${_dmy(d.date)} — ${srcLine}</div>`;
     const r = await fetch("/api/monitor/daily/runs");
     _dailyRuns = await r.json();
-    renderDaily("osim"); renderDaily("euipo");
+    renderDaily("osim"); renderDaily("euipo"); renderDaily("wipo");
   }
 }
 

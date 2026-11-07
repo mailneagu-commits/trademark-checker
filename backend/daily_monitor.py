@@ -23,7 +23,8 @@ from db import SessionLocal
 from monitor_models import MonitorConflict, MonitorRun, WatchItem
 
 DEFAULT_MONITOR_LIKE = 0.6
-SOURCES = ("osim", "euipo")
+SOURCES = ("osim", "euipo")          # zilnic
+ALL_SOURCES = ("osim", "euipo", "wipo")  # + gazeta WIPO (săptămânal, joia)
 
 # Starea rulării curente (una singură odată) — pentru bara de progres din pagină.
 _job: Dict = {"running": False}
@@ -122,6 +123,9 @@ def _save_conflicts(source: str, day: str, rows: List[Dict]) -> None:
 
 
 def _fetch(source: str, td: date_type):
+    if source == "wipo":
+        from scrapers.wipo_gazette import fetch_wipo_for_date
+        return fetch_wipo_for_date(td)
     if source == "osim":
         from scrapers.osim_bulletin import fetch_osim_for_date
         return fetch_osim_for_date(td)
@@ -271,7 +275,11 @@ async def run_daily_monitor(date_str: str, sources=SOURCES, trigger: str = "manu
                     state.update({"phase": "fără buletin", "message": msg})
                     summary[source] = {"day": day, "status": "no_bulletin", "message": msg}
                     continue
-                await loop.run_in_executor(None, _persist_bulletin, source, date_str)
+                if source == "wipo":
+                    from scrapers import bulletin_store
+                    await loop.run_in_executor(None, bulletin_store.save_bulletin_marks, "wipo", day, marks)
+                else:
+                    await loop.run_in_executor(None, _persist_bulletin, source, date_str)
                 marks = await loop.run_in_executor(None, _load_bulletin_marks, source, date_str)
                 state.update({"phase": f"comparare {len(marks)} mărci × {len(items)} din portofoliu"})
                 rows = await loop.run_in_executor(None, compute_conflicts, marks, items)

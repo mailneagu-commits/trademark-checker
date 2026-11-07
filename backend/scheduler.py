@@ -108,6 +108,8 @@ async def _daily_bulletin_monitor():
     if today.weekday() >= 5:
         return
     due = tuple(s for s in daily_monitor.SOURCES if daily_monitor.needs_auto_run(s, today.isoformat()))
+    if today.weekday() == 3 and daily_monitor.needs_auto_run("wipo", today.isoformat()):
+        due += ("wipo",)          # gazeta WIPO apare joia
     if not due:
         return
     print(f"[SCHEDULER] Monitorizare zilnică {today}: {due}")

@@ -57,10 +57,10 @@
 <script>
 const P = new URLSearchParams(location.search);
 const TYPE = P.get("type") === "conflicts" ? "conflicts" : "results";
-const SOURCE = P.get("source") === "euipo" ? "euipo" : "osim";
+const SOURCE = ["euipo", "wipo"].includes(P.get("source")) ? P.get("source") : "osim";
 const DATE = P.get("date") || "";
 const EMBED = P.get("embed") === "1" && window.parent !== window;
-const SRC_LABEL = SOURCE === "osim" ? "OSIM (BOPI)" : "EUIPO";
+const SRC_LABEL = { osim: "OSIM (BOPI)", euipo: "EUIPO", wipo: "WIPO (Madrid) — RO / UE desemnate" }[SOURCE];
 
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const dmy = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || ""); };

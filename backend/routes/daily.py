@@ -17,8 +17,8 @@ router = APIRouter(prefix="/api/monitor/daily", tags=["daily-monitor"])
 
 
 def _check_source(source: str) -> str:
-    if source not in ("osim", "euipo"):
-        raise HTTPException(400, "Sursa trebuie să fie osim sau euipo.")
+    if source not in ("osim", "euipo", "wipo"):
+        raise HTTPException(400, "Sursa trebuie să fie osim, euipo sau wipo.")
     return source
 
 
@@ -31,7 +31,8 @@ async def start_daily_run(date: Optional[str] = None, source: str = "both"):
         raise HTTPException(400, f"Dată invalidă: {date}. Formatul este YYYY-MM-DD.")
     if td > date_type.today():
         raise HTTPException(400, "Data nu poate fi în viitor.")
-    sources = daily_monitor.SOURCES if source == "both" else (_check_source(source),)
+    sources = (daily_monitor.SOURCES if source == "both" else daily_monitor.ALL_SOURCES if source == "all"
+               else (_check_source(source),))
     if daily_monitor.job_status().get("running"):
         return {"status": "already_running", "job": daily_monitor.job_status()}
     asyncio.ensure_future(daily_monitor.run_daily_monitor(td.isoformat(), sources, trigger="manual"))
@@ -49,7 +50,7 @@ def daily_status():
 def list_runs(db: Session = Depends(get_db)):
     """Rulările pe sursă, cele mai noi primele, plus totalurile pe ani."""
     out: Dict = {}
-    for source in ("osim", "euipo"):
+    for source in ("osim", "euipo", "wipo"):
         runs = (db.query(MonitorRun).filter_by(source=source)
                 .order_by(MonitorRun.bulletin_date.desc()).all())
         years: Dict = defaultdict(lambda: {"results": 0, "conflicts": 0, "days": 0})

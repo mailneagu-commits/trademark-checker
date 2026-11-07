@@ -551,7 +551,11 @@ from scrapers import bulletin_store
 
 
 def _bulletin_day(source: str, td) -> str:
-    """Data (YYYY-MM-DD) sub care e salvat buletinul: ultima zi lucrătoare până la `td`."""
+    """Data (YYYY-MM-DD) sub care e salvat buletinul: ultima zi lucrătoare până la `td`
+    (pentru gazeta WIPO, săptămânală: ultima joi)."""
+    if source == "wipo":
+        from scrapers.wipo_gazette import gazette_day
+        return gazette_day(td).isoformat()
     if source == "osim":
         from scrapers.osim_bulletin import _prev_working_day
     else:
@@ -595,6 +599,10 @@ def _load_bulletin_marks(source: str, date: str, prefer_db: bool = True) -> List
         td = date_type.fromisoformat(date)
     except ValueError:
         raise HTTPException(400, f"Dată invalidă: {date}")
+
+    if source == "wipo":
+        # Gazeta WIPO e salvată doar în DB (la rularea monitorizării), cu detaliile din TMview.
+        return bulletin_store.load_bulletin_marks("wipo", _bulletin_day("wipo", td))
 
     if prefer_db and source in ("osim", "euipo"):
         try:
@@ -659,7 +667,7 @@ async def get_bulletin_mark(source: str, date: str, app_num: str):
     mark = _find()
     if not mark:
         raise HTTPException(404, f"Marca {app_num} nu există în acest buletin.")
-    if not mark.get("_detail_enriched"):
+    if not mark.get("_detail_enriched") and source != "wipo":
         try:
             await asyncio.wait_for(enrich_bulletin_marks(source, [mark]), timeout=25)
         except Exception:
@@ -686,7 +694,12 @@ def _mark_links(source: str, date: str, mark: Dict) -> Dict:
     app = str(mark.get("applicationNumber") or "").replace(" ", "")
     st13 = tmview_st13(source, mark)
     links = {"tmview": f"https://www.tmdn.org/tmview/#/tmview/detail/{st13}" if st13 else ""}
-    if source == "euipo":
+    if source == "wipo":
+        from scrapers.wipo_gazette import MONITOR_URL, st13 as wipo_st13
+        links["tmview"] = f"https://www.tmdn.org/tmview/#/tmview/detail/{wipo_st13(app)}"
+        links["official"] = MONITOR_URL.format(irn=app)
+        links["official_label"] = "WIPO Madrid Monitor"
+    elif source == "euipo":
         links["official"] = f"https://euipo.europa.eu/eSearch/#details/trademarks/{app}"
         links["official_label"] = "EUIPO"
     else:
