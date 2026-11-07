@@ -367,6 +367,43 @@ async def tm_regsearch(numbers: str, office: str = "RO", mode: str = "basic"):
     return out
 
 
+@app.get("/api/tm-image")
+def tm_image(st13: str, size: str = "image"):
+    """Logo-ul unei mărci din TMview (pentru ProWatch). TMview e protejat de Imperva — cererea merge
+    cu amprenta TLS de Chrome (curl_cffi), ca la export; imaginile sunt păstrate în export_cache."""
+    import re as _re
+    from fastapi.responses import Response
+    import export_cache
+    if not _re.fullmatch(r"[A-Z]{2}[0-9A-Z]{8,20}", st13 or ""):
+        raise HTTPException(400, "ST13 invalid")
+    kind = "thumbnail" if size == "thumbnail" else "image"
+    url = f"https://www.tmdn.org/tmview/api/trademark/{kind}/{st13}"
+    cached = export_cache.get_image(url)
+    if cached:
+        return Response(content=cached[0], media_type=cached[1] or "image/jpeg")
+    try:
+        from curl_cffi import requests as _cffi
+        from agents.search_agent import _PROXIES
+        r = None
+        for proxies in (None, _PROXIES):
+            try:
+                r = _cffi.get(url, timeout=20, impersonate="chrome120", proxies=proxies,
+                              verify=not bool(proxies), headers={"Accept": "image/*,*/*", "Referer": "https://www.tmdn.org/tmview/"})
+                if r.status_code == 200 and "image" in r.headers.get("content-type", ""):
+                    break
+            except Exception:
+                r = None
+            if not proxies:
+                continue
+    except ImportError:
+        raise HTTPException(503, "curl_cffi indisponibil")
+    if r is None or r.status_code != 200 or "image" not in r.headers.get("content-type", "") or len(r.content) < 200:
+        raise HTTPException(404, "Imagine indisponibilă")
+    ct = r.headers.get("content-type", "image/jpeg")
+    export_cache.save_image(url, r.content, ct)
+    return Response(content=r.content, media_type=ct)
+
+
 @app.get("/api/debug-tm-detail")
 async def debug_tm_detail(st13: str):
     """Returnează raw JSON de la TMview pentru un ST13 dat — pentru diagnosticare designatedCountries."""
