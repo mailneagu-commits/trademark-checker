@@ -47,6 +47,11 @@ def _watch_snapshot(item: WatchItem) -> Dict:
     }
 
 
+def _norm_app(num) -> str:
+    """Nr. de depozit comparabil: „M 2026 10421” = „M202610421”, „019406318” = „19406318”."""
+    return re.sub(r"[^A-Z0-9]", "", str(num or "").upper()).lstrip("0")
+
+
 def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
     """Perechile (marcă din buletin, marcă din portofoliu) care respectă regula de conflict.
     CPU-bound (rapidfuzz + fonetic) — se apelează într-un executor."""
@@ -62,12 +67,16 @@ def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
         threshold = item.monitor_like if item.monitor_like is not None else DEFAULT_MONITOR_LIKE
         watch_classes = {str(c) for c in (item.nice_classes or [])}
         watch_norm = _norm_identity(name)
+        own_app = _norm_app(item.application_number)
         analysis = _similarity.analyze(name, marks, item.nice_classes or [], user_offices=item.offices)
         seen = set()
         for key in ("conflicts", "similar", "expired_conflicts", "expired_similar"):
             for entry in analysis.get(key, []):
                 app = str(entry.get("applicationNumber") or "")
                 if not app or app in seen:
+                    continue
+                # Marca din buletin e chiar marca din portofoliu (același nr. de depozit) — nu e conflict.
+                if own_app and _norm_app(app) == own_app:
                     continue
                 orig = by_app.get(app) or entry
                 identical = bool(watch_norm) and _norm_identity(orig.get("tmName") or "") == watch_norm
