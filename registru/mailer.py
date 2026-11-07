@@ -16,15 +16,27 @@ LEAD_EMAIL = os.environ.get("LEAD_EMAIL", "mailneagu@gmail.com")
 last: dict = {"ok_at": None, "error": None, "error_at": None}
 
 
+def _env(name: str, default: str = "") -> str:
+    # Valorile lipite în Railway pot avea spații / rânduri noi la capete.
+    return (os.environ.get(name) or "").strip() or default
+
+
+def settings() -> dict:
+    user = _env("SMTP_USER")
+    domain = user.split("@")[-1] if "@" in user else ""
+    return {"host": _env("SMTP_HOST", f"mail.{domain}" if domain else "smtp.gmail.com"),
+            "port": int(_env("SMTP_PORT", "587") or 587), "user": user}
+
+
 def available() -> bool:
-    return bool(os.environ.get("SMTP_USER") and os.environ.get("SMTP_PASSWORD"))
+    return bool(_env("SMTP_USER") and os.environ.get("SMTP_PASSWORD"))
 
 
 def _send(subject: str, html: str, reply_to: str = "") -> None:
-    host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    user, password = os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"]
-    sender = os.environ.get("SMTP_FROM", user)
+    cfg = settings()
+    host, port, user = cfg["host"], cfg["port"], cfg["user"]
+    password = os.environ["SMTP_PASSWORD"].strip("\r\n")
+    sender = _env("SMTP_FROM", user)
     msg = MIMEText(html, "html", "utf-8")
     msg["Subject"] = subject
     msg["From"] = formataddr(("ProWatch", sender))

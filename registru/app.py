@@ -228,9 +228,8 @@ def public_status(db: Session = Depends(get_db)):
 @app.get("/api/mail-status")
 def mail_status():
     import mailer
-    return {"configured": mailer.available(), "host": os.environ.get("SMTP_HOST", "smtp.gmail.com"),
-            "port": os.environ.get("SMTP_PORT", "587"), "user": os.environ.get("SMTP_USER", ""),
-            "last": mailer.last}
+    return {"configured": mailer.available(), **mailer.settings(),
+            "raw_host_set": "SMTP_HOST" in os.environ, "last": mailer.last}
 
 
 @app.get("/api/quality")
