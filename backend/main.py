@@ -328,7 +328,7 @@ async def debug_tmview():
 
 
 @app.get("/api/tm-regsearch")
-async def tm_regsearch(numbers: str, office: str = "RO"):
+async def tm_regsearch(numbers: str, office: str = "RO", mode: str = "basic"):
     """Caută în TMview mărci după nr. de înregistrare (pentru ProWatch: denumirile mărcilor OSIM
     reînnoite, înregistrate înainte de 2001, care lipsesc din listele de reînnoiri BOPI)."""
     from agents.search_agent import AsyncSession, TMVIEW_URL, TMVIEW_HOME, _PROXIES, _build_headers, HAS_CURL_CFFI
@@ -345,9 +345,17 @@ async def tm_regsearch(numbers: str, office: str = "RO"):
                        "fields": ["ST13", "tmName", "tmOffice", "applicationNumber", "registrationNumber",
                                   "applicantName", "niceClass", "tradeMarkStatus", "expiryDate", "applicationDate",
                                   "markImageURI"]}
+            if mode != "basic":
+                # Căutare avansată: câmpul „număr de înregistrare” (variante de denumire a câmpului).
+                payload.pop("basicSearch", None)
+                payload.pop("criteria", None)
+                payload[mode] = n
             try:
                 r = await session.post(TMVIEW_URL, json=payload, headers=_build_headers(), timeout=30)
-                d = r.json() if r.status_code == 200 else {}
+                d = r.json() if r.status_code == 200 else {"_body": r.text[:200]}
+                if r.status_code != 200:
+                    out[n] = {"status": r.status_code, "body": d.get("_body")}
+                    continue
                 hits = [t for t in d.get("tradeMarks", [])
                         if str(t.get("registrationNumber") or "").lstrip("0") == n.lstrip("0")]
                 out[n] = {"status": r.status_code, "total": d.get("total"), "hits": hits[:3],
