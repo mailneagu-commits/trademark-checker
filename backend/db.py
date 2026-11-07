@@ -74,9 +74,11 @@ def _ensure_columns(eng=None):
         return
     have = {c["name"] for c in insp.get_columns("watch_items")}
     blob = "BYTEA" if eng.dialect.name == "postgresql" else "BLOB"
+    real = "DOUBLE PRECISION" if eng.dialect.name == "postgresql" else "REAL"
     for name, typ in (("publication_date", "VARCHAR"), ("representative_name", "VARCHAR"),
                       ("origin_office", "VARCHAR"), ("portfolio", "VARCHAR"), ("status", "VARCHAR"),
-                      ("mark_type", "VARCHAR"), ("expiry_date", "VARCHAR"), ("reference_image_data", blob)):
+                      ("mark_type", "VARCHAR"), ("expiry_date", "VARCHAR"), ("reference_image_data", blob),
+                      ("monitor_like", real)):
         if name not in have:
             with eng.begin() as conn:
                 conn.execute(text(f"ALTER TABLE watch_items ADD COLUMN {name} {typ}"))
@@ -88,7 +90,7 @@ def _ensure_columns_for(eng):
 
 
 def init_db():
-    from monitor_models import WatchItem, SeenTrademark, AlertLog, BulletinMark, BulletinImage, SavedCheck, AppState, CheckJob, DetailCache, TranslationCache, ImageCache  # noqa: F401
+    from monitor_models import WatchItem, SeenTrademark, AlertLog, BulletinMark, BulletinImage, SavedCheck, AppState, CheckJob, DetailCache, TranslationCache, ImageCache, MonitorRun, MonitorConflict  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _ensure_columns()
     print(f"[DB] Using: {'PostgreSQL' if _pg_url else 'SQLite'}")

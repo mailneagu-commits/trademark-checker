@@ -100,6 +100,20 @@ async def _check_tmview_health():
     print(f"[TMVIEW-HEALTH] Rezultat rotire: {res}")
 
 
+async def _daily_bulletin_monitor():
+    import daily_monitor
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+    today = _dt.now(ZoneInfo("Europe/Bucharest")).date()
+    if today.weekday() >= 5:
+        return
+    due = tuple(s for s in daily_monitor.SOURCES if daily_monitor.needs_auto_run(s, today.isoformat()))
+    if not due:
+        return
+    print(f"[SCHEDULER] Monitorizare zilnică {today}: {due}")
+    await daily_monitor.run_daily_monitor(today.isoformat(), due, trigger="auto")
+
+
 async def _prefetch_bulletins():
     """Pre-descarcă și pre-parsează buletinele OSIM/EUIPO de îndată ce apar (nu o
     singură dată/zi — rulează periodic, pentru că ora exactă de publicare variază),
@@ -207,28 +221,14 @@ def start_scheduler():
     if sched.running:
         return
 
-    # Daily at 07:00 UTC
+    # Monitorizarea zilnică pe buletine (OSIM + EUIPO): în zilele lucrătoare, după 15:00 ora
+    # României (după ce apar buletinele), reluată din oră în oră până seara cât timp buletinul
+    # zilei nu e găsit. Înlocuiește vechile rulări daily/weekly/monthly, care făceau câte o
+    # căutare TMview completă pentru fiecare marcă din portofoliu (sute de căutări → blocaje).
     sched.add_job(
-        _run_all_due,
-        CronTrigger(hour=7, minute=0),
-        args=["daily"],
-        id="daily_monitor",
-        replace_existing=True,
-    )
-    # Weekly on Monday at 07:30 UTC
-    sched.add_job(
-        _run_all_due,
-        CronTrigger(day_of_week="mon", hour=7, minute=30),
-        args=["weekly"],
-        id="weekly_monitor",
-        replace_existing=True,
-    )
-    # Monthly on the 1st at 08:00 UTC
-    sched.add_job(
-        _run_all_due,
-        CronTrigger(day=1, hour=8, minute=0),
-        args=["monthly"],
-        id="monthly_monitor",
+        _daily_bulletin_monitor,
+        CronTrigger(day_of_week="mon-fri", hour="15-20", minute=10, timezone="Europe/Bucharest"),
+        id="daily_bulletin_monitor",
         replace_existing=True,
     )
     # Pre-descărcare buletine: la fiecare oră, 06:00-19:00 UTC, zile lucrătoare —

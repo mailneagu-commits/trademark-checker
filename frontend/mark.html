@@ -18,6 +18,11 @@
   .card { background:#fff; border-radius:12px; padding:18px 22px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
   .state { text-align:center; color:#888; padding:60px 20px; }
   .err { color:#c0392b; }
+  .links { display:flex; gap:22px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:.95rem; }
+  .links a { color:#00c; }
+  table.inid { border-collapse:collapse; width:100%; font-size:.86rem; }
+  table.inid th { text-align:left; vertical-align:top; padding:6px 14px 6px 0; color:#0f3460; white-space:nowrap; width:70px; }
+  table.inid td { padding:6px 0; border-bottom:1px solid #f0f2f5; line-height:1.5; }
   /* aceleași stiluri ca în cardul din aplicație */
   .detail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-bottom:14px; }
   .detail-item label { font-size:.69rem; font-weight:700; color:#999; text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px; }
@@ -54,7 +59,26 @@
     const img = m.markImageURI
       ? `<img src="${_bEsc(m.markImageURI)}" alt="">`
       : `<div class="noimg">™</div>`;
+    const L = m._links || {};
+    const lk = (u, label) => u ? `<span>${_bEsc(label)} <a href="${_bEsc(u)}" target="_blank" rel="noopener">${_bEsc(m.applicationNumber)}</a></span>` : "";
+    const d = v => { const x = /^(\d{4})-(\d{2})-(\d{2})/.exec(v || ""); return x ? `${x[3]}/${x[2]}/${x[1]}` : (v || ""); };
+    const reps = (m.representativeAddress || "") ||
+      [...new Set((m.representatives || []).map(r => r.fullName || r.name || "").concat(m.representative ? [m.representative] : []).filter(Boolean))].join("; ");
+    const langs = [m.firstLanguage, m.secondLanguage].filter(Boolean).join(" ");
+    const goods = {};
+    (m.goodAndServices || []).forEach(g => { if (g.goodsAndServices) goods[g.niceClassInt || g.niceClass] = g.goodsAndServices; });
+    const inid = [
+      ["210", m.applicationNumber], ["220", d(m.applicationDate)], ["270", langs], ["442", d(m.publicationDate || date)],
+      ["521", m.acquiredDistinctiveness == null ? "" : (m.acquiredDistinctiveness ? "1" : "0")],
+      ["541", m.tmName], ["731", m.applicantAddress || (m.applicantName || []).join("; ")], ["740", reps],
+      ["list_511", bulletinClassNumbers(m)],
+    ].filter(([, v]) => v !== "" && v != null);
+    const inidHtml = `<table class="inid">${inid.map(([k, v]) => `<tr><th>${k}</th><td>${_bEsc(v).replace(/,\s+(?=\S)/g, k === "731" || k === "740" ? ",<br>" : ", ")}</td></tr>`).join("")}
+      ${Object.keys(goods).length ? Object.entries(goods).map(([c, t]) => `<tr><th>${_bEsc(c)}</th><td>${_bEsc(t)}</td></tr>`).join("") : ""}</table>`;
     root.innerHTML = `
+      <div class="links"><a href="#" onclick="if(history.length>1){history.back()}else{window.close()}return false;">Back</a>
+        ${lk(L.official, L.official_label || "Oficiu")}${lk(L.tmview, "TMView")}</div>
+      <div class="card" style="margin-bottom:16px;">${inidHtml}</div>
       <div class="head">
         ${img}
         <div>

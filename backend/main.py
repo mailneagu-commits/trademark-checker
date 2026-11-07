@@ -20,6 +20,7 @@ from monitor_models import CheckJob
 from scheduler import start_scheduler, stop_scheduler
 from routes.monitor import router as monitor_router
 from routes.checks import router as checks_router, save_check
+from routes.daily import router as daily_router
 
 
 def _ensure_data_dirs():
@@ -46,6 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(daily_router)
 app.include_router(monitor_router)
 app.include_router(checks_router)
 

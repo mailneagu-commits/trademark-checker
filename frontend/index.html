@@ -396,6 +396,17 @@
       .bulletin-grid { grid-template-columns: 1fr !important; }
       #bulletinComparePanel { margin-left:0 !important; margin-right:0 !important; }
     }
+  /* monitorizare zilnică */
+  .daily-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:22px; }
+  .dtitle { text-align:center; font-size:1rem; color:#0f3460; margin:4px 0 10px; }
+  .dtable { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:.84rem; }
+  .dtable th { border-bottom:2px solid #1a1a2e; padding:7px 6px; text-align:center; }
+  .dtable td { border-bottom:1px solid #e8e8e8; padding:7px 6px; text-align:center; }
+  .dtable tbody tr:nth-child(odd) td { background:#f7f9fc; }
+  .dtable a { color:#00c; }
+  .dtable .dm { color:#999; font-size:.78rem; }
+  .dtable .dc { color:#c0392b; }
+  .dpager { display:flex; justify-content:flex-end; align-items:center; gap:8px; font-size:.8rem; color:#666; }
   </style>
 </head>
 <body>
@@ -683,6 +694,30 @@
 
 <!-- ═══════════════════════════ MONITORIZARE PAGE ═══════════════════════════ -->
 <div class="container" id="page-monitorizare" style="display:none;">
+
+  <!-- Monitorizare zilnică pe buletine -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
+      <h2 style="margin:0;">📅 Monitorizare zilnică buletine</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.84rem;">
+        <label for="dailyDate">Data buletinului:</label>
+        <input type="date" id="dailyDate" style="padding:6px 8px;border:1.5px solid #d0d9ee;border-radius:7px;font-size:.84rem;">
+        <select id="dailySource" style="padding:6px 8px;border:1.5px solid #d0d9ee;border-radius:7px;font-size:.84rem;">
+          <option value="both">OSIM + EUIPO</option><option value="osim">Doar OSIM</option><option value="euipo">Doar EUIPO</option>
+        </select>
+        <button class="btn-primary" id="dailyRunBtn" style="padding:8px 16px;font-size:.84rem;" onclick="startDailyRun()">▶ Pornește monitorizarea</button>
+      </div>
+    </div>
+    <div style="font-size:.76rem;color:#888;margin-bottom:12px;">
+      Rulează automat în fiecare zi lucrătoare după ora 15:00 (reîncearcă din oră în oră până la 20:00 dacă buletinul nu a apărut).
+      Conflict = scor ≥ pragul mărcii (implicit 0.6) și cel puțin o clasă comună, sau marcă identică (scor 1) indiferent de clase.
+    </div>
+    <div id="dailyStatus" style="display:none;margin-bottom:12px;font-size:.84rem;"></div>
+    <div class="daily-grid">
+      <div id="dailyOsim"></div>
+      <div id="dailyEuipo"></div>
+    </div>
+  </div>
 
   <!-- Import + Template bar -->
   <div class="card">
@@ -2395,6 +2430,9 @@ function showPage(page) {
   document.getElementById("tab-monitorizare").classList.toggle("active", page === "monitorizare");
   if (page === "monitorizare") {
     loadWatches();
+    loadDailyRuns();
+    const dd = document.getElementById("dailyDate");
+    if (!dd.value) { dd.value = new Date().toISOString().slice(0,10); dd.max = dd.value; }
     loadSettings();
     // Setează data implicită = azi
     const today = new Date().toISOString().slice(0,10);
@@ -3747,6 +3785,94 @@ function _renderFoundMarks(id) {
 
 function closeFoundMarks() {
   document.getElementById("foundMarksPanel").style.display = "none";
+}
+
+// ── Monitorizare zilnică pe buletine ─────────────────────────────────────
+
+const _dailyPage = { osim: 0, euipo: 0 };
+let _dailyRuns = null, _dailyPoll = null;
+const DAILY_PAGE_SIZE = 10;
+
+function _dmy(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ""); return m ? `${m[3]}-${m[2]}-${m[1]}` : iso; }
+
+async function loadDailyRuns() {
+  try {
+    const r = await fetch("/api/monitor/daily/runs");
+    _dailyRuns = await r.json();
+    renderDaily("osim"); renderDaily("euipo");
+  } catch (e) {
+    document.getElementById("dailyOsim").innerHTML = '<div class="import-err" style="font-size:.84rem;">Eroare la încărcarea rulărilor.</div>';
+  }
+  pollDailyStatus(true);
+}
+
+function renderDaily(source) {
+  const el = document.getElementById(source === "osim" ? "dailyOsim" : "dailyEuipo");
+  const data = (_dailyRuns || {})[source] || { runs: [], years: [] };
+  const title = source === "osim" ? "Monitor OSIM" : "Monitor EUIPO";
+  const link = (type, d, label) => `<a href="/monitor-table.html?type=${type}&source=${source}&date=${d}" target="_blank">${label}</a>`;
+  const years = data.years.length
+    ? data.years.map(y => `<tr><td>${y.year}</td><td>${y.results} <span class="dm">(${y.days} zile)</span></td><td>${y.conflicts}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="dm" style="text-align:center;">No data available in table</td></tr>`;
+  const pages = Math.max(1, Math.ceil(data.runs.length / DAILY_PAGE_SIZE));
+  const pg = Math.min(_dailyPage[source], pages - 1);
+  const runs = data.runs.slice(pg * DAILY_PAGE_SIZE, (pg + 1) * DAILY_PAGE_SIZE);
+  const rows = runs.length ? runs.map(r => {
+    if (r.status === "ok") return `<tr><td>${_dmy(r.date)}</td><td>${link("results", r.date, "results")} #${r.results}</td>
+        <td>${link("conflicts", r.date, "conflicts")}${r.conflicts ? ` <strong class="dc">${r.conflicts}</strong>` : ' <span class="dm">0</span>'}</td></tr>`;
+    const label = { running: "⏳ în curs…", no_bulletin: "fără buletin", error: "❌ eroare" }[r.status] || r.status;
+    return `<tr><td>${_dmy(r.date)}</td><td colspan="2" class="dm" title="${escHtml(r.message)}">${label}${r.message ? " — " + escHtml(r.message).slice(0, 90) : ""}</td></tr>`;
+  }).join("") : `<tr><td colspan="3" class="dm" style="text-align:center;">Nicio rulare încă — alegeți o dată și apăsați „Pornește monitorizarea”.</td></tr>`;
+  const pager = pages > 1 ? `<div class="dpager">
+      <button class="btn-sm" ${pg === 0 ? "disabled" : ""} onclick="_dailyPage.${source}=${pg - 1};renderDaily('${source}')">Previous</button>
+      <span>${pg + 1} / ${pages}</span>
+      <button class="btn-sm" ${pg >= pages - 1 ? "disabled" : ""} onclick="_dailyPage.${source}=${pg + 1};renderDaily('${source}')">Next</button></div>` : "";
+  el.innerHTML = `<h3 class="dtitle">${title}</h3>
+    <table class="dtable"><thead><tr><th>Year</th><th>Results</th><th>Conflicts</th></tr></thead><tbody>${years}</tbody></table>
+    <table class="dtable"><thead><tr><th>Date</th><th>Results</th><th>Conflicts</th></tr></thead><tbody>${rows}</tbody></table>${pager}`;
+}
+
+async function startDailyRun() {
+  const date = document.getElementById("dailyDate").value;
+  const source = document.getElementById("dailySource").value;
+  if (!date) return;
+  const st = document.getElementById("dailyStatus");
+  st.style.display = "block";
+  st.innerHTML = '<em style="color:#888;">Se pornește…</em>';
+  try {
+    const r = await fetch(`/api/monitor/daily/run?date=${date}&source=${source}`, { method: "POST" });
+    const d = await r.json();
+    if (!r.ok) { st.innerHTML = `<div class="import-err">❌ ${escHtml(d.detail || "Eroare")}</div>`; return; }
+    if (d.status === "already_running") st.innerHTML = '<div class="import-warn">O monitorizare rulează deja — aștept să se termine.</div>';
+  } catch (e) {
+    st.innerHTML = `<div class="import-err">❌ Eroare conexiune: ${escHtml(e.message)}</div>`; return;
+  }
+  pollDailyStatus();
+}
+
+async function pollDailyStatus(quiet) {
+  clearTimeout(_dailyPoll);
+  let d;
+  try { d = await (await fetch("/api/monitor/daily/status")).json(); } catch (e) { return; }
+  const st = document.getElementById("dailyStatus");
+  const btn = document.getElementById("dailyRunBtn");
+  const srcLine = d.sources ? Object.entries(d.sources).map(([s, v]) =>
+    `<strong>${s.toUpperCase()}</strong> ${_dmy(v.day)}: ${escHtml(v.phase || "")}${v.message ? " — " + escHtml(v.message) : ""}`).join(" · ") : "";
+  if (d.running) {
+    btn.disabled = true;
+    st.style.display = "block";
+    st.innerHTML = `<div class="import-warn">⏳ Monitorizare în curs pentru ${_dmy(d.date)} (${d.trigger === "auto" ? "automat" : "manual"}) — ${srcLine}</div>`;
+    _dailyPoll = setTimeout(() => pollDailyStatus(), 3000);
+    return;
+  }
+  btn.disabled = false;
+  if (!quiet && d.finished_at) {
+    st.style.display = "block";
+    st.innerHTML = `<div class="import-ok">✓ Monitorizare terminată pentru ${_dmy(d.date)} — ${srcLine}</div>`;
+    const r = await fetch("/api/monitor/daily/runs");
+    _dailyRuns = await r.json();
+    renderDaily("osim"); renderDaily("euipo");
+  }
 }
 
 // ── Excel import ──────────────────────────────────────────────────────────

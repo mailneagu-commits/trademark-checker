@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitorizare buletin</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#fff; color:#1a1a2e; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; font-size:14px; }
+  .wrap { padding:16px; }
+  .top { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .top h1 { font-size:1.15rem; margin:0; color:#0f3460; }
+  .top .sub { color:#888; font-size:.82rem; margin-top:2px; }
+  .top a { color:#0f3460; }
+  .search { display:flex; align-items:center; gap:6px; font-size:.85rem; }
+  .search input { padding:6px 10px; border:1.5px solid #d0d9ee; border-radius:6px; min-width:220px; font-size:.85rem; }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; }
+  th { position:sticky; top:0; background:#fff; border-bottom:2px solid #1a1a2e; padding:10px 8px; text-align:center; font-size:.85rem;
+       cursor:pointer; user-select:none; white-space:nowrap; }
+  th .arr { color:#bbb; font-size:.7rem; margin-left:4px; }
+  th.sorted .arr { color:#5b6ee1; }
+  td { padding:8px; border-bottom:1px solid #e3e3e3; vertical-align:middle; font-size:.84rem; }
+  tbody tr:nth-child(odd) td { background:#f7f7f7; }
+  tbody tr td:first-child { background:#efefef; }
+  td.multi { white-space:pre-line; min-width:180px; max-width:280px; }
+  td.name { min-width:130px; }
+  td.mark { background:#eef5fd !important; }
+  td.monitor { background:#e9e8f7 !important; }
+  td.num { text-align:center; white-space:nowrap; }
+  td img { max-width:110px; max-height:90px; object-fit:contain; background:#fff; display:block; margin:auto; }
+  .id { color:#00c; }
+  .state { color:#888; padding:40px; text-align:center; }
+  .err { color:#c0392b; }
+  .ident { display:inline-block; margin-left:4px; padding:1px 6px; border-radius:8px; background:#fdecea; color:#c0392b; font-size:.68rem; font-weight:700; }
+  .pf { color:#5b7bb5; font-size:.74rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1 id="title">Monitorizare</h1>
+      <div class="sub" id="sub"></div>
+    </div>
+    <div class="search"><label for="q">Search:</label><input type="search" id="q" autocomplete="off"></div>
+  </div>
+  <div class="scroll"><div id="root" class="state">⏳ Se încarcă…</div></div>
+</div>
+<script>
+const P = new URLSearchParams(location.search);
+const TYPE = P.get("type") === "conflicts" ? "conflicts" : "results";
+const SOURCE = P.get("source") === "euipo" ? "euipo" : "osim";
+const DATE = P.get("date") || "";
+const SRC_LABEL = SOURCE === "osim" ? "OSIM (BOPI)" : "EUIPO";
+
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const dmy = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || ""); };
+const cls = a => (a && a.length) ? `[${a.join(", ")}]` : "";
+// Adresele vin pe un singur rând, cu virgule — le punem pe rânduri, ca în buletin.
+const lines = t => esc(t).replace(/,\s+(?=\S)/g, ",\n");
+const img = u => u ? `<img src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">` : "";
+const idLink = r => `<a class="id" href="${esc(r.link)}" target="_blank">${esc(r.application_number)}</a>`;
+
+const COLS = {
+  results: [
+    { h: "210",      key: r => r.application_number, cell: r => `<td class="num">${idLink(r)}</td>` },
+    { h: "img",      key: r => r.image ? 0 : 1,      cell: r => `<td>${img(r.image)}</td>` },
+    { h: "220",      key: r => r.application_date,   cell: r => `<td class="num">${dmy(r.application_date)}</td>` },
+    { h: "442",      key: r => r.publication_date,   cell: r => `<td class="num">${dmy(r.publication_date)}</td>` },
+    { h: "541",      key: r => (r.name || "").toLowerCase(), cell: r => `<td class="name">${esc(r.name)}</td>` },
+    { h: "731",      key: r => (r.applicant || "").toLowerCase(), cell: r => `<td class="multi">${lines(r.applicant)}</td>` },
+    { h: "740",      key: r => (r.representative || "").toLowerCase(), cell: r => `<td class="multi">${lines(r.representative)}</td>` },
+    { h: "list_511", key: r => (r.classes || [])[0] || 0, cell: r => `<td>${cls(r.classes)}</td>` },
+  ],
+  conflicts: [
+    { h: "like",           key: r => -r.like, cell: r => `<td class="num">${r.like.toFixed(2)}${r.identical ? '<span class="ident">identică</span>' : ''}</td>` },
+    { h: "Nr. Depozit",    key: r => r.application_number, cell: r => `<td class="num">${idLink(r)}</td>` },
+    { h: "Titular",        key: r => (r.applicant || "").toLowerCase(), cell: r => `<td class="multi">${lines(r.applicant)}</td>` },
+    { h: "Reprezentant",   key: r => (r.representative || "").toLowerCase(), cell: r => `<td class="multi">${lines(r.representative) || "(-)"}</td>` },
+    { h: "Clase",          key: r => (r.classes || [])[0] || 0, cell: r => `<td>${cls(r.classes)}</td>` },
+    { h: "Img",            key: r => r.image ? 0 : 1, cell: r => `<td>${img(r.image)}</td>` },
+    { h: "Denumire marcă", key: r => (r.name || "").toLowerCase(), cell: r => `<td class="name mark">${esc(r.name)}</td>` },
+    { h: "monitor",        key: r => (r.monitor.name || "").toLowerCase(), cell: r => `<td class="name monitor">${esc(r.monitor.name)}</td>` },
+    { h: "monitor_clase",  key: r => (r.monitor.classes || [])[0] || 0, cell: r => `<td>${cls(r.monitor.classes)}</td>` },
+    { h: "monitor_name",   key: r => (r.monitor.holder || "").toLowerCase(),
+      cell: r => `<td>${esc(r.monitor.holder)}${r.monitor.portfolio ? `<br><span class="pf">${esc(r.monitor.portfolio)}${r.monitor.application_number ? " · " + esc(r.monitor.application_number) : ""}</span>` : ""}</td>` },
+    { h: "monitor_like",   key: r => r.monitor.monitor_like, cell: r => `<td class="num">${Number(r.monitor.monitor_like ?? 0.6).toFixed(1)}</td>` },
+  ],
+};
+
+let rows = [], sortIdx = 0, sortDir = 1;
+
+function render() {
+  const cols = COLS[TYPE];
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  let list = rows;
+  if (q) list = list.filter(r => JSON.stringify([r.application_number, r.name, r.applicant, r.representative,
+                                                 r.classes, r.monitor && r.monitor.name, r.monitor && r.monitor.holder,
+                                                 r.monitor && r.monitor.portfolio]).toLowerCase().includes(q));
+  const k = cols[sortIdx].key;
+  list = [...list].sort((a, b) => { const x = k(a), y = k(b); return (x > y ? 1 : x < y ? -1 : 0) * sortDir; });
+  const head = cols.map((c, i) => `<th data-i="${i}" class="${i === sortIdx ? "sorted" : ""}">${esc(c.h)}<span class="arr">${i === sortIdx ? (sortDir > 0 ? "▲" : "▼") : "⇅"}</span></th>`).join("");
+  const body = list.length
+    ? list.map(r => `<tr>${cols.map(c => c.cell(r)).join("")}</tr>`).join("")
+    : `<tr><td colspan="${cols.length}" style="text-align:center;color:#888;padding:24px;">${rows.length ? "Niciun rezultat pentru căutare." : (TYPE === "conflicts" ? "Niciun conflict în acest buletin." : "Nicio marcă în acest buletin.")}</td></tr>`;
+  const root = document.getElementById("root");
+  root.className = "";
+  root.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  root.querySelectorAll("th").forEach(th => th.onclick = () => {
+    const i = +th.dataset.i;
+    sortDir = i === sortIdx ? -sortDir : 1; sortIdx = i; render();
+  });
+  document.getElementById("sub").textContent =
+    `${q ? list.length + " din " : ""}${rows.length} ${TYPE === "conflicts" ? "conflicte" : "mărci"} · buletin ${dmy(DATE)}`;
+}
+
+(async () => {
+  document.title = `${TYPE === "conflicts" ? "Conflicts" : "Results"} ${SRC_LABEL} ${dmy(DATE)}`;
+  document.getElementById("title").innerHTML =
+    `${TYPE === "conflicts" ? "Conflicts" : "Results"} — ${SRC_LABEL} · ${esc(dmy(DATE))}` +
+    ` <a style="font-size:.8rem;font-weight:400;margin-left:10px;" href="?type=${TYPE === "conflicts" ? "results" : "conflicts"}&source=${SOURCE}&date=${encodeURIComponent(DATE)}">${TYPE === "conflicts" ? "Results" : "Conflicts"} →</a>`;
+  try {
+    const r = await fetch(`/api/monitor/daily/${TYPE}?source=${SOURCE}&date=${encodeURIComponent(DATE)}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || ("Eroare " + r.status));
+    rows = TYPE === "conflicts" ? d.conflicts : d.marks;
+    render();
+  } catch (e) {
+    const root = document.getElementById("root");
+    root.className = "state err";
+    root.textContent = "❌ " + e.message;
+  }
+  document.getElementById("q").addEventListener("input", render);
+})();
+</script>
+</body>
+</html>

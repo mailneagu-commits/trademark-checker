@@ -56,6 +56,7 @@ class WatchItemOut(BaseModel):
     status:             Optional[str] = None
     mark_type:          Optional[str] = None
     expiry_date:        Optional[str] = None
+    monitor_like:       Optional[float] = None
     active:             bool
     created_at:         datetime
     last_checked_at:    Optional[datetime]
@@ -102,6 +103,25 @@ def toggle_watch(item_id: int, db: Session = Depends(get_db)):
     if not item:
         raise HTTPException(404, "Watch item negăsit.")
     item.active = not item.active
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+class WatchLikeIn(BaseModel):
+    monitor_like: Optional[float] = None
+
+
+@router.patch("/watch/{item_id}/like", response_model=WatchItemOut)
+def set_watch_like(item_id: int, body: WatchLikeIn, db: Session = Depends(get_db)):
+    """Pragul de similaritate (0–1) al mărcii, folosit la monitorizarea zilnică. None = implicit 0.6."""
+    item = db.query(WatchItem).filter(WatchItem.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "Marca nu a fost găsită.")
+    v = body.monitor_like
+    if v is not None and not (0 < v <= 1):
+        raise HTTPException(400, "Pragul trebuie să fie între 0 și 1 (ex. 0.6).")
+    item.monitor_like = round(v, 2) if v is not None else None
     db.commit()
     db.refresh(item)
     return item
@@ -241,13 +261,14 @@ def run_all_status():
 TEMPLATE_OSIM_HEADERS = [
     "Nr Crt", "Denumire marcă", "Reprezentare marcă", "Clase Nisa", "Nr. marcă înregistrată", "ID Appli",
     "Nr. Depozit", "Dată de depozit", "Nr. registratură", "Dată înregistrare marcă", "Tip marcă",
-    "Stare marcă", "Solicitant", "Titular", "Email notificare (opțional)",
+    "Stare marcă", "Solicitant", "Titular", "Prag similaritate (opțional, implicit 0.6)", "Email notificare (opțional)",
 ]
 TEMPLATE_EUIPO_HEADERS = [
     "Nr Crt", "Name", "Graphic representation", "Nice classes", "Filing number", "Basis", "Type",
     "Application reference", "Filing date/ Designation date", "Registration date", "Expiry date", "Status",
     "Publications", "Owner name", "Owner ID", "Owner country", "Representative name", "Representative ID",
-    "Filing language", "Second language", "Kind of mark", "Acquired distinctiveness", "Email notificare (opțional)",
+    "Filing language", "Second language", "Kind of mark", "Acquired distinctiveness",
+    "Prag similaritate (opțional, implicit 0.6)", "Email notificare (opțional)",
 ]
 
 
@@ -284,14 +305,14 @@ def download_template():
     ws.title = "PORTOFOLIU OSIM"
     _sheet(ws, TEMPLATE_OSIM_HEADERS,
            ["Exemplu", "ACME", "", "5, 35", "123456", "X8288039", "M 2024 01234", "2024-03-12", "M2024/001234",
-            "2024-09-18", "Verbală", "Înregistrată", "SC ACME SRL", "SC ACME SRL", ""],
+            "2024-09-18", "Verbală", "Înregistrată", "SC ACME SRL", "SC ACME SRL", 0.6, ""],
            {"Denumire marcă": 30, "Reprezentare marcă": 22, "Clase Nisa": 16, "Nr. Depozit": 18,
             "Solicitant": 30, "Titular": 34, "Email notificare (opțional)": 28})
 
     ws = wb.create_sheet("PORTOFOLIU EUIPO")
     _sheet(ws, TEMPLATE_EUIPO_HEADERS,
            ["Exemplu", "ACME", "", "5, 35, 42", "019012345", "EUTM", "Word", "", "12/3/2024", "18/9/2024",
-            "12/3/2034", "Registered", "", "ACME SRL", "", "RO", "", "", "ro", "en", "Individual", "false", ""],
+            "12/3/2034", "Registered", "", "ACME SRL", "", "RO", "", "", "ro", "en", "Individual", "false", 0.6, ""],
            {"Name": 30, "Graphic representation": 22, "Nice classes": 16, "Filing number": 16,
             "Owner name": 30, "Representative name": 24, "Publications": 28, "Email notificare (opțional)": 28})
 
@@ -305,6 +326,7 @@ def download_template():
         "• Oficiul (OSIM / EUIPO) se deduce din foaie (Basis = EUTM, Nr. Depozit „M 2024 …”) sau din numele foii; e informativ.",
         "• Fiecare marcă, indiferent de oficiu, e verificată în buletinul OSIM, în buletinul EUIPO și în mărcile internaționale WIPO (Madrid) care desemnează RO sau UE.",
         "• Email notificare: opțional pe rând; dacă lipsește se folosește emailul completat în pagină la import.",
+        "• Prag similaritate (0–1): o marcă nouă din buletin e conflict dacă scorul ≥ prag și are cel puțin o clasă comună; mărcile identice (scor 1) sunt conflict indiferent de clase. Gol = 0.6.",
         "• Rândurile „Exemplu” sunt ignorate. Mărcile identice (denumire + clase + imagine, cu același număr de depozit) nu se importă de două ori.",
     ]
     for i, t in enumerate(notes, start=1):
@@ -351,6 +373,7 @@ _HEADER_KEYS = [
     ("mark_type",           ("tip marc", "=type")),
     ("email",               ("email",)),
     ("frequency",           ("frecven",)),
+    ("monitor_like",        ("prag", "monitor_like", "=like")),
 ]
 
 # ordinea veche a fișierului (înainte de reordonare) — pentru fișiere fără antet recunoscut
@@ -494,6 +517,19 @@ def _is_duplicate_watch(existing: dict, candidate: dict) -> bool:
     return True
 
 
+def _parse_like(raw) -> Optional[float]:
+    """Pragul de conflict: 0.6 / 0,6 / 60 / 60% → 0.6. Gol sau invalid → None (implicit 0.6)."""
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        v = float(str(raw).strip().rstrip("%").replace(",", "."))
+    except ValueError:
+        return None
+    if v > 1:
+        v /= 100.0
+    return round(v, 2) if 0 < v <= 1 else None
+
+
 def _parse_frequency(raw: str) -> str:
     val = str(raw).strip().lower()
     return val if val in ("daily", "weekly", "monthly") else "weekly"
@@ -629,7 +665,27 @@ async def get_bulletin_mark(source: str, date: str, app_num: str):
         except Exception:
             pass
         mark = _find() or mark
-    return mark
+    return {**mark, "_links": _mark_links(source, date, mark)}
+
+
+def _mark_links(source: str, date: str, mark: Dict) -> Dict:
+    """Dosarul oficial (EUIPO eSearch / PDF-ul BOPI) și fișa TMview a unei mărci din buletin."""
+    from scrapers.bulletin_enrich import tmview_st13
+    app = str(mark.get("applicationNumber") or "").replace(" ", "")
+    st13 = tmview_st13(source, mark)
+    links = {"tmview": f"https://www.tmdn.org/tmview/#/tmview/detail/{st13}" if st13 else ""}
+    if source == "euipo":
+        links["official"] = f"https://euipo.europa.eu/eSearch/#details/trademarks/{app}"
+        links["official_label"] = "EUIPO"
+    else:
+        try:
+            from datetime import date as date_type
+            from scrapers.osim_bulletin import _bopi_url
+            links["official"] = _bopi_url(date_type.fromisoformat(_bulletin_day("osim", date_type.fromisoformat(date))))
+            links["official_label"] = "BOPI (PDF)"
+        except Exception:
+            pass
+    return links
 
 
 @router.get("/saved-bulletins")
@@ -1334,6 +1390,7 @@ def import_excel(file: UploadFile = File(...), default_email: str = Form(""), db
             expiry_date         = _parse_filing_date(_cell(row, "expiry_date"))
             status              = str(_cell(row, "status") or "").strip()
             mark_type           = str(_cell(row, "mark_type") or "").strip()
+            monitor_like        = _parse_like(_cell(row, "monitor_like"))
             origin_office       = _detect_origin_office(_cell(row, "origin_office"), application_number, ws.title)
 
             if not trademark_name:
@@ -1402,6 +1459,7 @@ def import_excel(file: UploadFile = File(...), default_email: str = Form(""), db
                 status              = status or None,
                 mark_type           = mark_type or None,
                 expiry_date         = expiry_date or None,
+                monitor_like        = monitor_like,
             )
             db.add(item)
             imported.append({"row": where, "trademark": trademark_name, "email": notification_email})

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON, ForeignKey, Text, LargeBinary, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON, ForeignKey, Text, LargeBinary, UniqueConstraint, Float
 from db import Base
 
 
@@ -26,6 +26,7 @@ class WatchItem(Base):
     mark_type          = Column(String, nullable=True)  # Verbală / Combinată / Word / Figurative
     expiry_date        = Column(String, nullable=True)  # "YYYY-MM-DD"
     reference_image_data = Column(LargeBinary, nullable=True)  # logo-ul în DB — fișierul din WATCH_IMAGE_DIR se pierde la redeploy fără Volume
+    monitor_like       = Column(Float, nullable=True)   # pragul de similaritate (0–1) peste care o marcă din buletin e conflict; implicit 0.6
     active             = Column(Boolean, default=True)
     created_at         = Column(DateTime, default=datetime.utcnow)
     last_checked_at    = Column(DateTime, nullable=True)
@@ -173,3 +174,38 @@ class ImageCache(Base):
     content_type = Column(String, default="")
     data         = Column(LargeBinary, nullable=False)
     saved_at     = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class MonitorRun(Base):
+    """O rulare a monitorizării zilnice pentru un buletin (OSIM / EUIPO) — câte una pe zi și sursă;
+    o rulare nouă pentru aceeași zi o înlocuiește."""
+    __tablename__ = "monitor_runs"
+    __table_args__ = (UniqueConstraint("source", "bulletin_date", name="uq_monitor_run"),)
+
+    id            = Column(Integer, primary_key=True, index=True)
+    source        = Column(String, nullable=False, index=True)     # "osim" / "euipo"
+    bulletin_date = Column(String, nullable=False, index=True)     # "YYYY-MM-DD"
+    status        = Column(String, default="running")              # running / ok / no_bulletin / error
+    results       = Column(Integer, default=0)                     # mărci publicate în buletin
+    conflicts     = Column(Integer, default=0)
+    watch_count   = Column(Integer, default=0)                     # mărci din portofoliu comparate
+    trigger       = Column(String, default="manual")               # manual / auto
+    message       = Column(Text, default="")
+    started_at    = Column(DateTime, default=datetime.utcnow)
+    finished_at   = Column(DateTime, nullable=True)
+
+
+class MonitorConflict(Base):
+    """O pereche marcă din buletin ↔ marcă din portofoliu găsită la o rulare zilnică. Marca din
+    portofoliu e păstrată ca instantaneu, ca tabelul să rămână corect și dacă marca e ștearsă ulterior."""
+    __tablename__ = "monitor_conflicts"
+
+    id                 = Column(Integer, primary_key=True, index=True)
+    source             = Column(String, nullable=False, index=True)
+    bulletin_date      = Column(String, nullable=False, index=True)
+    application_number = Column(String, nullable=False)            # marca din buletin
+    watch_item_id      = Column(Integer, nullable=True)
+    like               = Column(Float, default=0.0)
+    identical          = Column(Boolean, default=False)
+    watch              = Column(JSON, default=dict)                 # name, classes, holder, portfolio, monitor_like, ...
+    created_at         = Column(DateTime, default=datetime.utcnow)
