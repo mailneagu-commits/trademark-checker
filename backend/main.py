@@ -908,6 +908,16 @@ async def export_download(job_id: str):
 
 
 
+# Identificatorul versiunii publicate — pagina îl compară periodic cu al ei și cere reîncărcarea
+# când s-a publicat o versiune nouă (un tab deschis de mult nu-și schimbă singur codul).
+_BUILD_ID = os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("RAILWAY_DEPLOYMENT_ID") or str(int(time.time()))
+
+
+@app.get("/api/version")
+def app_version():
+    return {"build": _BUILD_ID}
+
+
 @app.middleware("http")
 async def _no_cache_html(request, call_next):
     # Paginile HTML se schimbă la fiecare deploy — fără asta browserul arată versiunea veche din cache.

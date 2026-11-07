@@ -2441,7 +2441,28 @@ async function doExport(format) {
 // MONITORIZARE
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Versiune nouă publicată? Un tab deschis de mult rulează încă codul vechi — afișăm o bară de reîncărcare.
+let _appBuild = null;
+async function checkAppVersion() {
+  try {
+    const b = (await (await fetch("/api/version", { cache: "no-store" })).json()).build;
+    if (_appBuild === null) { _appBuild = b; return; }
+    if (b && b !== _appBuild && !document.getElementById("newVersionBar")) {
+      const bar = document.createElement("div");
+      bar.id = "newVersionBar";
+      bar.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;background:#0f3460;color:#fff;" +
+        "padding:12px 18px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:.9rem;display:flex;gap:14px;align-items:center;";
+      bar.innerHTML = `🔄 Aplicația a fost actualizată. <button onclick="location.reload()" style="background:#fff;color:#0f3460;border:0;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer;">Reîncarcă pagina</button>`;
+      document.body.appendChild(bar);
+    }
+  } catch (e) {}
+}
+checkAppVersion();
+setInterval(checkAppVersion, 120000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkAppVersion(); });
+
 function showPage(page) {
+  checkAppVersion();
   document.getElementById("page-verificare").style.display  = page === "verificare"  ? "" : "none";
   document.getElementById("page-monitorizare").style.display = page === "monitorizare" ? "" : "none";
   document.getElementById("tab-verificare").classList.toggle("active",  page === "verificare");
