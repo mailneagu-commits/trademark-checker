@@ -788,7 +788,12 @@
          ondrop="handleDrop(event)">
       <div style="font-size:2rem;margin-bottom:6px;">📊</div>
       <strong>Trage fișierul Excel aici</strong> sau apasă pentru a selecta<br>
-      <span style="font-size:.77rem;">Coloane: (511) Clase NICE, (540) Denumire Marcă, (731) Titular, Teritorii, Email, Frecvență, (210) Nr. Depozit, (111) Nr. Înregistrare, (220) Data depunerii — mărcile identice (denumire+clase+imagine) nu se importă de două ori</span>
+      <span style="font-size:.77rem;">Tabelul de portofoliu, cu oricâte foi în format OSIM (Denumire marcă, Clase Nisa, Nr. Depozit, Titular…) sau EUIPO (Name, Nice classes, Filing number, Owner name…) — fiecare marcă e verificată în buletinele OSIM, EUIPO și în mărcile WIPO care desemnează RO/UE; mărcile identice nu se importă de două ori</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-6px 0 16px;font-size:.82rem;color:#555;">
+      <label for="importEmail">📧 Email notificare pentru mărcile importate:</label>
+      <input type="email" id="importEmail" placeholder="ex. office@protectmark.ro (opțional)" style="padding:6px 10px;border:1.5px solid #d0d9ee;border-radius:7px;min-width:260px;font-size:.82rem;" onchange="try{localStorage.setItem('importEmail',this.value)}catch(e){}">
+      <span style="font-size:.74rem;color:#999;">folosit pentru rândurile fără coloana „Email notificare”</span>
     </div>
 
     <!-- Import result -->
@@ -814,7 +819,7 @@
         </div>
         <div class="form-col">
           <label>Teritorii (separate prin virgulă) *</label>
-          <input type="text" id="wOffices" placeholder="ex: RO, EM" value="RO, EM" />
+          <input type="text" id="wOffices" placeholder="ex: RO, EM, WO" value="RO, EM, WO" />
         </div>
       </div>
       <div class="form-row" style="margin-bottom:16px;">
@@ -844,6 +849,14 @@
         <div class="icon">👁</div>
         <strong>Nicio marcă de monitorizat</strong>
         <div style="font-size:.83rem;margin-top:5px;color:#aaa;">Importați un fișier Excel sau adăugați manual o marcă</div>
+      </div>
+      <div id="watchFilters" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:.82rem;">
+        <select id="watchPortfolio" onchange="renderWatches(_watchItems)" style="padding:6px 8px;border:1.5px solid #d0d9ee;border-radius:7px;font-size:.82rem;"></select>
+        <select id="watchOrigin" onchange="renderWatches(_watchItems)" style="padding:6px 8px;border:1.5px solid #d0d9ee;border-radius:7px;font-size:.82rem;">
+          <option value="">Toate oficiile</option><option value="OSIM">OSIM</option><option value="EUIPO">EUIPO</option>
+        </select>
+        <input type="search" id="watchSearch" placeholder="Caută marcă / titular / nr. depozit" oninput="renderWatches(_watchItems)" style="padding:6px 10px;border:1.5px solid #d0d9ee;border-radius:7px;min-width:240px;font-size:.82rem;">
+        <span id="watchCount" style="color:#888;"></span>
       </div>
       <div id="watchList"></div>
     </div>
@@ -3275,6 +3288,10 @@ async function loadWatches() {
   try {
     const r = await fetch("/api/monitor/watches");
     const items = await r.json();
+    _watchItems = items;
+    const em = document.getElementById("importEmail");
+    if (em && !em.value) { try { em.value = localStorage.getItem("importEmail") || ""; } catch(e) {} }
+    fillWatchFilters(items);
     renderWatches(items);
   } catch(e) {
     document.getElementById("watchList").innerHTML =
@@ -3366,12 +3383,38 @@ async function testSmtp() {
   }
 }
 
-function renderWatches(items) {
+let _watchItems = [];
+
+function fillWatchFilters(items) {
+  const sel  = document.getElementById("watchPortfolio");
+  const prev = sel.value;
+  const ports = [...new Set(items.map(it => it.portfolio).filter(Boolean))].sort();
+  sel.innerHTML = `<option value="">Toate portofoliile (${items.length})</option>` +
+    ports.map(p => `<option value="${escHtml(p)}">${escHtml(p)} (${items.filter(it => it.portfolio === p).length})</option>`).join("");
+  if (ports.includes(prev)) sel.value = prev;
+  document.getElementById("watchFilters").style.display = items.length ? "flex" : "none";
+}
+
+function escHtml(t) {
+  return String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function renderWatches(allItems) {
   const empty = document.getElementById("watchEmpty");
   const list  = document.getElementById("watchList");
 
-  if (!items.length) { empty.style.display = "block"; list.innerHTML = ""; return; }
+  if (!allItems.length) { empty.style.display = "block"; list.innerHTML = ""; return; }
   empty.style.display = "none";
+
+  const port   = document.getElementById("watchPortfolio").value;
+  const origin = document.getElementById("watchOrigin").value;
+  const q      = document.getElementById("watchSearch").value.trim().toLowerCase();
+  const items  = allItems.filter(it =>
+    (!port || it.portfolio === port) && (!origin || it.origin_office === origin) &&
+    (!q || [it.trademark_name, it.holder_name, it.application_number, it.registration_number]
+             .some(v => (v || "").toLowerCase().includes(q))));
+  document.getElementById("watchCount").textContent =
+    items.length === allItems.length ? `${items.length} mărci` : `${items.length} din ${allItems.length} mărci`;
 
   const freqLabel = { daily:"Zilnic", weekly:"Săptămânal", monthly:"Lunar" };
   const rows = items.map(it => {
@@ -3386,10 +3429,11 @@ function renderWatches(items) {
     return `
       <tr>
         <td style="text-align:center;">${img}</td>
-        <td><strong>${it.trademark_name}</strong>${it.holder_name?'<br><span style="font-size:.75rem;color:#888;">'+it.holder_name+'</span>':''}${it.representative_name?'<br><span style="font-size:.72rem;color:#aaa;">Repr.: '+it.representative_name+'</span>':''}</td>
+        <td><strong>${escHtml(it.trademark_name)}</strong>${it.holder_name?'<br><span style="font-size:.75rem;color:#888;">'+escHtml(it.holder_name)+'</span>':''}${it.representative_name?'<br><span style="font-size:.72rem;color:#aaa;">Repr.: '+escHtml(it.representative_name)+'</span>':''}${it.portfolio?'<br><span style="font-size:.7rem;color:#5b7bb5;">📁 '+escHtml(it.portfolio)+'</span>':''}</td>
+        <td style="font-size:.78rem;">${it.origin_office?'<strong>'+escHtml(it.origin_office)+'</strong>':'—'}${it.application_number?'<br><span style="color:#888;">'+escHtml(it.application_number)+'</span>':''}${it.status?'<br><span style="font-size:.72rem;color:#999;">'+escHtml(it.status)+'</span>':''}</td>
         <td>${classes}</td>
         <td>${offices}</td>
-        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${it.notification_email}">${it.notification_email}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(it.notification_email)}">${escHtml(it.notification_email) || '—'}</td>
         <td><span class="freq-badge freq-${it.frequency}">${freqLabel[it.frequency]||it.frequency}</span></td>
         <td style="font-size:.78rem;color:#888;">${lastCheck}</td>
         <td><span class="active-badge ${it.active?'active-yes':'active-no'}">${it.active?'Activ':'Inactiv'}</span></td>
@@ -3412,6 +3456,7 @@ function renderWatches(items) {
           <tr>
             <th>Imagine</th>
             <th>Marcă / Titular</th>
+            <th>Oficiu / Nr. depozit</th>
             <th>Clase NICE</th>
             <th>Teritorii</th>
             <th>Email</th>
@@ -3455,7 +3500,7 @@ async function addWatch() {
     if (!r.ok) { const e=await r.json(); msg.style.display="block"; msg.style.color="#c0392b"; msg.textContent="Eroare: "+(e.detail||r.status); return; }
     msg.style.display="block"; msg.style.color="#1e8449"; msg.textContent="Salvat!";
     ["wTmName","wHolder","wClasses","wEmail"].forEach(id=>document.getElementById(id).value="");
-    document.getElementById("wOffices").value="RO, EM";
+    document.getElementById("wOffices").value="RO, EM, WO";
     setTimeout(()=>{ document.getElementById("addForm").style.display="none"; msg.style.display="none"; loadWatches(); }, 800);
   } catch(e) {
     msg.style.display="block"; msg.style.color="#c0392b"; msg.textContent="Eroare conexiune.";
@@ -3725,6 +3770,7 @@ async function uploadExcel(file) {
 
   const form = new FormData();
   form.append("file", file);
+  form.append("default_email", document.getElementById("importEmail").value.trim());
 
   try {
     const r    = await fetch("/api/monitor/import", { method:"POST", body: form });
@@ -3740,19 +3786,28 @@ async function uploadExcel(file) {
     if (data.skipped > 0) html += ` · ${data.skipped} rânduri ignorate`;
     if (data.duplicates > 0) html += ` · <span style="color:#e67e22;">${data.duplicates} mărci identice neimportate</span>`;
     if (data.errors  > 0) html += ` · <span style="color:#c0392b;">${data.errors} erori</span>`;
+    if (data.sheets && data.sheets.length > 1)
+      html += `<div style="font-size:.78rem;margin-top:4px;color:#555;">${data.sheets.map(s=>`${escHtml(s.sheet)}: ${s.imported}`).join(" · ")}</div>`;
     html += "</div>";
+
+    if (data.details.skipped && data.details.skipped.length) {
+      html += `<div style="margin-top:8px;font-size:.8rem;color:#888;">
+        <strong>Rânduri ignorate:</strong><ul style="margin:4px 0 0 16px;">
+        ${data.details.skipped.map(d=>`<li>${escHtml(d.row)}${d.trademark?' ('+escHtml(d.trademark)+')':''}: ${escHtml(d.reason)}</li>`).join("")}
+        </ul></div>`;
+    }
 
     if (data.details.duplicates && data.details.duplicates.length) {
       html += `<div style="margin-top:8px;font-size:.8rem;color:#e67e22;">
         <strong>Mărci identice (nu s-au importat din nou):</strong><ul style="margin:4px 0 0 16px;">
-        ${data.details.duplicates.map(d=>`<li>Rând ${d.row}: ${d.trademark} — ${d.reason}</li>`).join("")}
+        ${data.details.duplicates.map(d=>`<li>${escHtml(d.row)}: ${escHtml(d.trademark)} — ${escHtml(d.reason)}</li>`).join("")}
         </ul></div>`;
     }
 
     if (data.details.errors.length) {
       html += `<div style="margin-top:8px;font-size:.8rem;color:#c0392b;">
         <strong>Erori:</strong><ul style="margin:4px 0 0 16px;">
-        ${data.details.errors.map(e=>`<li>Rând ${e.row}: ${e.trademark} — ${e.reason}</li>`).join("")}
+        ${data.details.errors.map(e=>`<li>${escHtml(e.row)}: ${escHtml(e.trademark)} — ${escHtml(e.reason)}</li>`).join("")}
         </ul></div>`;
     }
 

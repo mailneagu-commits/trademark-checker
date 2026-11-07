@@ -20,6 +20,12 @@ class WatchItem(Base):
     filing_date        = Column(String, nullable=True)  # (220) Data depunerii, "YYYY-MM-DD"
     publication_date   = Column(String, nullable=True)  # (442) Data publicării, "YYYY-MM-DD"
     representative_name = Column(String, nullable=True)  # (740) Reprezentant — doar numele
+    origin_office      = Column(String, nullable=True)  # oficiul unde e înregistrată marca: "OSIM" / "EUIPO" (informativ)
+    portfolio          = Column(String, nullable=True)  # foaia Excel din care a fost importată (portofoliul clientului)
+    status             = Column(String, nullable=True)  # starea mărcii din fișier (Înregistrată, Registered, ...)
+    mark_type          = Column(String, nullable=True)  # Verbală / Combinată / Word / Figurative
+    expiry_date        = Column(String, nullable=True)  # "YYYY-MM-DD"
+    reference_image_data = Column(LargeBinary, nullable=True)  # logo-ul în DB — fișierul din WATCH_IMAGE_DIR se pierde la redeploy fără Volume
     active             = Column(Boolean, default=True)
     created_at         = Column(DateTime, default=datetime.utcnow)
     last_checked_at    = Column(DateTime, nullable=True)

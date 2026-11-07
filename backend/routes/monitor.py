@@ -8,7 +8,7 @@ from datetime import datetime
 from datetime import date as dt_date
 from typing import List, Optional, Dict
 
-from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -26,7 +26,7 @@ class WatchItemCreate(BaseModel):
     trademark_name:     str
     holder_name:        str  = ""
     nice_classes:       List[str] = []
-    offices:            List[str] = ["RO", "EM"]
+    offices:            List[str] = ["RO", "EM", "WO"]
     notification_email: str
     frequency:          str  = "weekly"   # daily / weekly / monthly
     application_number: str  = ""
@@ -34,6 +34,7 @@ class WatchItemCreate(BaseModel):
     filing_date:        str  = ""
     publication_date:   str  = ""
     representative_name: str = ""
+    origin_office:      str  = ""
 
 
 class WatchItemOut(BaseModel):
@@ -50,6 +51,11 @@ class WatchItemOut(BaseModel):
     filing_date:        Optional[str] = None
     publication_date:   Optional[str] = None
     representative_name: Optional[str] = None
+    origin_office:      Optional[str] = None
+    portfolio:          Optional[str] = None
+    status:             Optional[str] = None
+    mark_type:          Optional[str] = None
+    expiry_date:        Optional[str] = None
     active:             bool
     created_at:         datetime
     last_checked_at:    Optional[datetime]
@@ -230,75 +236,81 @@ def run_all_status():
 
 # ── Excel template ────────────────────────────────────────────────────────────
 
+# Antetele sunt exact cele din tabelele de portofoliu ale cabinetului: foile OSIM (export OSIM)
+# și EUIPO (export eSearch). Importul recunoaște ambele formate, în orice ordine a coloanelor.
+TEMPLATE_OSIM_HEADERS = [
+    "Nr Crt", "Denumire marcă", "Reprezentare marcă", "Clase Nisa", "Nr. marcă înregistrată", "ID Appli",
+    "Nr. Depozit", "Dată de depozit", "Nr. registratură", "Dată înregistrare marcă", "Tip marcă",
+    "Stare marcă", "Solicitant", "Titular", "Email notificare (opțional)",
+]
+TEMPLATE_EUIPO_HEADERS = [
+    "Nr Crt", "Name", "Graphic representation", "Nice classes", "Filing number", "Basis", "Type",
+    "Application reference", "Filing date/ Designation date", "Registration date", "Expiry date", "Status",
+    "Publications", "Owner name", "Owner ID", "Owner country", "Representative name", "Representative ID",
+    "Filing language", "Second language", "Kind of mark", "Acquired distinctiveness", "Email notificare (opțional)",
+]
+
+
 @router.get("/template")
 def download_template():
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
+    header_fill = PatternFill("solid", fgColor="1A3C5E")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    example_fill = PatternFill("solid", fgColor="EBF5FB")
+    thin_border = Border(left=Side(style="thin"), right=Side(style="thin"),
+                         top=Side(style="thin"), bottom=Side(style="thin"))
+
+    def _sheet(ws, headers, example, widths):
+        for col_idx, header in enumerate(headers, start=1):
+            cell           = ws.cell(row=1, column=col_idx, value=header)
+            cell.font      = header_font
+            cell.fill      = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border    = thin_border
+            ws.column_dimensions[cell.column_letter].width = widths.get(header, 16)
+        ws.row_dimensions[1].height = 36
+        ws.row_dimensions[2].height = 60   # loc pentru logo în coloana de reprezentare
+        for col_idx, val in enumerate(example, start=1):
+            cell           = ws.cell(row=2, column=col_idx, value=val)
+            cell.fill      = example_fill
+            cell.border    = thin_border
+            cell.alignment = Alignment(vertical="center")
+        ws.freeze_panes = "A2"
+
     wb = Workbook()
     ws = wb.active
-    ws.title = "Mărci de monitorizat"
+    ws.title = "PORTOFOLIU OSIM"
+    _sheet(ws, TEMPLATE_OSIM_HEADERS,
+           ["Exemplu", "ACME", "", "5, 35", "123456", "X8288039", "M 2024 01234", "2024-03-12", "M2024/001234",
+            "2024-09-18", "Verbală", "Înregistrată", "SC ACME SRL", "SC ACME SRL", ""],
+           {"Denumire marcă": 30, "Reprezentare marcă": 22, "Clase Nisa": 16, "Nr. Depozit": 18,
+            "Solicitant": 30, "Titular": 34, "Email notificare (opțional)": 28})
 
-    # Aceeași ordine ca în tabelele cu rezultate din buletine: (210) · Imagine · (220) · (442) ·
-    # (541) · (731) · (740) · (511), apoi câmpurile specifice monitorizării, fără cod INID.
-    headers = [
-        "(210) Nr. Depozit (opțional)",
-        "Imagine (opțional — logo de referință)",
-        "(220) Data depunerii (opțional)",
-        "(442) Data publicării (opțional)",
-        "(541) Denumire Marcă*",
-        "(731) Titular",
-        "(740) Reprezentant (doar numele)",
-        "(511) Clase NICE (separate prin virgulă)*",
-        "Teritorii (separate prin virgulă)*",
-        "Email notificare*",
-        "Frecvență (daily/weekly/monthly)",
-        "(111) Nr. Înregistrare (opțional)",
+    ws = wb.create_sheet("PORTOFOLIU EUIPO")
+    _sheet(ws, TEMPLATE_EUIPO_HEADERS,
+           ["Exemplu", "ACME", "", "5, 35, 42", "019012345", "EUTM", "Word", "", "12/3/2024", "18/9/2024",
+            "12/3/2034", "Registered", "", "ACME SRL", "", "RO", "", "", "ro", "en", "Individual", "false", ""],
+           {"Name": 30, "Graphic representation": 22, "Nice classes": 16, "Filing number": 16,
+            "Owner name": 30, "Representative name": 24, "Publications": 28, "Email notificare (opțional)": 28})
+
+    ws = wb.create_sheet("Instrucțiuni")
+    ws.column_dimensions["A"].width = 140
+    notes = [
+        "Cum se completează",
+        "• Puteți avea oricâte foi (ex. una pe client și oficiu: „FITERMAN PHARMA OSIM”, „LOOK AHEAD EUIPO”) — se importă toate; numele foii devine portofoliul mărcii.",
+        "• Fiecare foaie folosește antetul OSIM sau EUIPO de mai sus; coloanele pot fi în orice ordine. Obligatorii: denumirea mărcii și clasele Nisa.",
+        "• Logo-ul: inserați imaginea în coloana „Reprezentare marcă” / „Graphic representation”, pe rândul mărcii — folosit pentru comparația vizuală.",
+        "• Oficiul (OSIM / EUIPO) se deduce din foaie (Basis = EUTM, Nr. Depozit „M 2024 …”) sau din numele foii; e informativ.",
+        "• Fiecare marcă, indiferent de oficiu, e verificată în buletinul OSIM, în buletinul EUIPO și în mărcile internaționale WIPO (Madrid) care desemnează RO sau UE.",
+        "• Email notificare: opțional pe rând; dacă lipsește se folosește emailul completat în pagină la import.",
+        "• Rândurile „Exemplu” sunt ignorate. Mărcile identice (denumire + clase + imagine, cu același număr de depozit) nu se importă de două ori.",
     ]
-
-    header_fill   = PatternFill("solid", fgColor="1A3C5E")
-    header_font   = Font(bold=True, color="FFFFFF", size=11)
-    thin_border   = Border(
-        left=Side(style="thin"), right=Side(style="thin"),
-        top=Side(style="thin"), bottom=Side(style="thin"),
-    )
-    col_widths = [22, 30, 22, 22, 30, 30, 30, 26, 26, 32, 22, 24]
-
-    for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
-        cell            = ws.cell(row=1, column=col_idx, value=header)
-        cell.font       = header_font
-        cell.fill       = header_fill
-        cell.alignment  = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.border     = thin_border
-        ws.column_dimensions[cell.column_letter].width = width
-
-    ws.row_dimensions[1].height = 36
-    ws.row_dimensions[2].height = 60   # loc pentru o imagine mică în celula exemplu
-
-    # Example row
-    example = ["019301780", "", "2025-03-12", "2025-06-18", "ACME", "ACME România SRL", "Cabinet Avocat SRL",
-               "35, 42", "RO, EM", "office@firma.ro", "weekly", ""]
-    example_fill = PatternFill("solid", fgColor="EBF5FB")
-    for col_idx, val in enumerate(example, start=1):
-        cell           = ws.cell(row=2, column=col_idx, value=val)
-        cell.fill      = example_fill
-        cell.border    = thin_border
-        cell.alignment = Alignment(vertical="center")
-
-    # Note row
-    ws.cell(row=3, column=1, value="* câmpuri obligatorii (denumire, clase, teritorii, email)")
-    ws.cell(row=3, column=1).font = Font(italic=True, color="888888")
-    ws.cell(row=4, column=1, value="Teritorii acceptate: RO, EM, EU, DE, FR, IT, ES, UK, US, WO (sau orice cod de țară din TMview)")
-    ws.cell(row=4, column=1).font = Font(italic=True, color="888888")
-    ws.merge_cells("A4:L4")
-    ws.cell(row=5, column=1,
-            value='Imagine: inserați logo-ul direct în celulă (Excel: Insert → Pictures → Place in Cell), în dreptul mărcii — folosit pentru comparație vizuală cu mărcile din buletine.')
-    ws.cell(row=5, column=1).font = Font(italic=True, color="888888")
-    ws.merge_cells("A5:L5")
-    ws.cell(row=6, column=1,
-            value='Notă: Nr. Depozit / Nr. Înregistrare / Data depunerii: opționale, dar recomandate — dacă două rânduri au aceeași denumire, aceleași clase și aceeași imagine, sunt considerate aceeași marcă și nu se importă de două ori, ÎN AFARĂ de cazul în care au numere de depozit/înregistrare diferite (atunci sunt tratate ca mărci distincte, chiar dacă arată identic).')
-    ws.cell(row=6, column=1).font = Font(italic=True, color="888888")
-    ws.merge_cells("A6:L6")
+    for i, t in enumerate(notes, start=1):
+        c = ws.cell(row=i, column=1, value=t)
+        c.font = Font(bold=True, size=12, color="1A3C5E") if i == 1 else Font(color="444444")
+        c.alignment = Alignment(wrap_text=True, vertical="top")
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -318,18 +330,25 @@ def _norm_header(h) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
-# câmp -> cuvinte cheie (cod INID sau denumire), în ordinea de verificare
+# câmp -> cuvinte cheie (cod INID sau denumire), în ordinea de verificare; "=" = antet exact.
+# Titularul/reprezentantul stau înaintea denumirii, ca „Owner name” să nu fie luat drept „Name”.
 _HEADER_KEYS = [
-    ("image",               ("imagine",)),
-    ("application_number",  ("(210)", "nr. depozit", "nr depozit")),
-    ("registration_number", ("(111)", "nr. inregistrare", "nr inregistrare")),
-    ("filing_date",         ("(220)", "data depunerii")),
+    ("image",               ("imagine", "reprezentare marc", "graphic representation")),
+    ("application_number",  ("(210)", "nr. depozit", "nr depozit", "filing number")),
+    ("registration_number", ("(111)", "nr. inregistrare", "nr inregistrare", "nr. marca inregistrata",
+                             "nr. marca intregistrata")),
+    ("filing_date",         ("(220)", "data depunerii", "data de depozit", "filing date")),
     ("publication_date",    ("(442)", "data publicarii")),
-    ("name",                ("(541)", "(540)", "denumire")),
-    ("holder",              ("(731)", "titular")),
-    ("representative",      ("(740)", "reprezentant")),
-    ("classes",             ("(511)", "clase")),
+    ("expiry_date",         ("expiry date", "data expirarii")),
+    ("holder",              ("(731)", "titular", "owner name")),
+    ("applicant",           ("solicitant",)),
+    ("representative",      ("(740)", "reprezentant", "representative name")),
+    ("name",                ("(541)", "(540)", "denumire", "=name")),
+    ("classes",             ("(511)", "clase", "nice classes")),
     ("offices",             ("teritorii",)),
+    ("origin_office",       ("oficiu", "=basis")),
+    ("status",              ("stare marc", "=status")),
+    ("mark_type",           ("tip marc", "=type")),
     ("email",               ("email",)),
     ("frequency",           ("frecven",)),
 ]
@@ -338,22 +357,76 @@ _HEADER_KEYS = [
 _LEGACY_COLUMNS = {"classes": 0, "name": 1, "image": 2, "holder": 3, "offices": 4, "email": 5,
                    "frequency": 6, "application_number": 7, "registration_number": 8, "filing_date": 9}
 
+# Fiecare marcă din portofoliu e comparată cu buletinul OSIM, cu buletinul EUIPO și cu mărcile
+# internaționale WIPO (Madrid) care desemnează RO / UE — indiferent de oficiul ei.
+DEFAULT_WATCH_OFFICES = ["RO", "EM", "WO"]
 
-def _map_columns(header_row) -> dict:
+
+def _header_field(h: str) -> Optional[str]:
+    if not h:
+        return None
+    for field, keys in _HEADER_KEYS:
+        if any(h == k[1:] if k.startswith("=") else k in h for k in keys):
+            return field
+    return None
+
+
+def _map_columns(header_row, legacy: bool = True) -> dict:
     """Câmp -> index de coloană, după antet (cod INID sau denumire), deci fișierul poate avea
-    coloanele în orice ordine. Dacă antetul nu conține câmpurile obligatorii, folosim ordinea veche."""
+    coloanele în orice ordine. Dacă antetul nu conține câmpurile obligatorii, folosim ordinea
+    veche (legacy=True) sau întoarcem {} (foaie care nu e un tabel de mărci)."""
     mapping: dict = {}
     for idx, cell in enumerate(header_row or []):
-        h = _norm_header(cell)
-        if not h:
-            continue
-        for field, keys in _HEADER_KEYS:
-            if field not in mapping and any(k in h for k in keys):
-                mapping[field] = idx
-                break
-    if not {"name", "classes", "email"} <= set(mapping):
-        return dict(_LEGACY_COLUMNS)
+        field = _header_field(_norm_header(cell))
+        if field and field not in mapping:
+            mapping[field] = idx
+    if not {"name", "classes"} <= set(mapping):
+        return dict(_LEGACY_COLUMNS) if legacy else {}
     return mapping
+
+
+def _detect_origin_office(raw, application_number: str, sheet_title: str) -> str:
+    """OSIM / EUIPO / WIPO — din coloana Oficiu/Basis, altfel din numele foii, altfel din
+    formatul numărului de depozit (OSIM: „M 2024 01234”, EUIPO: 9 cifre)."""
+    for text in (raw, sheet_title):
+        words = set(re.findall(r"[a-z]+", _norm_header(text)))
+        if words & {"osim", "ro"}:
+            return "OSIM"
+        if words & {"euipo", "eutm", "em", "ue", "eu", "ohim"}:
+            return "EUIPO"
+        if words & {"wipo", "wo", "madrid", "ir"}:
+            return "WIPO"
+    num = (application_number or "").strip().upper()
+    if re.match(r"^M\s*\d{4}", num):
+        return "OSIM"
+    if re.fullmatch(r"\d{8,9}", num):
+        return "EUIPO"
+    return ""
+
+
+def _images_by_row(ws, image_col: Optional[int]) -> dict:
+    """Imaginile din foaie, cheiate pe rândul (1-indexat) în care stau. O imagine care se
+    întinde pe mai multe rânduri e atribuită rândului în care îi cade mijlocul; dacă pe un rând
+    sunt mai multe, o preferăm pe cea din coloana de reprezentare."""
+    found: dict = {}
+    for img in getattr(ws, "_images", []):
+        try:
+            a = img.anchor._from
+            row = a.row
+            to = getattr(img.anchor, "to", None)
+            if to is not None and to.row > a.row:
+                last = to.row if to.rowOff > 0 else to.row - 1   # rândul final atins efectiv
+                row = (a.row + max(last, a.row)) // 2
+            data = img.ref.getvalue() if hasattr(img.ref, "getvalue") else None
+            if not data:
+                continue
+            in_col = image_col is not None and a.col == image_col
+            prev = found.get(row + 1)
+            if prev is None or (in_col and not prev[1]):
+                found[row + 1] = (data, in_col)
+        except Exception:
+            continue
+    return {r: d for r, (d, _) in found.items()}
 
 
 def _parse_classes(raw: str) -> List[str]:
@@ -975,14 +1048,26 @@ def bulletin_compare_status(source: str, date: str):
 
 
 @router.get("/watch-image/{filename}")
-def get_watch_image(filename: str):
-    """Servește logo-ul de referință al unui watch item, inserat la import Excel."""
-    from fastapi.responses import FileResponse
+def get_watch_image(filename: str, db: Session = Depends(get_db)):
+    """Servește logo-ul de referință al unui watch item, inserat la import Excel — de pe disc,
+    altfel din DB (fișierul se pierde la redeploy dacă nu e montat un Volume)."""
+    from fastapi.responses import FileResponse, Response
     safe = re.sub(r'[^a-fA-F0-9]', '', filename.rsplit(".", 1)[0]) + ".png"
     path = os.path.join(WATCH_IMAGE_DIR, safe)
-    if not os.path.exists(path):
+    if os.path.exists(path):
+        return FileResponse(path, media_type="image/png")
+    item = db.query(WatchItem).filter(WatchItem.reference_image == safe).first()
+    if not item or not item.reference_image_data:
         raise HTTPException(404, "Imaginea nu a fost găsită.")
-    return FileResponse(path, media_type="image/png")
+    data = bytes(item.reference_image_data)
+    try:
+        os.makedirs(WATCH_IMAGE_DIR, exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(data)
+    except OSError:
+        pass
+    mt = "image/jpeg" if data[:3] == b"\xff\xd8\xff" else "image/png"
+    return Response(data, media_type=mt, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/bulletin-image")
@@ -1162,8 +1247,8 @@ WATCH_IMAGE_DIR = (
 
 
 @router.post("/import")
-def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not file.filename.endswith((".xlsx", ".xls")):
+def import_excel(file: UploadFile = File(...), default_email: str = Form(""), db: Session = Depends(get_db)):
+    if not file.filename.lower().endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Fișierul trebuie să fie .xlsx sau .xls")
 
     from openpyxl import load_workbook
@@ -1176,29 +1261,20 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(400, f"Fișier Excel invalid: {e}")
 
-    ws = wb.active
+    default_email = (default_email or "").strip()
+    if default_email and "@" not in default_email:
+        raise HTTPException(400, "Emailul de notificare completat în pagină nu e valid.")
+
     imported   = []
     skipped    = []
     errors     = []
     duplicates = []
-
-    # Imaginile inserate direct în celule (logo de referință, coloana (540) Imagine) —
-    # cheiate pe rândul (1-indexat) în care sunt ancorate, ca să le potrivim cu rândul
-    # de date corespunzător.
-    images_by_row: dict = {}
-    for img in getattr(ws, "_images", []):
-        try:
-            row_num = img.anchor._from.row + 1
-            data    = img.ref.getvalue() if hasattr(img.ref, "getvalue") else None
-            if data:
-                images_by_row[row_num] = data
-        except Exception:
-            continue
+    sheets     = []
 
     # Identitatea unei mărci deja existente în listă (denumire + clase + imagine,
     # plus nr. depozit/înregistrare/dată depunere pentru diferențiere) — verificată
     # atât față de mărcile deja din DB, cât și față de rândurile deja importate din
-    # ACEST fișier (ex. același rând dus de două ori în Excel).
+    # ACEST fișier (ex. aceeași marcă în două foi).
     existing_keys = [
         {
             "name": w.trademark_name,
@@ -1211,96 +1287,129 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
         for w in db.query(WatchItem).all()
     ]
 
-    cols = _map_columns(next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ()))
+    # Toate foile cu un antet de tabel de mărci (OSIM / EUIPO / template-ul vechi); dacă niciuna
+    # nu are antet recunoscut, foaia activă e citită după ordinea veche a coloanelor.
+    tables = []
+    for ws in wb.worksheets:
+        cols = _map_columns(next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ()), legacy=False)
+        if cols:
+            tables.append((ws, cols))
+    if not tables:
+        tables = [(wb.active, dict(_LEGACY_COLUMNS))]
+    multi = len(tables) > 1
 
-    def _cell(row, field):
-        i = cols.get(field)
-        return row[i] if i is not None and i < len(row) else None
+    for ws, cols in tables:
+        sheet_count = 0
+        images_by_row = _images_by_row(ws, cols.get("image"))
 
-    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        has_image = row_idx in images_by_row
-        if (not row or all(v is None for v in row)) and not has_image:
-            continue
+        def _cell(row, field):
+            i = cols.get(field)
+            return row[i] if i is not None and i < len(row) else None
 
-        # Skip note rows (first cell starts with "*" or is italic note)
-        first = str(row[0] or "").strip()
-        if first.startswith(("*", "Teritorii", "Imagine:", "câmp", "Notă:", "Nr. Depozit /")):
-            continue
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            where = f"{ws.title} — rând {row_idx}" if multi else f"Rând {row_idx}"
+            if not row or all(v is None or str(v).strip() == "" for v in row):
+                continue
 
-        # Coloanele se găsesc după antet (vezi _map_columns), nu după poziție.
-        nice_classes_raw    = str(_cell(row, "classes") or "").strip()
-        trademark_name      = str(_cell(row, "name") or "").strip()
-        holder_name         = str(_cell(row, "holder") or "").strip()
-        representative_name = str(_cell(row, "representative") or "").strip()
-        offices_raw         = str(_cell(row, "offices") or "").strip()
-        notification_email  = str(_cell(row, "email") or "").strip()
-        frequency_raw       = str(_cell(row, "frequency") or "").strip() or "weekly"
-        application_number  = str(_cell(row, "application_number") or "").strip()
-        registration_number = str(_cell(row, "registration_number") or "").strip()
-        filing_date         = _parse_filing_date(_cell(row, "filing_date"))
-        publication_date    = _parse_filing_date(_cell(row, "publication_date"))
+            # Rânduri de notă / exemplu din template și antete repetate în mijlocul foii
+            first = str(row[0] or "").strip()
+            if first.startswith(("*", "Teritorii", "Imagine:", "câmp", "Notă:", "Nr. Depozit /")) \
+                    or first.lower() == "exemplu":
+                continue
+            if sum(1 for v in row if _header_field(_norm_header(v))) >= 3:
+                continue
 
-        if not trademark_name:
-            skipped.append({"row": row_idx, "reason": "Denumire marcă lipsă"})
-            continue
-        if not notification_email or "@" not in notification_email:
-            errors.append({"row": row_idx, "trademark": trademark_name, "reason": "Email invalid sau lipsă"})
-            continue
+            # Coloanele se găsesc după antet (vezi _map_columns), nu după poziție.
+            nice_classes_raw    = str(_cell(row, "classes") or "").strip()
+            trademark_name      = str(_cell(row, "name") or "").strip()
+            holder_name         = str(_cell(row, "holder") or "").strip() or str(_cell(row, "applicant") or "").strip()
+            representative_name = str(_cell(row, "representative") or "").strip()
+            offices_raw         = str(_cell(row, "offices") or "").strip()
+            notification_email  = str(_cell(row, "email") or "").strip() or default_email
+            frequency_raw       = str(_cell(row, "frequency") or "").strip() or "weekly"
+            application_number  = str(_cell(row, "application_number") or "").strip()
+            registration_number = str(_cell(row, "registration_number") or "").strip()
+            filing_date         = _parse_filing_date(_cell(row, "filing_date"))
+            publication_date    = _parse_filing_date(_cell(row, "publication_date"))
+            expiry_date         = _parse_filing_date(_cell(row, "expiry_date"))
+            status              = str(_cell(row, "status") or "").strip()
+            mark_type           = str(_cell(row, "mark_type") or "").strip()
+            origin_office       = _detect_origin_office(_cell(row, "origin_office"), application_number, ws.title)
 
-        nice_classes = _parse_classes(nice_classes_raw)
-        if not nice_classes:
-            errors.append({"row": row_idx, "trademark": trademark_name, "reason": "Clase NICE invalide sau lipsă"})
-            continue
+            if not trademark_name:
+                skipped.append({"row": where, "trademark": application_number or "",
+                                "reason": "Marcă pur figurativă (fără denumire) — nu poate fi monitorizată după nume"
+                                          if row_idx in images_by_row or "figurat" in _norm_header(mark_type)
+                                          else "Denumire marcă lipsă"})
+                continue
+            if notification_email and "@" not in notification_email:
+                errors.append({"row": where, "trademark": trademark_name, "reason": "Email invalid"})
+                continue
 
-        offices   = _parse_offices(offices_raw) or ["RO", "EM"]
-        frequency = _parse_frequency(frequency_raw)
+            nice_classes = _parse_classes(nice_classes_raw)
+            if not nice_classes:
+                errors.append({"row": where, "trademark": trademark_name, "reason": "Clase NICE invalide sau lipsă"})
+                continue
 
-        image_bytes = images_by_row.get(row_idx)
-        image_hash  = hashlib.sha256(image_bytes).hexdigest() if image_bytes else None
+            offices   = _parse_offices(offices_raw) or list(DEFAULT_WATCH_OFFICES)
+            frequency = _parse_frequency(frequency_raw)
 
-        candidate_key = {
-            "name": trademark_name, "classes": nice_classes, "image_hash": image_hash,
-            "application_number": application_number, "registration_number": registration_number,
-            "filing_date": filing_date,
-        }
-        dup = next((e for e in existing_keys if _is_duplicate_watch(e, candidate_key)), None)
-        if dup:
-            duplicates.append({
-                "row": row_idx, "trademark": trademark_name,
-                "reason": "Marcă identică (denumire + clase + imagine) deja în listă"
-                          + (f" — nr. depozit/înregistrare {dup.get('application_number') or dup.get('registration_number')}"
-                             if (dup.get("application_number") or dup.get("registration_number")) else ""),
-            })
-            continue
+            image_bytes = images_by_row.get(row_idx)
+            image_hash  = hashlib.sha256(image_bytes).hexdigest() if image_bytes else None
 
-        reference_image = None
-        if image_bytes:
-            os.makedirs(WATCH_IMAGE_DIR, exist_ok=True)
-            filename = f"{uuid.uuid4().hex}.png"
-            with open(os.path.join(WATCH_IMAGE_DIR, filename), "wb") as f:
-                f.write(image_bytes)
-            reference_image = filename
+            candidate_key = {
+                "name": trademark_name, "classes": nice_classes, "image_hash": image_hash,
+                "application_number": application_number, "registration_number": registration_number,
+                "filing_date": filing_date,
+            }
+            dup = next((e for e in existing_keys if _is_duplicate_watch(e, candidate_key)), None)
+            if dup:
+                duplicates.append({
+                    "row": where, "trademark": trademark_name,
+                    "reason": "Marcă identică (denumire + clase + imagine) deja în listă"
+                              + (f" — nr. depozit/înregistrare {dup.get('application_number') or dup.get('registration_number')}"
+                                 if (dup.get("application_number") or dup.get("registration_number")) else ""),
+                })
+                continue
 
-        item = WatchItem(
-            trademark_name     = trademark_name,
-            holder_name        = holder_name,
-            nice_classes       = nice_classes,
-            offices            = offices,
-            notification_email = notification_email,
-            frequency          = frequency,
-            reference_image    = reference_image,
-            image_hash          = image_hash,
-            application_number  = application_number or None,
-            registration_number = registration_number or None,
-            filing_date         = filing_date or None,
-            publication_date    = publication_date or None,
-            representative_name = representative_name or None,
-        )
-        db.add(item)
-        imported.append({"row": row_idx, "trademark": trademark_name, "email": notification_email})
-        # rândul abia adăugat intră și el în lista de verificare, ca să prindem
-        # și duplicate ÎNTRE rândurile acestui fișier, nu doar față de DB
-        existing_keys.append(candidate_key)
+            reference_image = None
+            if image_bytes:
+                reference_image = f"{uuid.uuid4().hex}.png"
+                try:
+                    os.makedirs(WATCH_IMAGE_DIR, exist_ok=True)
+                    with open(os.path.join(WATCH_IMAGE_DIR, reference_image), "wb") as f:
+                        f.write(image_bytes)
+                except OSError as e:
+                    print(f"[IMPORT] logo neputând fi scris pe disc (rămâne în DB): {e}")
+
+            item = WatchItem(
+                trademark_name     = trademark_name,
+                holder_name        = holder_name,
+                nice_classes       = nice_classes,
+                offices            = offices,
+                notification_email = notification_email,
+                frequency          = frequency,
+                reference_image    = reference_image,
+                reference_image_data = image_bytes,
+                image_hash          = image_hash,
+                application_number  = application_number or None,
+                registration_number = registration_number or None,
+                filing_date         = filing_date or None,
+                publication_date    = publication_date or None,
+                representative_name = representative_name or None,
+                origin_office       = origin_office or None,
+                portfolio           = ws.title if multi else None,
+                status              = status or None,
+                mark_type           = mark_type or None,
+                expiry_date         = expiry_date or None,
+            )
+            db.add(item)
+            imported.append({"row": where, "trademark": trademark_name, "email": notification_email})
+            sheet_count += 1
+            # rândul abia adăugat intră și el în lista de verificare, ca să prindem
+            # și duplicate ÎNTRE rândurile acestui fișier, nu doar față de DB
+            existing_keys.append(candidate_key)
+        sheets.append({"sheet": ws.title, "imported": sheet_count})
 
     db.commit()
 
@@ -1309,6 +1418,7 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
         "skipped":    len(skipped),
         "errors":     len(errors),
         "duplicates": len(duplicates),
+        "sheets":     sheets,
         "details": {
             "imported":   imported,
             "skipped":    skipped,

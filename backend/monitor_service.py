@@ -260,7 +260,7 @@ async def run_watch_item(watch_item, db: Session) -> Dict:
     total_new = len(new_conflicts) + len(new_similar)
 
     if total_new > 0:
-        if _email_available():
+        if _email_available() and (watch_item.notification_email or "").strip():
             try:
                 html    = _build_html(watch_item, new_conflicts, new_similar)
                 subject = (

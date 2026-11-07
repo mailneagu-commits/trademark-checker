@@ -73,10 +73,13 @@ def _ensure_columns(eng=None):
     if "watch_items" not in insp.get_table_names():
         return
     have = {c["name"] for c in insp.get_columns("watch_items")}
-    for name in ("publication_date", "representative_name"):
+    blob = "BYTEA" if eng.dialect.name == "postgresql" else "BLOB"
+    for name, typ in (("publication_date", "VARCHAR"), ("representative_name", "VARCHAR"),
+                      ("origin_office", "VARCHAR"), ("portfolio", "VARCHAR"), ("status", "VARCHAR"),
+                      ("mark_type", "VARCHAR"), ("expiry_date", "VARCHAR"), ("reference_image_data", blob)):
         if name not in have:
             with eng.begin() as conn:
-                conn.execute(text(f"ALTER TABLE watch_items ADD COLUMN {name} VARCHAR"))
+                conn.execute(text(f"ALTER TABLE watch_items ADD COLUMN {name} {typ}"))
             print(f"[DB] Coloană adăugată: watch_items.{name}")
 
 
