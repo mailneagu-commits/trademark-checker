@@ -203,6 +203,8 @@ def lead(body: LeadIn, db: Session = Depends(get_db)):
                 email=body.email[:200], phone=body.phone[:50], message=body.message[:4000],
                 marks=body.marks[:50]))
     db.commit()
+    import mailer
+    mailer.notify_lead(body.kind, body.name, body.email, body.phone, body.message, body.marks[:50])
     return {"ok": True}
 
 
