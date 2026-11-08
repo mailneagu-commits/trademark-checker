@@ -162,6 +162,9 @@ def _to_mark(doc: Dict, designations: List[str], day: date, detail: Dict) -> Dic
         "publicationDate": day.isoformat(),
         "markFeature": detail.get("markFeature") or "",
         "designations": designations,
+        # Toate țările desemnate în înregistrare / desemnarea ulterioară (EM = Uniunea Europeană).
+        "designatedCountries": sorted({c.strip() for c in (doc.get("dcpcd") or "").split("~") if c.strip()}
+                                      | set(designations)),
         "transaction": TRANSACTIONS.get(doc.get("type"), doc.get("type") or ""),
         "originOffice": doc.get("oocd") or "",
         "officeUrl": MONITOR_URL.format(irn=irn),
