@@ -4,11 +4,15 @@ Gazeta WIPO a mărcilor internaționale (sistemul Madrid) — publicată săptă
 Pentru monitorizare luăm, din gazeta săptămânii, mărcile care desemnează România (RO) sau Uniunea
 Europeană (EM): înregistrările internaționale noi (tranzacția ENN) și desemnările ulterioare (EXN).
 Lista vine din endpoint-ul public al Madrid Monitor (gaz/query.jsp); clasele și produsele /
-serviciile, adresa titularului și reprezentantul — din TMview (ST13 „WO50000000” + nr. IR).
+serviciile, adresa titularului și reprezentantul — din TMview (ST13 „WO50000000” + nr. IR); pentru
+mărcile pe care TMview nu le are (sau nu răspunde), clasele și produsele se iau din fișa Madrid Monitor.
 """
 from __future__ import annotations
 
 import asyncio
+import html
+import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -89,6 +93,46 @@ async def _details(st13s: List[str]) -> Dict[str, Dict]:
     return found
 
 
+_RE_NICE_HEAD = re.compile(r'<td class="nice">(.*?)</td>', re.S)
+_RE_GS = re.compile(r'<dd class="GSGR BASICGS" nice="(\d+)">(.*?)</dd>', re.S)
+_RE_GS_EN = re.compile(r'<p class="gsterm[^"]*"[^>]*lang="EN">(.*?)</p>', re.S)
+
+
+def _monitor_goods(irn: str) -> List[Dict]:
+    """Clasele Nisa și produsele (în engleză) din fișa Madrid Monitor a înregistrării internaționale."""
+    try:
+        r = requests.get(MONITOR_URL.format(irn=int(irn)), headers=HEADERS, timeout=40)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"[WIPO] Fișa Madrid Monitor {irn}: {type(e).__name__}: {e}")
+        return []
+    text = r.text
+    goods = {}
+    for cls, body in _RE_GS.findall(text):
+        en = _RE_GS_EN.search(body)
+        term = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", en.group(1) if en else body))).strip()
+        goods.setdefault(str(int(cls)), term)
+    head = _RE_NICE_HEAD.search(text)
+    for cls in re.findall(r"\b\d{1,2}\b", re.sub(r"<[^>]+>", " ", head.group(1)) if head else ""):
+        goods.setdefault(str(int(cls)), "")
+    return [{"niceClass": c, "goodsAndServices": t} for c, t in sorted(goods.items(), key=lambda kv: int(kv[0]))]
+
+
+def _fill_from_monitor(irns: List[str], details: Dict[str, Dict]) -> int:
+    """Completează clasele lipsă din Madrid Monitor; întoarce câte mărci au fost completate."""
+    todo = [i for i in irns if not any(g.get("niceClass") for g in (details.get(st13(i)) or {}).get("goodAndServices") or [])]
+    if not todo:
+        return 0
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        res = dict(zip(todo, ex.map(_monitor_goods, todo)))
+    filled = 0
+    for irn, goods in res.items():
+        if goods:
+            details.setdefault(st13(irn), {})["goodAndServices"] = goods
+            filled += 1
+    return filled
+
+
 def _to_mark(doc: Dict, designations: List[str], day: date, detail: Dict) -> Dict:
     irn = str(doc.get("irn") or "")
     goods = [g for g in (detail.get("goodAndServices") or []) if g.get("niceClass")]
@@ -140,7 +184,8 @@ def fetch_wipo_for_date(td: date) -> Tuple[List[Dict], Dict]:
                 by_irn.setdefault(irn, doc)
                 desig.setdefault(irn, set()).add(country)
     details = asyncio.run(_details([st13(i) for i in by_irn]))
+    from_monitor = _fill_from_monitor(list(by_irn), details)
     marks = [_to_mark(doc, sorted(desig[irn]), day, details.get(st13(irn)) or {})
              for irn, doc in sorted(by_irn.items())]
     return marks, {"issue": issue, "day": day.isoformat(), "marks": len(marks),
-                   "with_classes": sum(1 for m in marks if m["niceClass"])}
+                   "with_classes": sum(1 for m in marks if m["niceClass"]), "classes_from_monitor": from_monitor}
