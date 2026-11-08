@@ -48,7 +48,10 @@ const LEAD_UI = `
     <div class="leadbar" id="leadbar"><span id="leadcount"></span>
       <button class="btn alt" onclick="openLead('info')">Solicită informații</button>
       <button class="btn ghost" style="color:#fff;border-color:rgba(255,255,255,.5);padding:8px 12px;" onclick="clearPicked()" title="Golește selecția">✕ Golește</button></div>
-    <div class="modal" id="leadModal" onclick="if(event.target===this)closeLead()"><div class="card">
+    <div class="modal" id="leadModal" onclick="if(event.target===this)closeLead()"><div class="card" style="position:relative;">
+      <button type="button" class="lead-x" onclick="closeLead()" aria-label="Închide">✕</button>
+      <div id="leadThanks" class="lead-thanks" style="display:none;">Vă mulțumim pentru solicitare! Veți fi sunat de un consultant ProtectMARK în cel mai scurt timp.<br><strong>Protect your ideas! Protect your business! Protect your future!</strong></div>
+      <div id="leadBody">
       <h2 id="leadTitle">Solicită informații</h2>
       <p class="muted small" id="leadIntro"></p>
       <form class="form-grid" onsubmit="sendLead(event)">
@@ -60,6 +63,7 @@ const LEAD_UI = `
         <div style="display:flex;gap:8px;justify-content:flex-end;"><button type="button" class="btn ghost" onclick="closeLead()">Renunță</button><button class="btn">Trimite</button></div>
         <p class="muted small" style="margin:0;">Datele trimise sunt folosite doar pentru a vă răspunde la această solicitare.</p>
       </form>
+      </div>
     </div></div>`;
 
 function header(active) {
@@ -117,6 +121,8 @@ function openLead(kind, marks) {
     : (list.length ? `${list.length === 1 ? "Marca" : "Mărcile"}: ${list.join(", ")}. Vă trimitem situația juridică actuală și datele titularului.` : "Spuneți-ne despre ce marcă doriți informații.");
   document.getElementById("msgLabel").textContent = kind === "cercetare" ? "Denumirea mărcii, clasele, detalii" : "Mesaj";
   document.getElementById("leadMsg").innerHTML = "";
+  document.getElementById("leadBody").style.display = "";
+  document.getElementById("leadThanks").style.display = "none";
   document.getElementById("leadModal").classList.add("on");
 }
 function closeLead() { document.getElementById("leadModal").classList.remove("on"); leadMarks = null; }
@@ -129,7 +135,9 @@ async function sendLead(e) {
     await api("/api/lead", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: leadKind, name: f.get("name"), email: f.get("email"), phone: f.get("phone"),
                              message: f.get("message"), marks }) });
-    msg.innerHTML = `<div class="note ok">Mulțumim! Am primit solicitarea și revenim în cel mai scurt timp.</div>`;
+    // După trimitere formularul dispare și rămâne doar mesajul de mulțumire.
+    document.getElementById("leadBody").style.display = "none";
+    document.getElementById("leadThanks").style.display = "";
     e.target.reset();
     if (leadKind === "info" && fromList) clearPicked();
   } catch (err) { msg.innerHTML = `<div class="note err">${esc(err.message)}</div>`; }
