@@ -402,7 +402,14 @@
   @media (max-width: 520px) { .daily-grid { grid-template-columns:1fr; } }
   .dtable td:has(a.dbtn), .dtable td:first-child, .dtable th { white-space:nowrap; }
   .dtable td:first-child { width:1%; padding-left:10px; padding-right:14px; }
-  .dtable td.dm { white-space:normal; font-size:.76rem; line-height:1.35; }
+  /* Aceeași înălțime pe toate rândurile în cele trei coloane (OSIM / EUIPO / WIPO): un singur rând de text,
+     ce nu încape se termină cu „…” (textul întreg apare la trecerea mouse-ului) */
+  .dtable { table-layout:fixed; }
+  .dtable th:nth-child(1) { width:26%; } .dtable th:nth-child(2), .dtable th:nth-child(3) { width:37%; }
+  .dtable tbody tr { height:46px; }
+  .dtable td { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dtable td.dm { font-size:.76rem; }
+  .dtitle { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .dtitle { text-align:center; font-size:1rem; color:#0a0d31; margin:4px 0 10px; }
   .dtable { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:.84rem; }
   .dtable th { border-bottom:2px solid #0a0d31; padding:7px 6px; text-align:center; }
