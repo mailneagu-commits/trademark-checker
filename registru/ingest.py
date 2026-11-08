@@ -179,6 +179,13 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     if rec.get("holder"):
         # Titularul la data acestui buletin — titularul afișat e cel din documentul cel mai recent.
         ev["holder"], ev["holder_address"] = rec["holder"], rec.get("holder_address") or rec["holder"]
+    # Instantaneu pentru istoricul mărcii (ce s-a schimbat de la un document la altul).
+    if rec.get("classes"):
+        ev["classes"] = rec["classes"]
+    if rec.get("name"):
+        ev["name"] = rec["name"][:200]
+    if rec.get("reg_number"):
+        ev["reg_number"] = rec["reg_number"]
     _add_event(m, ev)
     if chapter == "registered":
         _merge_stub(db, m)
@@ -278,6 +285,8 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
         detail = f"cesiune parțială către {c.new_value.split(',')[0].strip()}"
     elif c.kind == "representation" and c.new_value:
         detail = f"„{c.old_value}” → „{c.new_value}”"
+        holder_ev["name"] = c.new_value[:200]
+        holder_ev["name_before"] = (c.old_value or "")[:200]
         if norm(c.new_value) != norm(m.name):
             m.name, m.name_norm = c.new_value, norm(c.new_value)
     elif c.kind == "renewal":
@@ -287,7 +296,9 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
     elif c.kind == "license":
         detail = c.new_value[:200]
     elif c.kind == "limitation":
+        before = list(m.classes or [])
         detail = _apply_limitation(m, c)
+        holder_ev["classes_before"], holder_ev["classes"] = before, list(m.classes or [])
     elif c.kind in ("radiated", "withdrawn") and c.bulletin_date >= (m.status_date or ""):
         m.status, m.status_date = ("Radiată" if c.kind == "radiated" else "Retrasă"), c.bulletin_date
     ev = {"date": c.bulletin_date, "bopi": c.label, "chapter": label}

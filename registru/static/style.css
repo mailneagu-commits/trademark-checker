@@ -155,3 +155,22 @@ html.embed footer { display: none; }
 
 /* Titluri în carduri (pagina mărcii) */
 .card h2 { font-size: 1.35rem; margin-bottom: 12px; }
+
+/* Istoricul mărcii (cronologie) */
+.tl { list-style: none; margin: 0; padding: 0 0 0 4px; position: relative; }
+.tl::before { content: ""; position: absolute; left: 105px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+.tl-item { display: grid; grid-template-columns: 88px 1fr; gap: 38px; padding: 10px 0; position: relative; }
+.tl-item::before { content: ""; position: absolute; left: 99px; top: 15px; width: 12px; height: 12px; border-radius: 50%;
+                   background: #fff; border: 3px solid var(--navy); }
+.tl-item.tl-st::before { border-color: var(--navy); } .tl-item.tl-own::before { border-color: var(--accent); }
+.tl-item.tl-ren::before { border-color: var(--ok); } .tl-item.tl-mod::before { border-color: var(--warn); }
+.tl-date { font: 600 .9rem var(--head); color: var(--navy); text-align: right; padding-top: 2px; }
+.tl-head { margin-bottom: 4px; }
+.tl-ch { font-size: .92rem; margin: 3px 0; }
+.tl-k { display: inline-block; min-width: 118px; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .4px; }
+.tl-old { color: var(--muted); }
+.tl-arrow { color: var(--accent); font-weight: 700; }
+@media (max-width: 560px) {
+  .tl::before { left: 8px; } .tl-item { grid-template-columns: 1fr; gap: 2px; padding-left: 26px; }
+  .tl-item::before { left: 1px; } .tl-date { text-align: left; } .tl-k { min-width: 0; margin-right: 6px; }
+}
