@@ -398,7 +398,11 @@
       #bulletinComparePanel { margin-left:0 !important; margin-right:0 !important; }
     }
   /* monitorizare zilnică */
-  .daily-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:22px; }
+  /* Cardul de monitorizare zilnică iese din lățimea paginii (până la 1560px), ca Results și Conflicts să stea pe același rând */
+  .daily-wide { width:min(1560px, calc(100vw - 40px)); margin-left:calc(50% - min(780px, 50vw - 20px)); }
+  .daily-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(440px,1fr)); gap:22px; }
+  @media (max-width: 520px) { .daily-grid { grid-template-columns:1fr; } }
+  .dtable td:has(a.dbtn) { white-space:nowrap; }
   .dtitle { text-align:center; font-size:1rem; color:#0a0d31; margin:4px 0 10px; }
   .dtable { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:.84rem; }
   .dtable th { border-bottom:2px solid #0a0d31; padding:7px 6px; text-align:center; }
@@ -711,7 +715,7 @@
 <div class="container" id="page-monitorizare" style="display:none;">
 
   <!-- Monitorizare zilnică pe buletine -->
-  <div class="card">
+  <div class="card daily-wide">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
       <h2 style="margin:0;">📅 Monitorizare zilnică buletine</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.84rem;">
@@ -733,7 +737,7 @@
       <div id="dailyEuipo"><div class="dm" style="text-align:center;color:#999;padding:20px;">⏳ Se încarcă rezultatele salvate…</div></div>
       <div id="dailyWipo"><div class="dm" style="text-align:center;color:#999;padding:20px;">⏳ Se încarcă rezultatele salvate…</div></div>
     </div>
-    <div id="dailyView" style="display:none;margin-top:18px;border-top:1px solid #e3e8f2;padding-top:14px;position:relative;left:50%;transform:translateX(-50%);width:min(1560px, calc(100vw - 40px));">
+    <div id="dailyView" style="display:none;margin-top:18px;border-top:1px solid #e3e8f2;padding-top:14px;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
         <strong id="dailyViewTitle" style="color:#0a0d31;"></strong>
         <span style="display:flex;gap:8px;">
