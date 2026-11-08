@@ -105,7 +105,7 @@ def notify_lead(kind: str, name: str, email: str, phone: str, message: str, mark
     """Trimite notificarea în fundal — vizitatorul nu așteaptă serverul de email."""
     if not available():
         return
-    title = "Solicitare cercetare de disponibilitate" if kind == "cercetare" else "Solicitare informații despre mărci"
+    title = "Solicitare verificare disponibilitate marcă" if kind == "cercetare" else "Solicitare informații despre mărci"
     rows = [("Nume", name), ("Email", email), ("Telefon", phone or "—"),
             ("Mărci selectate", ", ".join(marks) or "—"), ("Mesaj", message or "—")]
     html = (f"<h2 style='font-family:Arial;color:#2b2a28'>{escape(title)}</h2>"

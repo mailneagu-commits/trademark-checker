@@ -73,7 +73,7 @@ function header(active) {
     <header class="top"><div class="wrap">
       <a class="brand" href="/" aria-label="${SITE.name} — prima pagină"><img src="/prowatch-logo.png" alt="${SITE.name}" width="160" height="40"><small>${SITE.tagline}</small></a>
       <nav class="nav">${links.map(([h, t, k]) => `<a href="${h}" class="${k === active ? "on" : ""}">${t}</a>`).join("")}
-        <a href="#" class="cta" onclick="openLead('cercetare');return false;">Cercetare</a></nav>
+        <a href="#" class="cta" onclick="openLead('cercetare');return false;">Verificare disponibilitate</a></nav>
     </div></header>`);
   document.body.insertAdjacentHTML("beforeend", `
     <footer><div class="wrap fgrid">
@@ -111,9 +111,9 @@ function openLead(kind, marks) {
   leadKind = kind;
   leadMarks = marks || null;
   const list = leadMarks || [...picked];
-  document.getElementById("leadTitle").textContent = kind === "cercetare" ? "Solicită o cercetare de disponibilitate" : "Solicită informații despre mărci";
+  document.getElementById("leadTitle").textContent = kind === "cercetare" ? "Solicită verificarea disponibilității mărcii" : "Solicită informații despre mărci";
   document.getElementById("leadIntro").textContent = kind === "cercetare"
-    ? "Spuneți-ne denumirea pe care vreți s-o înregistrați și clasele de produse/servicii — vă trimitem o cercetare de anterioritate."
+    ? "Spuneți-ne denumirea pe care vreți s-o înregistrați și clasele de produse/servicii — vă trimitem verificarea disponibilității mărcii."
     : (list.length ? `${list.length === 1 ? "Marca" : "Mărcile"}: ${list.join(", ")}. Vă trimitem situația juridică actuală și datele titularului.` : "Spuneți-ne despre ce marcă doriți informații.");
   document.getElementById("msgLabel").textContent = kind === "cercetare" ? "Denumirea mărcii, clasele, detalii" : "Mesaj";
   document.getElementById("leadMsg").innerHTML = "";
