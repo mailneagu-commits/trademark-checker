@@ -79,7 +79,7 @@ function header(active) {
     <footer><div class="wrap fgrid">
       <img src="/protectmark-logo.png" alt="ProtectMark — intellectual property attorneys" width="110" height="64">
       <div><div><strong>${esc(SITE.name)}</strong> este un serviciu ProtectMark. Datele provin din Buletinul Oficial de Proprietate Industrială (BOPI), secțiunea Mărci, publicat de OSIM.</div>
-      <div class="small" style="margin-top:6px;">Informațiile au caracter orientativ și nu înlocuiesc verificarea disponibilității mărcii făcută de un consilier în proprietate industrială. Pentru situația juridică oficială a unei mărci consultați OSIM.</div></div>
+      <div class="small" style="margin-top:6px;">Informațiile au caracter orientativ și nu înlocuiesc verificarea disponibilității mărcii făcută de un consilier în proprietate industrială. Pentru situația juridică oficială a unei mărci <a href="#" onclick="openLead('info');return false;">solicitați o consultanță gratuită</a>.</div></div>
     </div></footer>
 ` + LEAD_UI);
 }
