@@ -244,6 +244,9 @@ async def run_daily_monitor(date_str: str, sources=SOURCES, trigger: str = "manu
     if _job.get("running"):
         return {"status": "already_running", **_job}
     td = date_type.fromisoformat(date_str)
+    if td.weekday() >= 5:
+        # Sâmbăta și duminica nu se face monitorizare (nici automată, nici manuală).
+        return {"status": "weekend", "date": date_str}
     loop = asyncio.get_event_loop()
     _job.clear()
     _job.update({"running": True, "date": date_str, "trigger": trigger, "sources": {},

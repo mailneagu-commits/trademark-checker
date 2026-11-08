@@ -31,6 +31,9 @@ async def start_daily_run(date: Optional[str] = None, source: str = "both"):
         raise HTTPException(400, f"Dată invalidă: {date}. Formatul este YYYY-MM-DD.")
     if td > date_type.today():
         raise HTTPException(400, "Data nu poate fi în viitor.")
+    if td.weekday() >= 5:
+        raise HTTPException(400, f"{td:%d.%m.%Y} este {'sâmbătă' if td.weekday() == 5 else 'duminică'} — "
+                                 "în weekend nu se face monitorizare. Alege o zi lucrătoare.")
     sources = (daily_monitor.SOURCES if source == "both" else daily_monitor.ALL_SOURCES if source == "all"
                else (_check_source(source),))
     if daily_monitor.job_status().get("running"):
