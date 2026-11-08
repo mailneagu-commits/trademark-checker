@@ -50,7 +50,7 @@ const LEAD_UI = `
       <button class="btn ghost" style="color:#fff;border-color:rgba(255,255,255,.5);padding:8px 12px;" onclick="clearPicked()" title="Golește selecția">✕ Golește</button></div>
     <div class="modal" id="leadModal" onclick="if(event.target===this)closeLead()"><div class="card" style="position:relative;">
       <button type="button" class="lead-x" onclick="closeLead()" aria-label="Închide">✕</button>
-      <div id="leadThanks" class="lead-thanks" style="display:none;">Vă mulțumim pentru solicitare! Veți fi sunat de un consultant ProtectMARK în cel mai scurt timp.<br><strong>Protect your ideas! Protect your business! Protect your future!</strong></div>
+      <div id="leadThanks" class="lead-thanks" style="display:none;">Vă mulțumim pentru solicitare! Veți fi sunat de un consultant ProtectMARK în cel mai scurt timp. Dacă doriți un răspuns mai rapid, puteți suna la numărul <a href="tel:+40721514264" style="color:inherit;font-weight:600;white-space:nowrap;">0721 514 264</a>.<br><strong>Protect your ideas! Protect your business! Protect your future!</strong></div>
       <div id="leadBody">
       <h2 id="leadTitle">Solicită informații</h2>
       <p class="muted small" id="leadIntro"></p>
