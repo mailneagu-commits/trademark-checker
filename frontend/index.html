@@ -3920,6 +3920,12 @@ function renderDaily(source) {
   const rows = runs.length ? runs.map(r => {
     if (r.status === "ok") return `<tr><td>${_dmy(r.date)}</td><td>${link("results", r.date, `📋 Results (${r.results})`)}</td>
         <td>${link("conflicts", r.date, `⚠️ Conflicts (${r.conflicts})`, r.conflicts ? "conf" : "zero")}</td></tr>`;
+    if (r.status === "no_bulletin") {
+      // Doar mesajul scurt, cu data căutată; explicația completă rămâne la trecerea mouse-ului.
+      const who = { osim: "OSIM", euipo: "EUIPO", wipo: "WIPO" }[source];
+      const d = (r.date || "").split("-").reverse().join(".");
+      return `<tr><td>${_dmy(r.date)}</td><td colspan="2" class="dm" title="${escHtml(r.message)}">fără buletin — ${who} nu a publicat buletin pe ${d}</td></tr>`;
+    }
     const label = { running: "⏳ în curs…", no_bulletin: "fără buletin", error: "❌ eroare" }[r.status] || r.status;
     return `<tr><td>${_dmy(r.date)}</td><td colspan="2" class="dm" title="${escHtml(r.message)}">${label}${r.message ? " — " + escHtml(r.message).slice(0, 200) : ""}</td></tr>`;
   }).join("") : `<tr><td colspan="3" class="dm" style="text-align:center;">Nicio rulare încă — alegeți o dată și apăsați „Pornește monitorizarea”.</td></tr>`;
