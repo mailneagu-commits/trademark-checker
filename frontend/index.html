@@ -322,20 +322,20 @@
       width:16px; height:16px; border-radius:50%; background:#fff;
       transition:transform .2s; box-shadow:0 1px 3px rgba(0,0,0,.25);
     }
-    .toggle-wrap input:checked + .toggle-track { background:#7d3c98; }
+    .toggle-wrap input:checked + .toggle-track { background:#e31e24; }
     .toggle-wrap input:checked + .toggle-track::after { transform:translateX(18px); }
     .toggle-label { font-size:.82rem; font-weight:600; color:#555; }
 
     /* Expired / Ended / Terminated sections */
     .tm-card.expired-card  { opacity:.82; }
-    .tm-card.expired-card::before  { background:#7d3c98 !important; }
+    .tm-card.expired-card::before  { background:#e31e24 !important; }
     .tm-card.ended-card    { opacity:.85; }
     .tm-card.ended-card::before    { background:#e67e22 !important; }
     .tm-card.terminated-card { opacity:.82; }
     .tm-card.terminated-card::before { background:#c4161c !important; }
     .expired-section-hdr { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
-    .expired-section-hdr h2 { margin:0; font-size:.95rem; color:#6c3483; }
-    .badge-purple  { background:#f5eef8; color:#6c3483; }
+    .expired-section-hdr h2 { margin:0; font-size:.95rem; color:#c4161c; }
+    .badge-purple  { background:#fdeeee; color:#c4161c; }
     .badge-orange  { background:#fef5e7; color:#e67e22; }
     .badge-red     { background:#fdedec; color:#c4161c; }
 
@@ -703,7 +703,7 @@
         </div>
         <p style="font-size:.8rem; color:#888; margin-bottom:14px;">
           Mărci inactive prin expirare (statut <em>Expired / Lapsed / Încheiată</em> sau dată expirată). Pot fi relevante pentru analiza istoricului sau pentru revendicarea numelui.
-          <strong style="color:#6c3483;">Nu reprezintă un conflict activ.</strong>
+          <strong style="color:#c4161c;">Nu reprezintă un conflict activ.</strong>
         </p>
         <div class="cards-grid" id="expiredGrid"></div>
       </div>
@@ -1998,7 +1998,7 @@ function _buildCard(tm, sim, idx, container) {
         <span style="font-size:.72rem;color:#888;">${tm.officeName||""}</span>
         ${statusBadge(tm.status)}
         ${wildcardRiskBadge(tm)}
-        ${sim.is_multiword ? '<span style="font-size:.69rem;background:#f0e6ff;color:#6c3483;padding:2px 7px;border-radius:10px;font-weight:700;">multi-cuvânt</span>' : ''}
+        ${sim.is_multiword ? '<span style="font-size:.69rem;background:#fdeeee;color:#c4161c;padding:2px 7px;border-radius:10px;font-weight:700;">multi-cuvânt</span>' : ''}
       </div>
       <div class="tm-rows">
         <div class="tm-row"><strong>Titular:</strong> ${applicant}${applicantCountry ? ' <span style="font-size:.7rem;color:#888;">('+applicantCountry+')</span>' : ''}</div>
@@ -2166,7 +2166,7 @@ async function toggleCard(idx, tm, sim) {
       ["Jaro-Winkler",                  sim.jaro_winkler+"%"],
       ["Metaphone",                     `${sim.metaphone}% <span style="font-size:.68rem;color:#aaa">(${sim.metaphone_code_query} vs ${sim.metaphone_code_candidate})</span>`],
       ["Soundex",                       `<span style="font-size:.77rem">${sim.soundex_query} vs ${sim.soundex_candidate}</span>`],
-      ["Partial ratio",                  `${sim.partial_ratio||0}%${sim.is_multiword?' <span style="font-size:.68rem;color:#6c3483;">(multi-cuvânt)</span>':''}`],
+      ["Partial ratio",                  `${sim.partial_ratio||0}%${sim.is_multiword?' <span style="font-size:.68rem;color:#c4161c;">(multi-cuvânt)</span>':''}`],
       ["Levenshtein",                   sim.levenshtein_distance+" car."],
       ["Găsit prin varianta",           tm._found_by||"—"],
     ];
