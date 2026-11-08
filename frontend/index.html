@@ -21,7 +21,7 @@
                           border-left: 1px solid #e5e5e5; padding-left: 14px; }
     @media (max-width: 700px) { header .brand small { display: none; } header .brand img { height: 30px; } }
 
-    .container { max-width: 1280px; margin: 0 auto; padding: 28px 18px; }
+    .container { max-width: 1600px; margin: 0 auto; padding: 28px 20px; }
 
     body { padding-top: 0; }
 
@@ -398,8 +398,6 @@
       #bulletinComparePanel { margin-left:0 !important; margin-right:0 !important; }
     }
   /* monitorizare zilnică */
-  /* Cardul de monitorizare zilnică iese din lățimea paginii (până la 1560px), ca Results și Conflicts să stea pe același rând */
-  .daily-wide { width:min(1560px, calc(100vw - 40px)); margin-left:calc(50% - min(780px, 50vw - 20px)); }
   .daily-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(440px,1fr)); gap:22px; }
   @media (max-width: 520px) { .daily-grid { grid-template-columns:1fr; } }
   .dtable td:has(a.dbtn), .dtable td:first-child, .dtable th { white-space:nowrap; }
@@ -450,7 +448,7 @@
   <div id="tmviewBanner" class="tmview-banner" style="display:none;"></div>
 
   <!-- FORM -->
-  <div class="card daily-wide">
+  <div class="card">
     <h2>🔍 Date căutare</h2>
     <div class="form-row" style="margin-bottom:20px;">
       <div class="form-col">
@@ -567,7 +565,7 @@
   <div id="errorBox" class="error-msg" style="display:none;"></div>
 
   <!-- VERIFICĂRI SALVATE (baza de date) -->
-  <div class="card daily-wide" id="savedChecksCard">
+  <div class="card" id="savedChecksCard">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
       <h2 style="margin:0;cursor:pointer;" onclick="toggleSavedChecks()">🗂 Verificări salvate <span id="savedChecksCount" style="font-weight:400;color:#888;font-size:.85rem;"></span>
         <span id="savedChecksArrow" style="font-size:.8rem;color:#888;">▼</span></h2>
@@ -717,7 +715,7 @@
 <div class="container" id="page-monitorizare" style="display:none;">
 
   <!-- Monitorizare zilnică pe buletine -->
-  <div class="card daily-wide">
+  <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
       <h2 style="margin:0;">📅 Monitorizare zilnică buletine</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.84rem;">
@@ -752,7 +750,7 @@
   </div>
 
   <!-- Import + Template bar -->
-  <div class="card daily-wide">
+  <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
       <h2 style="margin:0;">📋 Mărci monitorizate</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
