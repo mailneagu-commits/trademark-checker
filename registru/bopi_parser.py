@@ -297,6 +297,8 @@ def _change_kind(title: str, header: str) -> Optional[str]:
     if "licen" in h or "LICEN" in t:
         return "license"
     if "titular vechi" in h or "cedent" in h:
+        if "CESIUN" in t and ("PARȚIAL" in t or "PARTIAL" in t or "PARŢIAL" in t):
+            return "Cesiune parțială"
         return ("Cesiune" if "CESIUN" in t else "Fuziune" if "FUZIUN" in t else
                 "Modificare adresă titular" if "ADRES" in t else "Modificare titular")
     if "limitare" in h or "LIMIT" in t:
@@ -367,7 +369,7 @@ def parse_changes(path: str) -> Iterator[Dict]:
                         if not (app or reg):
                             continue
                         rec.update(app_number=app, reg_number=reg)
-                        if kind in ("Cesiune", "Fuziune", "Modificare titular", "Modificare adresă titular"):
+                        if kind in ("Cesiune", "Cesiune parțială", "Fuziune", "Modificare titular", "Modificare adresă titular"):
                             rec["old"], rec["new"] = (cells[2] if len(cells) > 2 else ""), (cells[3] if len(cells) > 3 else "")
                         elif kind == "representation":
                             rec["old"], rec["new"] = (cells[2] if len(cells) > 2 else ""), (cells[3] if len(cells) > 3 else "")

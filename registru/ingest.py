@@ -142,10 +142,11 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
         m.filing_date = rec["date_151"]
     if rec.get("filing_date"):
         m.filing_date = rec["filing_date"]
-    for f in ("name", "holder", "holder_address", "representative", "representative_address",
-              "vienna", "colors", "disclaimer"):
+    for f in ("name", "representative", "representative_address", "vienna", "colors", "disclaimer"):
         if rec.get(f) and (is_newer or not getattr(m, f)):
             setattr(m, f, rec[f])
+    if rec.get("holder") and not m.holder:
+        m.holder, m.holder_address = rec["holder"], rec.get("holder_address") or rec["holder"]
     if rec.get("goods") and (is_newer or not m.goods):
         m.goods = rec["goods"]
         m.classes = rec["classes"]
@@ -170,13 +171,43 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     m.mark_type = ("Combinată" if m.has_image and m.name else
                    "Figurativă" if m.has_image else "Verbală")
     ev = {"date": bdate, "bopi": src["label"], "chapter": CHAPTER_LABEL.get(chapter, chapter)}
-    if ev not in (m.events or []):
-        m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+    if rec.get("holder"):
+        # Titularul la data acestui buletin — titularul afișat e cel din documentul cel mai recent.
+        ev["holder"], ev["holder_address"] = rec["holder"], rec.get("holder_address") or rec["holder"]
+    _add_event(m, ev)
     if chapter == "registered":
         _merge_stub(db, m)
         _apply_pending(db, m)
+    _recompute_holder(m)
     m.expiry_date = expiry_of(m)
     m.updated_at = datetime.utcnow()
+
+
+def _add_event(m: Mark, ev: Dict) -> None:
+    key = (ev.get("date"), ev.get("bopi"), ev.get("chapter"), ev.get("detail"))
+    if any((e.get("date"), e.get("bopi"), e.get("chapter"), e.get("detail")) == key for e in (m.events or [])):
+        return
+    m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+
+
+def _recompute_holder(m: Mark) -> None:
+    """Titularul curent = cel din documentul cu data cea mai recentă (buletin, cesiune, fuziune,
+    schimbare de nume, reînnoire), indiferent de ordinea în care au fost citite buletinele.
+    La aceeași dată: cesiunea / schimbarea de nume > buletinul mărcii > lista de reînnoiri."""
+    cands = [e for e in (m.events or []) if e.get("holder")]
+    if not cands:
+        return
+    def prio(e):
+        return e.get("prio", 1)
+    best = max(cands, key=lambda e: (e["date"], prio(e)))
+    if norm(best["holder"]) != norm(m.holder) or (best.get("holder_address") and best["holder_address"] != m.holder_address):
+        m.holder = best["holder"]
+        # Lista de reînnoiri are doar numele: păstrăm adresa cunoscută dacă e același titular.
+        if best.get("holder_address"):
+            m.holder_address = best["holder_address"]
+        elif not m.holder_address.upper().startswith(best["holder"].upper()[:12]):
+            m.holder_address = best["holder"]
+        m.holder_norm = norm(m.holder)
 
 
 def _apply_pending(db, m: Mark) -> None:
@@ -201,19 +232,21 @@ CHANGE_LABEL = {
 def _apply_change(db, m: Mark, c: MarkChange) -> None:
     label = CHANGE_LABEL.get(c.kind, c.kind)
     detail = ""
-    newest = max((e.get("date", "") for e in (m.events or [])), default="")
-    if c.kind in ("Cesiune", "Fuziune", "Modificare titular", "Modificare adresă titular") and c.new_value \
-            and c.bulletin_date >= newest:
-        m.holder_address = c.new_value
-        m.holder = c.new_value.split(",")[0].strip()
-        m.holder_norm = norm(m.holder)
-        detail = f"titular nou: {m.holder}"
+    holder_ev = {}
+    if c.kind in ("Cesiune", "Fuziune", "Modificare titular", "Modificare adresă titular") and c.new_value:
+        new_holder = c.new_value.split(",")[0].strip()
+        holder_ev = {"holder": new_holder, "holder_address": c.new_value, "prio": 2}
+        detail = f"titular nou: {new_holder}" + (f" (anterior: {c.old_value.split(',')[0].strip()})" if c.old_value else "")
+    elif c.kind == "Cesiune parțială" and c.new_value:
+        detail = f"cesiune parțială către {c.new_value.split(',')[0].strip()}"
     elif c.kind == "representation" and c.new_value:
         detail = f"„{c.old_value}” → „{c.new_value}”"
         if norm(c.new_value) != norm(m.name):
             m.name, m.name_norm = c.new_value, norm(c.new_value)
     elif c.kind == "renewal":
         detail = f"valabilă până la {c.expiry[8:10]}.{c.expiry[5:7]}.{c.expiry[:4]}" if c.expiry else ""
+        if c.new_value:      # titularul la data reînnoirii (doar numele)
+            holder_ev = {"holder": c.new_value.strip(), "holder_address": "", "prio": 0}
     elif c.kind == "license":
         detail = c.new_value[:200]
     elif c.kind in ("radiated", "withdrawn") and c.bulletin_date >= (m.status_date or ""):
@@ -223,8 +256,9 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
         ev["detail"] = detail
     if c.kind == "renewal" and c.expiry:
         ev["expiry"] = c.expiry
-    if ev not in (m.events or []):
-        m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+    ev.update(holder_ev)
+    _add_event(m, ev)
+    _recompute_holder(m)
     m.expiry_date = expiry_of(m)
     m.updated_at = datetime.utcnow()
     c.applied = True

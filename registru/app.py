@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 import ingest
 from bopi_parser import display_app
-from db import IS_PG, Lead, Mark, MarkImage, SourceFile, get_db, init_db, norm
+from db import IS_PG, Lead, Mark, MarkChange, MarkImage, SourceFile, get_db, init_db, norm
 
 app = FastAPI(title="Registru mărci OSIM", docs_url=None, redoc_url=None)
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -226,6 +226,10 @@ def public_status(db: Session = Depends(get_db)):
     return {"running": ingest.job["running"], "current": ingest.job["current"], "done": ingest.job["done"],
             "total": ingest.job["total"], "sources": by, "last_bulletin": last,
             "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job,
+            "errors": [{"bopi": e.label, "error": (e.error or "")[:160]} for e in
+                       db.query(SourceFile).filter(SourceFile.status == "error").limit(10)],
+            "changes_applied": dict(db.query(MarkChange.kind, func.count(MarkChange.id))
+                                    .filter(MarkChange.applied == True).group_by(MarkChange.kind).all()),  # noqa: E712
             "marks": db.query(func.count(Mark.app_number)).scalar() or 0}
 
 
