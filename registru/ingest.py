@@ -228,10 +228,20 @@ def _apply_limitation(m: Mark, c: MarkChange) -> str:
 
 
 def _add_event(m: Mark, ev: Dict) -> None:
-    key = (ev.get("date"), ev.get("bopi"), ev.get("chapter"), ev.get("detail"))
-    if any((e.get("date"), e.get("bopi"), e.get("chapter"), e.get("detail")) == key for e in (m.events or [])):
-        return
-    m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+    """Adaugă evenimentul; dacă există deja (buletin recitit), îl completează cu informațiile noi."""
+    key = (ev.get("date"), ev.get("bopi"), ev.get("chapter"))
+    events = [dict(e) for e in (m.events or [])]
+    for e in events:
+        if (e.get("date"), e.get("bopi"), e.get("chapter")) == key:
+            changed = False
+            for k, v in ev.items():
+                if v not in (None, "", []) and e.get(k) != v:
+                    e[k] = v
+                    changed = True
+            if changed:
+                m.events = events          # listă nouă → SQLAlchemy observă modificarea JSON
+            return
+    m.events = sorted(events + [ev], key=lambda e: e["date"])
 
 
 def _recompute_holder(m: Mark) -> None:
