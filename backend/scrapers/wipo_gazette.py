@@ -105,7 +105,7 @@ _RE_GS_EN = re.compile(r'<p class="gsterm[^"]*"[^>]*lang="EN">(.*?)</p>', re.S)
 def _monitor_goods(irn: str) -> List[Dict]:
     """Clasele Nisa și produsele (în engleză) din fișa Madrid Monitor a înregistrării internaționale."""
     try:
-        r = requests.get(MONITOR_URL.format(irn=int(irn)), headers=HEADERS, timeout=40)
+        r = requests.get(MONITOR_URL.format(irn=irn.lstrip("0")), headers=HEADERS, timeout=40)
         r.raise_for_status()
     except Exception as e:
         print(f"[WIPO] Fișa Madrid Monitor {irn}: {type(e).__name__}: {e}")
