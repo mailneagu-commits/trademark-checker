@@ -176,7 +176,9 @@ def _reprocess_old_changes():
     se reprocesează o dată, ca mărcile reînnoite fără marcă în bază să intre cu clasele lor."""
     db = SessionLocal()
     try:
-        stale = db.query(MarkChange.label).filter(MarkChange.kind == "renewal", MarkChange.old_value == "").distinct().all()
+        stale = db.query(MarkChange.label).filter(
+            ((MarkChange.kind == "renewal") & (MarkChange.old_value == "")) |
+            ((MarkChange.kind == "limitation") & (MarkChange.new_value == ""))).distinct().all()
         labels = [l for (l,) in stale]
         if labels:
             n = db.query(SourceFile).filter(SourceFile.kind == "changes", SourceFile.label.in_(labels))\

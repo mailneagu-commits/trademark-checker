@@ -327,9 +327,54 @@ def _ids(cell: str) -> Tuple[str, str]:
     return app, (nums[0].lstrip("0") if nums else "")
 
 
+RE_LIM_HEAD = re.compile(r"Nr\.\s*depozit,\s*dat[ăa]\s*depozit,\s*nr\.\s*marc[ăa]", re.I)
+RE_OBS = re.compile(r"(\d{1,2})\s*-\s*(neschimbat[ăa]|modificat[ăa]|[șşs]tears[ăa]|[șşs]ters[ăa]?|radiat[ăa]|eliminat[ăa]|retras[ăa])", re.I)
+RE_LIM_CLASS = re.compile(r"(?:^|\n)\s*(\d{1,2})\s*-\s+(?=[A-ZĂÂÎȘȚŞŢa-zăâîșțşţ])")
+
+
+def _lim_goods(text: str) -> Dict[str, str]:
+    """„5 - Preparate farmaceutice…  30 - Produse de brutărie…” → {clasă: produse}."""
+    parts = RE_LIM_CLASS.split("\n" + (text or ""))
+    goods: Dict[str, str] = {}
+    for i in range(1, len(parts) - 1, 2):
+        c = int(parts[i])
+        if 1 <= c <= 45:
+            goods[str(c)] = _flat(parts[i + 1])
+    return goods
+
+
+def _lim_record(ids: str, obs_text: str, goods_text: str) -> Optional[Dict]:
+    app, reg = _ids(ids)
+    if not (app or reg):
+        return None
+    obs = {str(int(c)): st.lower() for c, st in RE_OBS.findall(obs_text or "")}
+    deleted = sorted((c for c, st in obs.items() if re.match(r"[șşs]te|radiat|elimin|retras", st)), key=int)
+    return {"kind": "limitation", "title": "Limitare la cererea titularului", "app_number": app,
+            "reg_number": reg, "obs": obs, "deleted": deleted, "goods": _lim_goods(goods_text)}
+
+
+def _parse_limitation_text(text: str) -> Iterator[Dict]:
+    """Formatul 2023+: fișe verticale „Nr. depozit, dată depozit, nr. marcă / Nume titular /
+    Observații / Clasificare după limitare”."""
+    chunks = RE_LIM_HEAD.split(text)
+    for ch in chunks[1:]:
+        m = RE_APP_CELL.search(ch)
+        if not m:
+            continue
+        ids = ch[m.start():m.start() + 60].split("\n")[0]
+        cls_pos = re.search(r"Clasificare\s+după\s+limitare", ch, re.I)
+        before = ch[:cls_pos.start()] if cls_pos else ch
+        after = ch[cls_pos.end():] if cls_pos else ""
+        rec = _lim_record(ids, before, after)
+        if rec:
+            yield rec
+
+
 def parse_changes(path: str) -> Iterator[Dict]:
     """Rândurile tabelelor de modificări / reînnoiri / radieri / licențe / limitări."""
     mode, title = "inid", ""
+    lim_text: List[str] = []
+    lim_rows: List[List[str]] = []
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
             clean = page.filter(lambda o: WATERMARK not in (o.get("fontname") or ""))
@@ -344,12 +389,30 @@ def parse_changes(path: str) -> Iterator[Dict]:
                 if RE_TITLE.match(line.strip()):
                     title = line.strip()
                     break
+            if "LIMIT" in title.upper() or RE_LIM_HEAD.search(full):
+                lim_text.append(_clean_lines(full))
             for table in clean.extract_tables():
                 if not table or len(table) < 2:
                     continue
                 header = " ".join(_cell(c) for c in table[0])
+                if "după limitare" in header.lower():
+                    # Formatul 2022: rânduri; un rând fără nr. depozit continuă rândul anterior (pagină nouă).
+                    ci = next(i for i, c in enumerate(table[0]) if "limitare" in _cell(c).lower())
+                    oi = next((i for i, c in enumerate(table[0]) if "observ" in _cell(c).lower()), None)
+                    for row in table[1:]:
+                        cells = [_cell(c) for c in row]
+                        ids, cls_t = cells[0], cells[ci] if ci < len(cells) else ""
+                        obs_t = cells[oi] if oi is not None and oi < len(cells) else ""
+                        if RE_APP_CELL.search(ids) or re.search(r"\d{5,}", ids):
+                            lim_rows.append([ids, obs_t, cls_t])
+                        elif lim_rows:
+                            lim_rows[-1][1] += " " + obs_t
+                            lim_rows[-1][2] += "\n" + cls_t
+                    continue
+                if RE_LIM_HEAD.match(_cell(table[0][0])):
+                    continue            # fișele verticale 2023+ — citite din text, mai jos
                 kind = _change_kind(title, header)
-                if not kind:
+                if not kind or kind == "limitation":
                     continue
                 for row in table[1:]:
                     cells = [_cell(c) for c in row]
@@ -383,6 +446,12 @@ def parse_changes(path: str) -> Iterator[Dict]:
                             rec["new"] = " · ".join(c for c in cells[3:6] if c)
                     yield rec
             page.flush_cache()
+    for ids, obs_t, cls_t in lim_rows:
+        rec = _lim_record(ids, obs_t, cls_t.replace(" | ", "\n"))
+        if rec:
+            yield rec
+    if not lim_rows:
+        yield from _parse_limitation_text("\n".join(lim_text))
 
 
 # ── Buletinele 2001–2004: mărcile înregistrate apar doar în tabel ───────────────

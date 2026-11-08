@@ -188,6 +188,38 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     m.updated_at = datetime.utcnow()
 
 
+def _apply_limitation(m: Mark, c: MarkChange) -> str:
+    """Limitarea la cererea titularului: produsele claselor modificate se înlocuiesc cu lista
+    nouă, clasele șterse dispar, celelalte rămân neschimbate."""
+    import json as _json
+    try:
+        meta = _json.loads(c.old_value or "{}")
+        goods = _json.loads(c.new_value or "{}")
+    except ValueError:
+        return ""
+    obs, deleted = meta.get("obs", {}), set(meta.get("deleted", []))
+    cur = dict(m.goods or {})
+    for k in deleted:
+        cur.pop(k, None)
+    for k, txt in goods.items():
+        if k not in deleted and txt and obs.get(k, "modificată").startswith(("modific", "neschimb")):
+            if obs.get(k, "").startswith("neschimb") and cur.get(k):
+                continue
+            cur[k] = txt
+    classes = {int(k) for k in cur} | {int(k) for k, st in obs.items() if k not in deleted}
+    classes -= {int(k) for k in deleted}
+    m.goods = cur
+    m.classes = sorted(classes)
+    parts = []
+    mod = [k for k, st in obs.items() if st.startswith("modific")]
+    if mod:
+        parts.append("clase restrânse: " + ", ".join(sorted(mod, key=int)))
+    if deleted:
+        parts.append("clase șterse: " + ", ".join(sorted(deleted, key=int)))
+    parts.append("clase după limitare: " + ", ".join(str(x) for x in m.classes))
+    return "; ".join(parts)
+
+
 def _add_event(m: Mark, ev: Dict) -> None:
     key = (ev.get("date"), ev.get("bopi"), ev.get("chapter"), ev.get("detail"))
     if any((e.get("date"), e.get("bopi"), e.get("chapter"), e.get("detail")) == key for e in (m.events or [])):
@@ -254,6 +286,8 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
             holder_ev = {"holder": c.new_value.strip(), "holder_address": "", "prio": 0}
     elif c.kind == "license":
         detail = c.new_value[:200]
+    elif c.kind == "limitation":
+        detail = _apply_limitation(m, c)
     elif c.kind in ("radiated", "withdrawn") and c.bulletin_date >= (m.status_date or ""):
         m.status, m.status_date = ("Radiată" if c.kind == "radiated" else "Retrasă"), c.bulletin_date
     ev = {"date": c.bulletin_date, "bopi": c.label, "chapter": label}
@@ -309,6 +343,10 @@ def _process_changes(db, path: str, src: Dict) -> int:
     db.query(MarkChange).filter(MarkChange.label == src["label"], MarkChange.bulletin_date == bdate)\
         .delete(synchronize_session=False)
     for r in parse_changes(path):
+        if r["kind"] == "limitation":
+            import json as _json
+            r["old"] = _json.dumps({"obs": r.get("obs", {}), "deleted": r.get("deleted", [])}, ensure_ascii=False)
+            r["new"] = _json.dumps(r.get("goods", {}), ensure_ascii=False)
         c = MarkChange(kind=r["kind"], app_number=r.get("app_number", ""), reg_number=r.get("reg_number", ""),
                        old_value=r.get("old", ""), new_value=r.get("new", ""), expiry=r.get("expiry", ""),
                        title=r.get("title", ""), bulletin_date=bdate, label=src["label"])
