@@ -175,8 +175,8 @@ html.embed footer { display: none; }
   .tl-item::before { left: 1px; } .tl-date { text-align: left; } .tl-k { min-width: 0; margin-right: 6px; }
 }
 
-/* Mesajul de după trimiterea solicitării: doar text verde, fără casetă */
-.lead-thanks { color: var(--ok); font: 500 1.15rem/1.55 var(--head); padding: 18px 28px 8px 0; }
-.lead-thanks strong { display: block; margin-top: 10px; font-weight: 600; }
+/* Mesajul de după trimiterea solicitării: doar text (bleumarin + sloganul cu roșu ProtectMark), fără casetă */
+.lead-thanks { color: var(--navy); font: 500 1.15rem/1.55 var(--head); padding: 18px 28px 8px 0; }
+.lead-thanks strong { display: block; margin-top: 10px; font-weight: 600; color: var(--accent); }
 .lead-x { position: absolute; top: 10px; right: 12px; border: 0; background: none; font-size: 1.1rem; color: var(--muted); cursor: pointer; padding: 4px 6px; }
 .lead-x:hover { color: var(--ink); }
