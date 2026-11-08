@@ -65,8 +65,13 @@ def _save_processed(data: dict) -> None:
 # Fără el, PDF-ul se reparsa la fiecare cerere (ex. la fiecare rulare a
 # comparației buletin↔monitorizare), chiar dacă era deja descărcat.
 
+# Versiunea parserului: la schimbarea ei, buletinele deja parsate se reparsează (cache nou).
+# v2 — blocurile care continuă în coloana / pagina următoare (clasele 511 nu se mai pierd).
+PARSER_VERSION = 2
+
+
 def _marks_cache_path(slug: str) -> str:
-    return os.path.join(CACHE_DIR, f"{slug}.marks.json")
+    return os.path.join(CACHE_DIR, f"{slug}.marks.v{PARSER_VERSION}.json")
 
 
 def _load_marks_cache(slug: str) -> Optional[List[Dict]]:
@@ -291,6 +296,22 @@ def get_bulletin_image_path(bulletin_slug: str, app_num: str) -> Optional[str]:
     return p if os.path.exists(p) else None
 
 
+_RE_PAGE_HEAD = re.compile(r'^(BULETINUL OFICIAL|\S*USTRIAL[AĂ]? -)')
+
+
+def _strip_page_header(text: str) -> str:
+    """Scoate antetul paginii — titlul BOPI tăiat între cele două coloane, urmat de un rând cu
+    fragmentul perioadei (ex. „19.10.2026-”, „27.10.”, „.2026”) — și numărul paginii de la final."""
+    lines = text.split("\n")
+    if lines and _RE_PAGE_HEAD.match(lines[0].strip()):
+        lines.pop(0)
+        if lines and re.fullmatch(r'[-.\d]+', lines[0].strip()):
+            lines.pop(0)
+    while lines and re.fullmatch(r'\d{1,4}', lines[-1].strip()):
+        lines.pop()
+    return "\n".join(lines)
+
+
 def _parse_detail_pages(path: str) -> Dict[str, Dict]:
     """Parsează capitolul detaliat BOPI (coduri INID (210)(151)(732)(740)(540)
     (531)(591)(511)) — pagină pe 2 coloane, watermark filtrat după font
@@ -306,6 +327,10 @@ def _parse_detail_pages(path: str) -> Dict[str, Dict]:
 
     img_dir: Optional[str] = None
     detail: Dict[str, Dict] = {}
+    # Un bloc poate continua în coloana / pagina următoare (ex. clasele 511 trec pe pagina
+    # următoare) — de aceea coloanele se citesc ca un singur text continuu, fără antetul paginii,
+    # iar blocurile se separă doar după liniile ───.
+    stream: List[str] = []
     try:
         with pdfplumber.open(path) as pdf:
             for page in pdf.pages:
@@ -314,13 +339,7 @@ def _parse_detail_pages(path: str) -> Dict[str, Dict]:
                           (page.width / 2, 0, page.width, page.height)]
                 for box in halves:
                     col  = clean.crop(box)
-                    text = col.extract_text() or ""
-                    for block in re.split(r'─{3,}', text):
-                        if "(210)" not in block:
-                            continue
-                        parsed = _parse_detail_block(block)
-                        if parsed:
-                            detail[parsed["applicationNumber"]] = parsed
+                    stream.append(_strip_page_header(col.extract_text() or ""))
 
                     if not col.images:
                         continue
@@ -336,8 +355,6 @@ def _parse_detail_pages(path: str) -> Dict[str, Dict]:
                         if not owner:
                             continue
                         app_num = re.sub(r'\s+', '', owner["groups"][0]).upper()
-                        if app_num not in detail:
-                            continue
                         try:
                             if img_dir is None:
                                 img_dir = _image_dir_for(path)
@@ -346,11 +363,23 @@ def _parse_detail_pages(path: str) -> Dict[str, Dict]:
                             if not os.path.exists(img_path):
                                 bbox = (img["x0"], img["top"], img["x1"], img["bottom"])
                                 page.crop(bbox).to_image(resolution=200).save(img_path)
-                            detail[app_num]["hasImage"] = True
+                            detail.setdefault(app_num, {})["hasImage"] = True
                         except Exception as e:
                             print(f"[OSIM] Image save error for {app_num}: {e}")
     except Exception as e:
         print(f"[OSIM] Detail parse error: {e}")
+
+    has_image = {k for k, v in detail.items() if v.get("hasImage")}
+    for block in re.split(r'─{3,}', "\n".join(stream)):
+        m = RE_D_APPNUM.search(block)
+        if not m:
+            continue
+        parsed = _parse_detail_block(block[m.start():])   # primul bloc începe după tabelul-index
+        if parsed:
+            if parsed["applicationNumber"] in has_image:
+                parsed["hasImage"] = True
+            detail[parsed["applicationNumber"]] = parsed
+    detail = {k: v for k, v in detail.items() if v.get("applicationNumber")}
 
     print(f"[OSIM] Detail: {len(detail)} marks from {os.path.basename(path)}")
     return detail
