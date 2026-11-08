@@ -189,11 +189,29 @@ def _reprocess_old_changes():
         db.close()
 
 
+def _reprocess_for_history():
+    """O singură dată: buletinele citite înainte ca evenimentele să rețină titularul, denumirea și
+    clasele de la data lor se recitesc, ca istoricul mărcilor să fie complet."""
+    marker = "migration:history-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = db.query(SourceFile).filter(SourceFile.kind.in_(("daily", "admise", "monthly", "changes")),
+                                        SourceFile.status == "ok").delete(synchronize_session=False)
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="istoric v1"))
+        db.commit()
+        print(f"[DB] Buletine de recitit pentru istoric: {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
     _fix_disclaimers()
     _reprocess_old_changes()
+    _reprocess_for_history()
     if IS_PG:
         # Căutare „conține” rapidă pe sute de mii de rânduri: index trigram.
         with engine.begin() as c:
