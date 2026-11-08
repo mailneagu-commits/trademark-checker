@@ -128,6 +128,8 @@ def _add_years(iso: str, years: int) -> str:
 def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     app = rec["app_number"]
     m = db.get(Mark, app)
+    if m is None and rec.get("_status_only"):
+        return                      # respingere doar în tabel, pentru o cerere care nu e în bază
     if m is None:
         m = Mark(app_number=app, events=[], classes=[], goods={})
         db.add(m)
@@ -150,6 +152,9 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     if rec.get("goods") and (is_newer or not m.goods):
         m.goods = rec["goods"]
         m.classes = rec["classes"]
+    # O denumire / un titular citit anormal de lung (bloc PDF stricat) nu încape în indexul de căutare.
+    m.name, m.holder = (m.name or "")[:400], (m.holder or "")[:400]
+    m.representative = (m.representative or "")[:400]
     m.name_norm = norm(m.name)
     m.holder_norm = norm(m.holder)
     m.rep_norm = norm(m.representative)

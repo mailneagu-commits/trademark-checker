@@ -261,6 +261,7 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
         for k, v in CID_LETTERS.items():
             text = text.replace(k, v)
     starts = [m.start() for m in RE_APP.finditer(text)]
+    yielded: set = set()
     for i, s in enumerate(starts):
         block = text[s:starts[i + 1] if i + 1 < len(starts) else len(text)]
         # Tot ce urmează după separatorul de după marcă nu mai e al ei.
@@ -274,7 +275,12 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
             rec["image"] = images[rec["app_number"]]
         chapter = fixed or ("registered" if rec.get("reg_number") else
                             "rejected" if rec["app_number"] in rejected else "admitted")
+        yielded.add(rec["app_number"])
         yield chapter, rec
+    # Cereri respinse care apar doar în tabelul de respingeri (ex. după contestații) — fără fișă
+    # INID în acest buletin: actualizăm doar starea mărcii, dacă e deja în bază.
+    for app in sorted(rejected - yielded):
+        yield "rejected", {"app_number": app, "_status_only": True}
 
 
 # ── Tabelele din buletinul lunar: transferuri, reînnoiri, radieri, licențe ──────
