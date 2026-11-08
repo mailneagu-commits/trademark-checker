@@ -3,21 +3,23 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Verificare Disponibilitate Marcă</title>
-  <style>
+  <title>ProSearch — Verificare disponibilitate marcă</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap">
+<style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; color: #1a1a2e; min-height: 100vh; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f6f6f6; color: #0a0d31; min-height: 100vh; }
 
     header {
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
-      color: #fff; padding: 22px 40px;
-      display: flex; align-items: center; gap: 16px;
+      background: #fff; color: #0a0d31; padding: 0 40px; min-height: 76px;
+      display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
       position: sticky; top: 0; z-index: 1000; width: 100%;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+      border-bottom: 1px solid #e5e5e5; box-shadow: 0 1px 2px rgba(0,0,0,.04);
     }
-    header .logo { font-size: 2rem; }
-    header h1  { font-size: 1.35rem; font-weight: 700; }
-    header p   { font-size: 0.8rem; opacity: 0.65; margin-top: 3px; }
+    header .brand { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
+    header .brand img { height: 40px; width: auto; display: block; }
+    header .brand small { font: 500 .78rem/1.3 "Inter Tight", Helvetica, Arial, sans-serif; color: #6b6d70;
+                          border-left: 1px solid #e5e5e5; padding-left: 14px; }
+    @media (max-width: 700px) { header .brand small { display: none; } header .brand img { height: 30px; } }
 
     .container { max-width: 1280px; margin: 0 auto; padding: 28px 18px; }
 
@@ -28,7 +30,7 @@
       box-shadow: 0 2px 16px rgba(0,0,0,0.07);
       padding: 26px 30px; margin-bottom: 22px;
     }
-    .card h2 { font-size: 0.95rem; font-weight: 700; color: #0f3460; margin-bottom: 16px; }
+    .card h2 { font-size: 0.95rem; font-weight: 700; color: #0a0d31; margin-bottom: 16px; }
 
     label { display: block; font-size: 0.78rem; font-weight: 700; color: #666;
             margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -37,13 +39,13 @@
       width: 100%; padding: 11px 14px; border: 2px solid #e0e0e0;
       border-radius: 8px; font-size: 1rem; outline: none; transition: border-color .2s;
     }
-    input[type="text"]:focus { border-color: #0f3460; }
+    input[type="text"]:focus { border-color: #0a0d31; }
 
     .search-filter {
       padding: 7px 11px; border: 1.5px solid #ddd; border-radius: 6px;
       font-size: 0.86rem; width: 100%; margin-bottom: 9px; outline: none;
     }
-    .search-filter:focus { border-color: #0f3460; }
+    .search-filter:focus { border-color: #0a0d31; }
 
     .chips-grid {
       display: flex; flex-wrap: wrap; gap: 5px;
@@ -51,11 +53,11 @@
     }
     .chip {
       display: inline-flex; align-items: center; padding: 5px 11px;
-      border-radius: 20px; border: 1.5px solid #d0d7e3; background: #f7f9fc;
+      border-radius: 20px; border: 1.5px solid #dddddd; background: #f8f8f8;
       font-size: 0.76rem; cursor: pointer; user-select: none; transition: all .15s; white-space: nowrap;
     }
-    .chip:hover { border-color: #0f3460; background: #e8f0fb; }
-    .chip.selected { background: #0f3460; border-color: #0f3460; color: #fff; }
+    .chip:hover { border-color: #0a0d31; background: #f1f1f3; }
+    .chip.selected { background: #0a0d31; border-color: #0a0d31; color: #fff; }
 
     .countries-grid {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
@@ -66,35 +68,35 @@
       border-radius: 7px; border: 1.5px solid #e0e0e0; background: #fafafa;
       cursor: pointer; font-size: 0.8rem; transition: all .15s; user-select: none;
     }
-    .country-item:hover { border-color: #0f3460; background: #e8f0fb; }
-    .country-item.selected { background: #0f3460; border-color: #0f3460; color: #fff; }
+    .country-item:hover { border-color: #0a0d31; background: #f1f1f3; }
+    .country-item.selected { background: #0a0d31; border-color: #0a0d31; color: #fff; }
     .country-item .flag { font-size: 1.05rem; }
 
     .select-all-row { display: flex; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
     .btn-sm {
-      padding: 5px 12px; border-radius: 6px; border: 1.5px solid #0f3460;
-      background: transparent; color: #0f3460; font-size: 0.76rem; font-weight: 600;
+      padding: 5px 12px; border-radius: 6px; border: 1.5px solid #0a0d31;
+      background: transparent; color: #0a0d31; font-size: 0.76rem; font-weight: 600;
       cursor: pointer; transition: all .15s;
     }
-    .btn-sm:hover { background: #0f3460; color: #fff; }
+    .btn-sm:hover { background: #0a0d31; color: #fff; }
 
     .divider { border: none; border-top: 1px solid #eee; margin: 18px 0; }
 
     .btn-primary {
-      background: linear-gradient(135deg, #0f3460, #1a5276); color: #fff;
-      border: none; padding: 13px 32px; border-radius: 9px; font-size: 0.97rem;
+      background: #e31e24; color: #fff;
+      border: none; padding: 14px 28px; border-radius: 4px; font-size: 0.9rem; text-transform: uppercase; letter-spacing: .3px;
       font-weight: 700; cursor: pointer; transition: opacity .2s, transform .1s;
     }
-    .btn-primary:hover { opacity: .9; transform: translateY(-1px); }
+    .btn-primary:hover { background: #b8151b; }
     .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
     .btn-export {
       display: inline-flex; align-items: center; gap: 6px;
-      padding: 9px 18px; border-radius: 7px; border: 1.5px solid #0f3460;
-      background: #fff; color: #0f3460; font-size: 0.82rem; font-weight: 700;
+      padding: 9px 18px; border-radius: 7px; border: 1.5px solid #0a0d31;
+      background: #fff; color: #0a0d31; font-size: 0.82rem; font-weight: 700;
       cursor: pointer; transition: all .15s;
     }
-    .btn-export:hover { background: #0f3460; color: #fff; }
+    .btn-export:hover { background: #0a0d31; color: #fff; }
     .btn-export.export-success { background: #1e8449 !important; border-color: #1e8449 !important; color: #fff !important; }
 
     .spinner {
@@ -106,8 +108,8 @@
 
     .summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
     .badge { padding: 9px 16px; border-radius: 8px; font-size: 0.83rem; font-weight: 600; }
-    .badge-blue  { background: #e8f0fb; color: #0f3460; }
-    .badge-red   { background: #fdecea; color: #c0392b; }
+    .badge-blue  { background: #f1f1f3; color: #0a0d31; }
+    .badge-red   { background: #fdecea; color: #c4161c; }
     .badge-green { background: #eafaf1; color: #1e8449; }
     .badge-warn  { background: #fff3cd; color: #856404; }
 
@@ -119,7 +121,7 @@
 
     /* Risk badge */
     .risk-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:6px; font-size:.72rem; font-weight:800; letter-spacing:.5px; }
-    .risk-badge-very_high { background:#fdecea; color:#c0392b; border:1px solid #f5b7b1; }
+    .risk-badge-very_high { background:#fdecea; color:#c4161c; border:1px solid #f5b7b1; }
     .risk-badge-high      { background:#fdecea; color:#e74c3c; border:1px solid #f5b7b1; }
     .risk-badge-medium    { background:#fff9db; color:#9a7600; border:1px solid #f9e79f; }
     .risk-badge-low       { background:#eafaf1; color:#1e8449; border:1px solid #a9dfbf; }
@@ -131,7 +133,7 @@
     .seg-phon { background:#8e44ad; height:100%; transition:width .4s; }
     .seg-labels { display:flex; justify-content:space-between; font-size:.66rem; color:#aaa; }
     .score-main { font-size:.95rem; font-weight:800; }
-    .score-very_high { color:#c0392b; }
+    .score-very_high { color:#c4161c; }
     .score-high      { color:#e74c3c; }
     .score-medium    { color:#9a7600; }
     .score-low       { color:#1e8449; }
@@ -143,14 +145,14 @@
       font-size:.82rem; font-weight:600; color:#888; cursor:pointer;
       border-bottom:3px solid transparent; margin-bottom:-2px; transition:all .15s; border-radius:6px 6px 0 0;
     }
-    .tab-btn:hover { color:#0f3460; background:#f0f4fa; }
-    .tab-btn.active { color:#0f3460; border-bottom-color:#0f3460; background:#e8f0fb; }
+    .tab-btn:hover { color:#0a0d31; background:#f6f6f6; }
+    .tab-btn.active { color:#0a0d31; border-bottom-color:#0a0d31; background:#f1f1f3; }
     .tab-btn .tab-count {
       display:inline-flex; align-items:center; justify-content:center;
       width:18px; height:18px; border-radius:50%; font-size:.65rem;
-      background:#0f3460; color:#fff; margin-left:5px;
+      background:#0a0d31; color:#fff; margin-left:5px;
     }
-    .tab-btn.active .tab-count { background:#c0392b; }
+    .tab-btn.active .tab-count { background:#c4161c; }
 
     /* Status filter */
     .status-filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
@@ -158,8 +160,8 @@
       padding:5px 13px; border-radius:20px; border:1.5px solid #ddd;
       background:#fff; font-size:.77rem; font-weight:600; cursor:pointer; transition:all .15s; color:#555;
     }
-    .sf-btn:hover { border-color:#0f3460; color:#0f3460; }
-    .sf-btn.active { background:#0f3460; border-color:#0f3460; color:#fff; }
+    .sf-btn:hover { border-color:#0a0d31; color:#0a0d31; }
+    .sf-btn.active { background:#0a0d31; border-color:#0a0d31; color:#fff; }
 
     /* Geo distribution */
     .geo-grid {
@@ -167,17 +169,17 @@
     }
     .geo-item {
       display:flex; align-items:center; gap:6px; padding:6px 12px;
-      background:#f7f9fc; border-radius:8px; border:1px solid #e0e0e0; font-size:.8rem;
+      background:#f8f8f8; border-radius:8px; border:1px solid #e0e0e0; font-size:.8rem;
     }
     .geo-item .geo-count {
       display:inline-flex; align-items:center; justify-content:center;
       min-width:22px; height:22px; border-radius:11px; padding:0 6px;
-      background:#0f3460; color:#fff; font-size:.72rem; font-weight:800;
+      background:#0a0d31; color:#fff; font-size:.72rem; font-weight:800;
     }
-    .geo-item.geo-high .geo-count { background:#c0392b; }
+    .geo-item.geo-high .geo-count { background:#c4161c; }
     .geo-bar-row { display:flex; align-items:center; gap:8px; margin-top:3px; }
     .geo-bar-bg { flex:1; height:5px; background:#e9ecef; border-radius:3px; min-width:60px; }
-    .geo-bar-fill { height:100%; border-radius:3px; background:#0f3460; transition:width .5s; }
+    .geo-bar-fill { height:100%; border-radius:3px; background:#0a0d31; transition:width .5s; }
 
     /* Result cards */
     .cards-grid { display:flex; flex-direction:column; gap:12px; }
@@ -200,13 +202,13 @@
       content:''; position:absolute; left:0; top:0; bottom:0;
       width:4px; border-radius:12px 0 0 12px;
     }
-    .tm-card.risk-very_high::before { background:#c0392b; }
+    .tm-card.risk-very_high::before { background:#c4161c; }
     .tm-card.risk-high::before      { background:#e74c3c; }
     .tm-card.risk-medium::before    { background:#f1c40f; }
     .tm-card.risk-low::before       { background:#27ae60; }
     .tm-card:hover { box-shadow:0 4px 20px rgba(0,0,0,0.1); border-color:#b0c4de; }
-    .tm-card.open  { border-color:#0f3460; background:#fafcff; }
-    .tm-card.export-sel { border-color:#0f3460 !important; background:#f0f6ff !important; }
+    .tm-card.open  { border-color:#0a0d31; background:#fafcff; }
+    .tm-card.export-sel { border-color:#0a0d31 !important; background:#f0f6ff !important; }
     .tm-card.export-sel::before { width:6px !important; }
 
     /* Checkbox export — în afara cardului */
@@ -215,7 +217,7 @@
       width:24px;
     }
     .card-chk input[type=checkbox] {
-      width:18px; height:18px; cursor:pointer; accent-color:#0f3460;
+      width:18px; height:18px; cursor:pointer; accent-color:#0a0d31;
       flex-shrink:0; display:block;
     }
 
@@ -223,36 +225,36 @@
     .sel-bar {
       display:none; align-items:center; gap:10px; flex-wrap:wrap;
       padding:8px 14px; background:#eef3fb; border-radius:8px;
-      border:1.5px solid #c8d5ea; margin-bottom:10px; font-size:.83rem;
+      border:1.5px solid #d6d6d6; margin-bottom:10px; font-size:.83rem;
     }
     .sel-bar.visible { display:flex; }
-    .sel-count { font-weight:700; color:#0f3460; }
+    .sel-count { font-weight:700; color:#0a0d31; }
     .btn-sel-sm {
-      padding:4px 12px; border-radius:6px; border:1.5px solid #0f3460;
-      background:#fff; color:#0f3460; font-size:.76rem; font-weight:600;
+      padding:4px 12px; border-radius:6px; border:1.5px solid #0a0d31;
+      background:#fff; color:#0a0d31; font-size:.76rem; font-weight:600;
       cursor:pointer; transition:all .15s;
     }
-    .btn-sel-sm:hover { background:#0f3460; color:#fff; }
+    .btn-sel-sm:hover { background:#0a0d31; color:#fff; }
 
     .tm-logo {
       display:flex; align-items:center; justify-content:center;
       width:70px; height:70px; border-radius:10px; border:1.5px solid #eee;
-      background:#f7f9fc; overflow:hidden; flex-shrink:0;
+      background:#f8f8f8; overflow:hidden; flex-shrink:0;
     }
     .tm-logo img { width:100%; height:100%; object-fit:contain; padding:4px; }
     .tm-logo .no-img { font-size:1.6rem; color:#bbb; }
 
     .tm-info { display:flex; flex-direction:column; gap:5px; min-width:0; }
-    .tm-name { font-size:1.05rem; font-weight:800; color:#1a1a2e; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tm-name { font-size:1.05rem; font-weight:800; color:#0a0d31; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tm-meta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
     .tm-office-badge {
       font-size:.71rem; font-weight:700; padding:2px 8px; border-radius:5px;
-      background:#e8f0fb; color:#0f3460; letter-spacing:.3px;
+      background:#f1f1f3; color:#0a0d31; letter-spacing:.3px;
     }
     .tm-rows { display:flex; flex-direction:column; gap:3px; margin-top:3px; }
     .tm-row  { font-size:.77rem; color:#666; display:flex; gap:5px; }
     .tm-row strong { color:#333; }
-    .tm-nice { font-size:.73rem; color:#555; background:#f0f4fa; padding:2px 7px; border-radius:4px; max-width:400px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tm-nice { font-size:.73rem; color:#555; background:#f6f6f6; padding:2px 7px; border-radius:4px; max-width:400px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
     .tm-score-col {
       display:flex; flex-direction:column; align-items:flex-end; gap:8px;
@@ -260,17 +262,17 @@
     }
     .tm-dates { font-size:.7rem; color:#aaa; text-align:right; }
     .tm-dates span { display:block; }
-    .tm-expand-btn { font-size:.75rem; color:#0f3460; font-weight:600; padding:4px 10px; border-radius:6px; border:1px solid #d0d9ee; background:#f0f4fb; cursor:pointer; }
-    .tm-expand-btn:hover { background:#0f3460; color:#fff; }
+    .tm-expand-btn { font-size:.75rem; color:#0a0d31; font-weight:600; padding:4px 10px; border-radius:6px; border:1px solid #e0e0e0; background:#f0f4fb; cursor:pointer; }
+    .tm-expand-btn:hover { background:#0a0d31; color:#fff; }
 
     /* Detail panel inside card */
     .tm-detail {
       grid-column: 1 / -1;
       display:none;
       padding:16px;
-      background:#f7faff;
+      background:#fafafa;
       border-radius:8px;
-      border-top:1.5px solid #d0d9ee;
+      border-top:1.5px solid #e0e0e0;
       margin-top:4px;
       animation: slideDown .2s ease;
     }
@@ -278,14 +280,14 @@
     @keyframes slideDown { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:none} }
     .detail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-bottom:14px; }
     .detail-item label { font-size:.69rem; font-weight:700; color:#999; text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px; }
-    .detail-item span  { font-size:.85rem; font-weight:600; color:#1a1a2e; }
+    .detail-item span  { font-size:.85rem; font-weight:600; color:#0a0d31; }
     /* Tabele de buletin: încap în pagină (fără scroll lateral), conținut centrat și echilibrat */
     .bm-table { width:100%; table-layout:fixed; border-collapse:collapse; }
     .bm-table th, .bm-table td { text-align:center; vertical-align:middle; overflow-wrap:anywhere; word-break:break-word; }
     .bm-table td .goods-block { text-align:left; }
     @media (max-width: 900px) { .bm-table { min-width: 900px; } }
-    .goods-block { margin-bottom:10px; padding:10px 12px; background:#fff; border-radius:7px; border-left:3px solid #0f3460; }
-    .goods-block .cls-title { font-weight:700; color:#0f3460; font-size:.78rem; margin-bottom:3px; }
+    .goods-block { margin-bottom:10px; padding:10px 12px; background:#fff; border-radius:7px; border-left:3px solid #0a0d31; }
+    .goods-block .cls-title { font-weight:700; color:#0a0d31; font-size:.78rem; margin-bottom:3px; }
     .goods-block .cls-text  { font-size:.76rem; color:#444; line-height:1.5; }
     .goods-block .cls-desc  { font-size:.7rem; color:#999; margin-top:3px; font-style:italic; }
 
@@ -293,7 +295,7 @@
     .empty-state .icon { font-size: 2.8rem; margin-bottom: 10px; }
 
     .error-msg {
-      background: #fdecea; color: #c0392b; padding: 13px 16px;
+      background: #fdecea; color: #c4161c; padding: 13px 16px;
       border-radius: 9px; border-left: 4px solid #e74c3c; font-size: 0.88rem; margin-bottom: 14px;
     }
     .tmview-banner {
@@ -330,62 +332,61 @@
     .tm-card.ended-card    { opacity:.85; }
     .tm-card.ended-card::before    { background:#e67e22 !important; }
     .tm-card.terminated-card { opacity:.82; }
-    .tm-card.terminated-card::before { background:#c0392b !important; }
+    .tm-card.terminated-card::before { background:#c4161c !important; }
     .expired-section-hdr { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
     .expired-section-hdr h2 { margin:0; font-size:.95rem; color:#6c3483; }
     .badge-purple  { background:#f5eef8; color:#6c3483; }
     .badge-orange  { background:#fef5e7; color:#e67e22; }
-    .badge-red     { background:#fdedec; color:#c0392b; }
+    .badge-red     { background:#fdedec; color:#c4161c; }
 
     .info-box {
-      background: #e8f0fb; border-left: 4px solid #0f3460; padding: 14px 18px;
+      background: #f1f1f3; border-left: 4px solid #0a0d31; padding: 14px 18px;
       border-radius: 0 9px 9px 0; font-size: 0.83rem; line-height: 1.6; margin-top: 14px;
     }
-    .info-box code { background: #d0d9ee; padding: 1px 5px; border-radius: 3px; font-size: 0.82rem; }
+    .info-box code { background: #e0e0e0; padding: 1px 5px; border-radius: 3px; font-size: 0.82rem; }
 
     .form-row { display: flex; gap: 20px; flex-wrap: wrap; }
     .form-col  { flex: 1; min-width: 220px; }
 
     /* Page nav tabs */
     .page-tab {
-      padding:8px 18px; border-radius:7px; border:1.5px solid rgba(255,255,255,.35);
-      background:transparent; color:rgba(255,255,255,.8); font-size:.85rem; font-weight:600;
-      cursor:pointer; transition:all .15s;
+      padding:10px 4px; margin-left:18px; border:0; border-bottom:2px solid transparent; border-radius:0;
+      background:transparent; color:#000; font-size:16px; font-weight:500; cursor:pointer; transition:color .15s;
     }
-    .page-tab:hover { background:rgba(255,255,255,.15); color:#fff; }
-    .page-tab.active { background:rgba(255,255,255,.22); color:#fff; border-color:rgba(255,255,255,.7); }
+    .page-tab:hover { color:#e31e24; }
+    .page-tab.active { color:#e31e24; border-bottom-color:#e31e24; }
 
     /* Watch table */
     .watch-table { width:100%; border-collapse:collapse; font-size:.83rem; }
-    .watch-table th { background:#f0f4fa; color:#0f3460; font-weight:700; font-size:.75rem;
+    .watch-table th { background:#f6f6f6; color:#0a0d31; font-weight:700; font-size:.75rem;
                       text-transform:uppercase; letter-spacing:.4px; padding:9px 12px;
-                      text-align:left; border-bottom:2px solid #d0d9ee; }
-    .watch-table td { padding:10px 12px; border-bottom:1px solid #eef1f6; vertical-align:middle; }
+                      text-align:left; border-bottom:2px solid #e0e0e0; }
+    .watch-table td { padding:10px 12px; border-bottom:1px solid #eeeeee; vertical-align:middle; }
     .watch-table tr:last-child td { border-bottom:none; }
-    .watch-table tr:hover td { background:#f7faff; }
+    .watch-table tr:hover td { background:#fafafa; }
 
     .freq-badge { display:inline-block; padding:2px 9px; border-radius:10px; font-size:.72rem; font-weight:700; }
     .freq-daily   { background:#fef9e7; color:#b7950b; }
-    .freq-weekly  { background:#e8f0fb; color:#0f3460; }
+    .freq-weekly  { background:#f1f1f3; color:#0a0d31; }
     .freq-monthly { background:#eafaf1; color:#1e8449; }
     .active-badge { display:inline-block; padding:2px 9px; border-radius:10px; font-size:.72rem; font-weight:700; }
     .active-yes { background:#eafaf1; color:#1e8449; }
     .active-no  { background:#f9ebea; color:#922b21; }
 
-    .btn-action { padding:4px 10px; border-radius:6px; border:1.5px solid #d0d9ee; background:#fff;
+    .btn-action { padding:4px 10px; border-radius:6px; border:1.5px solid #e0e0e0; background:#fff;
                   font-size:.74rem; font-weight:600; cursor:pointer; transition:all .15s; white-space:nowrap; }
-    .btn-action:hover { border-color:#0f3460; color:#0f3460; }
-    .btn-action.danger:hover { border-color:#c0392b; color:#c0392b; }
+    .btn-action:hover { border-color:#0a0d31; color:#0a0d31; }
+    .btn-action.danger:hover { border-color:#c4161c; color:#c4161c; }
     .btn-action.run-btn { background:#eafaf1; border-color:#a9dfbf; color:#1e8449; }
     .btn-action.run-btn:hover { background:#1e8449; color:#fff; border-color:#1e8449; }
     .btn-action.run-btn.running { opacity:.6; cursor:not-allowed; }
 
     .import-ok  { background:#eafaf1; border-left:4px solid #1e8449; padding:12px 16px; border-radius:0 8px 8px 0; }
-    .import-err { background:#fdecea; border-left:4px solid #c0392b; padding:12px 16px; border-radius:0 8px 8px 0; }
+    .import-err { background:#fdecea; border-left:4px solid #c4161c; padding:12px 16px; border-radius:0 8px 8px 0; }
     .import-warn{ background:#fff3cd; border-left:4px solid #f39c12; padding:12px 16px; border-radius:0 8px 8px 0; }
 
     @media (max-width: 700px) {
-      header { padding: 18px; }
+      header { padding: 8px 16px; min-height: 60px; }
       .card  { padding: 16px; }
       .countries-grid { grid-template-columns: repeat(2, 1fr); }
       .tm-card { grid-template-columns: 54px 1fr; }
@@ -398,36 +399,42 @@
     }
   /* monitorizare zilnică */
   .daily-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:22px; }
-  .dtitle { text-align:center; font-size:1rem; color:#0f3460; margin:4px 0 10px; }
+  .dtitle { text-align:center; font-size:1rem; color:#0a0d31; margin:4px 0 10px; }
   .dtable { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:.84rem; }
-  .dtable th { border-bottom:2px solid #1a1a2e; padding:7px 6px; text-align:center; }
+  .dtable th { border-bottom:2px solid #0a0d31; padding:7px 6px; text-align:center; }
   .dtable td { border-bottom:1px solid #e8e8e8; padding:7px 6px; text-align:center; }
-  .dtable tbody tr:nth-child(odd) td { background:#f7f9fc; }
-  .dtable a { color:#00c; }
+  .dtable tbody tr:nth-child(odd) td { background:#f8f8f8; }
+  .dtable a { color:#0a0d31; }
   .dtable .dm { color:#999; font-size:.78rem; }
-  .dtable .dc { color:#c0392b; }
-  .dtable a.dbtn { display:inline-block; padding:4px 10px; border-radius:6px; border:1.5px solid #0f3460; color:#0f3460;
+  .dtable .dc { color:#c4161c; }
+  .dtable a.dbtn { display:inline-block; padding:4px 10px; border-radius:6px; border:1.5px solid #0a0d31; color:#0a0d31;
                    background:#fff; text-decoration:none; font-weight:600; font-size:.8rem; white-space:nowrap; }
-  .dtable a.dbtn:hover { background:#0f3460; color:#fff; }
-  .dtable a.dbtn.conf { border-color:#c0392b; color:#c0392b; }
-  .dtable a.dbtn.conf:hover { background:#c0392b; color:#fff; }
+  .dtable a.dbtn:hover { background:#0a0d31; color:#fff; }
+  .dtable a.dbtn.conf { border-color:#c4161c; color:#c4161c; }
+  .dtable a.dbtn.conf:hover { background:#c4161c; color:#fff; }
   .dtable a.dbtn.zero { border-color:#ccc; color:#888; }
-  .dtable a.dbtn.open { background:#0f3460; color:#fff; }
-  .dtable a.dbtn.conf.open { background:#c0392b; color:#fff; }
+  .dtable a.dbtn.open { background:#0a0d31; color:#fff; }
+  .dtable a.dbtn.conf.open { background:#c4161c; color:#fff; }
   .dpager { display:flex; justify-content:flex-end; align-items:center; gap:8px; font-size:.8rem; color:#666; }
-  </style>
+  
+  /* ── Aspect protectmark.ro: antet alb, bleumarin #0a0d31, roșu #e31e24, Inter Tight ── */
+  body { font-family: Helvetica, "Helvetica Neue", Arial, sans-serif; }
+  h1, h2, h3, th, button, .btn-primary, .btn-export, .btn-sm, .page-tab, .badge, .name, .dtitle { font-family: "Inter Tight", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  h1, h2, h3 { letter-spacing: -.2px; }
+  .card { border-radius: 4px !important; border: 1px solid #e5e5e5; box-shadow: 0 1px 2px rgba(0,0,0,.04) !important; }
+  a { color: #e31e24; }
+</style>
 </head>
 <body>
 
 <header>
-  <div class="logo">⚖️</div>
-  <div style="flex:1">
-    <h1>Verificare Disponibilitate Marcă</h1>
-    <p>Algoritm ProtectMARK · Fuzzy · Fonetic · TMview / EUIPO / WIPO</p>
+  <div class="brand">
+    <img id="brandLogo" src="prosearch-header.png" alt="ProSearch" width="169" height="40">
+    <small id="brandTag">Verificare disponibilitate marcă · TMview / EUIPO / WIPO</small>
   </div>
   <nav style="display:flex;gap:6px;">
-    <button class="page-tab active" id="tab-verificare" onclick="showPage('verificare')">🔍 Verificare</button>
-    <button class="page-tab" id="tab-monitorizare" onclick="showPage('monitorizare')">👁 Monitorizare</button>
+    <button class="page-tab active" id="tab-verificare" onclick="showPage('verificare')">Verificare</button>
+    <button class="page-tab" id="tab-monitorizare" onclick="showPage('monitorizare')">Monitorizare</button>
   </nav>
 </header>
 
@@ -478,13 +485,13 @@
       <span id="selectionInfo" style="font-size:0.8rem; color:#888;"></span>
     </div>
     <div id="searchProgress" style="display:none; margin-top:10px; padding:10px 14px;
-         background:#f0f4fa; border-radius:8px; border-left:3px solid #0f3460;
-         font-size:.84rem; color:#0f3460;">
+         background:#f6f6f6; border-radius:8px; border-left:3px solid #0a0d31;
+         font-size:.84rem; color:#0a0d31;">
       <span id="progressText">⏳ Căutare în progres...</span>
     </div>
 
-    <div id="exportQuickBar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:14px; padding:12px 14px; border:1.5px solid #d9e3f1; border-radius:10px; background:#fbfcfe; opacity:.55; pointer-events:none;">
-      <strong style="font-size:.9rem;color:#0f3460;">📤 Export și monitorizare</strong>
+    <div id="exportQuickBar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:14px; padding:12px 14px; border:1.5px solid #e5e5e5; border-radius:10px; background:#fafafa; opacity:.55; pointer-events:none;">
+      <strong style="font-size:.9rem;color:#0a0d31;">📤 Export și monitorizare</strong>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <div style="display:flex;flex-direction:column;gap:2px;">
           <button class="btn-export" id="quickExportExcel" onclick="doExport('excel')">📥 Export Excel</button>
@@ -511,30 +518,30 @@
     <div class="info-box" id="sessionBox">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
         <strong style="font-size:.95rem;">🔑 Activează date live TMview</strong>
-        <span id="sessionStatus" style="font-size:.8rem;padding:4px 12px;border-radius:12px;background:#fdecea;color:#c0392b;font-weight:700;">● Inactivă — date demo</span>
+        <span id="sessionStatus" style="font-size:.8rem;padding:4px 12px;border-radius:12px;background:#fdecea;color:#c4161c;font-weight:700;">● Inactivă — date demo</span>
       </div>
 
       <!-- Pași vizuali -->
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:14px;">
-        <div style="background:#fff;border:1.5px solid #d0d7e3;border-radius:8px;padding:10px;">
+        <div style="background:#fff;border:1.5px solid #dddddd;border-radius:8px;padding:10px;">
           <div style="font-size:1.3rem;margin-bottom:4px;">1️⃣</div>
-          <div style="font-size:.8rem;font-weight:700;color:#0f3460;margin-bottom:3px;">Deschide TMview</div>
+          <div style="font-size:.8rem;font-weight:700;color:#0a0d31;margin-bottom:3px;">Deschide TMview</div>
           <div style="font-size:.75rem;color:#555;">Apasă linkul de mai jos și fă o căutare oarecare (ex: <em>coca</em>)</div>
-          <a href="https://www.tmdn.org/tmview/" target="_blank" style="display:inline-block;margin-top:6px;font-size:.75rem;font-weight:700;color:#0f3460;">→ tmdn.org/tmview</a>
+          <a href="https://www.tmdn.org/tmview/" target="_blank" style="display:inline-block;margin-top:6px;font-size:.75rem;font-weight:700;color:#0a0d31;">→ tmdn.org/tmview</a>
         </div>
-        <div style="background:#fff;border:1.5px solid #d0d7e3;border-radius:8px;padding:10px;">
+        <div style="background:#fff;border:1.5px solid #dddddd;border-radius:8px;padding:10px;">
           <div style="font-size:1.3rem;margin-bottom:4px;">2️⃣</div>
-          <div style="font-size:.8rem;font-weight:700;color:#0f3460;margin-bottom:3px;">Deschide DevTools</div>
+          <div style="font-size:.8rem;font-weight:700;color:#0a0d31;margin-bottom:3px;">Deschide DevTools</div>
           <div style="font-size:.75rem;color:#555;">Apasă <kbd style="background:#eee;padding:1px 5px;border-radius:3px;border:1px solid #ccc;">F12</kbd> sau <kbd style="background:#eee;padding:1px 5px;border-radius:3px;border:1px solid #ccc;">Ctrl+Shift+I</kbd> și mergi la tab-ul <strong>Network</strong></div>
         </div>
-        <div style="background:#fff;border:1.5px solid #d0d7e3;border-radius:8px;padding:10px;">
+        <div style="background:#fff;border:1.5px solid #dddddd;border-radius:8px;padding:10px;">
           <div style="font-size:1.3rem;margin-bottom:4px;">3️⃣</div>
-          <div style="font-size:.8rem;font-weight:700;color:#0f3460;margin-bottom:3px;">Găsește request-ul</div>
+          <div style="font-size:.8rem;font-weight:700;color:#0a0d31;margin-bottom:3px;">Găsește request-ul</div>
           <div style="font-size:.75rem;color:#555;">În caseta de filter scrie <code style="background:#eee;padding:1px 4px;border-radius:3px;">results</code> și fă o căutare în TMview. Apare un request numit <code style="background:#eee;padding:1px 4px;border-radius:3px;">results?translate=true</code></div>
         </div>
-        <div style="background:#fff;border:1.5px solid #d0d7e3;border-radius:8px;padding:10px;">
+        <div style="background:#fff;border:1.5px solid #dddddd;border-radius:8px;padding:10px;">
           <div style="font-size:1.3rem;margin-bottom:4px;">4️⃣</div>
-          <div style="font-size:.8rem;font-weight:700;color:#0f3460;margin-bottom:3px;">Copiază ca cURL</div>
+          <div style="font-size:.8rem;font-weight:700;color:#0a0d31;margin-bottom:3px;">Copiază ca cURL</div>
           <div style="font-size:.75rem;color:#555;"><strong>Click dreapta</strong> pe request → <strong>Copy</strong> → <strong>Copy as cURL</strong> (sau <em>Copy as cURL (bash)</em>)</div>
         </div>
       </div>
@@ -542,7 +549,7 @@
       <!-- Input cURL -->
       <div style="display:flex;gap:8px;align-items:flex-start;">
         <textarea id="curlInput" placeholder="Lipește aici textul cURL copiat (începe cu: curl 'https://www.tmdn.org/tmview/api/search/results...')" rows="3"
-          style="flex:1;padding:8px;border:1.5px solid #d0d7e3;border-radius:7px;font-size:.72rem;font-family:monospace;resize:vertical;color:#333;"></textarea>
+          style="flex:1;padding:8px;border:1.5px solid #dddddd;border-radius:7px;font-size:.72rem;font-family:monospace;resize:vertical;color:#333;"></textarea>
         <button class="btn-primary" style="padding:10px 18px;white-space:nowrap;min-width:120px;" onclick="activateSession()">
           ✅ Activează
         </button>
@@ -612,9 +619,9 @@
     <div class="summary" id="summaryBadges"></div>
 
     <!-- Variante de căutare inline -->
-    <div id="variantsInline" style="display:none; margin:14px 0 18px; padding:14px; border:1.5px solid #d9e3f1; border-radius:10px; background:#fbfcfe;">
+    <div id="variantsInline" style="display:none; margin:14px 0 18px; padding:14px; border:1.5px solid #e5e5e5; border-radius:10px; background:#fafafa;">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-        <h2 style="margin:0; font-size:.95rem; color:#0f3460;">🔤 Variante de căutare generate</h2>
+        <h2 style="margin:0; font-size:.95rem; color:#0a0d31;">🔤 Variante de căutare generate</h2>
         <span id="variantsInlineCount" class="badge badge-blue"></span>
       </div>
       <div id="variantsInlineContent"></div>
@@ -677,7 +684,7 @@
         </div>
         <p style="font-size:.8rem; color:#888; margin-bottom:14px;">
           Mărci retrase, anulate, abandonate sau refuzate (statut <em>Cancelled / Withdrawn / Refused / Surrendered</em>). Pot oferi indicii despre disponibilitatea denumirii.
-          <strong style="color:#c0392b;">Nu reprezintă un conflict activ.</strong>
+          <strong style="color:#c4161c;">Nu reprezintă un conflict activ.</strong>
         </p>
         <div class="cards-grid" id="terminatedGrid"></div>
       </div>
@@ -709,8 +716,8 @@
       <h2 style="margin:0;">📅 Monitorizare zilnică buletine</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.84rem;">
         <label for="dailyDate">Data buletinului:</label>
-        <input type="date" id="dailyDate" style="padding:6px 8px;border:1.5px solid #d0d9ee;border-radius:7px;font-size:.84rem;">
-        <select id="dailySource" style="padding:6px 8px;border:1.5px solid #d0d9ee;border-radius:7px;font-size:.84rem;">
+        <input type="date" id="dailyDate" style="padding:6px 8px;border:1.5px solid #e0e0e0;border-radius:7px;font-size:.84rem;">
+        <select id="dailySource" style="padding:6px 8px;border:1.5px solid #e0e0e0;border-radius:7px;font-size:.84rem;">
           <option value="both">OSIM + EUIPO</option><option value="all">OSIM + EUIPO + WIPO</option><option value="osim">Doar OSIM</option><option value="euipo">Doar EUIPO</option><option value="wipo">Doar WIPO (gazeta de joi)</option>
         </select>
         <button class="btn-primary" id="dailyRunBtn" style="padding:8px 16px;font-size:.84rem;" onclick="startDailyRun()">▶ Pornește monitorizarea</button>
@@ -728,7 +735,7 @@
     </div>
     <div id="dailyView" style="display:none;margin-top:18px;border-top:1px solid #e3e8f2;padding-top:14px;position:relative;left:50%;transform:translateX(-50%);width:min(1560px, calc(100vw - 40px));">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
-        <strong id="dailyViewTitle" style="color:#0f3460;"></strong>
+        <strong id="dailyViewTitle" style="color:#0a0d31;"></strong>
         <span style="display:flex;gap:8px;">
           <a id="dailyViewTab" class="btn-sm" target="_blank" style="text-decoration:none;">↗ Tab nou</a>
           <button class="btn-sm" onclick="closeDailyTable()">✕ Închide</button>
@@ -753,9 +760,9 @@
     </div>
 
     <!-- Bulletin panel -->
-    <div style="background:#f7f9fc;border:1px solid #e0e7f0;border-radius:10px;padding:18px;margin-bottom:18px;">
+    <div style="background:#f8f8f8;border:1px solid #e0e7f0;border-radius:10px;padding:18px;margin-bottom:18px;">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-        <strong style="color:#0f3460;font-size:.92rem;">📰 Buletine oficiale</strong>
+        <strong style="color:#0a0d31;font-size:.92rem;">📰 Buletine oficiale</strong>
         <button class="btn-sm" onclick="toggleBulletinHistory()" id="bulletinHistoryToggle">
           📋 Istoric buletine
         </button>
@@ -765,14 +772,14 @@
       <div style="display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:12px;" class="bulletin-grid">
 
         <!-- OSIM -->
-        <div style="background:#fff;border:1.5px solid #d0d9ee;border-radius:8px;padding:14px;">
+        <div style="background:#fff;border:1.5px solid #e0e0e0;border-radius:8px;padding:14px;">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
             <span style="font-size:1.1rem;">🇷🇴</span>
-            <strong style="font-size:.85rem;color:#0f3460;">BOPI OSIM</strong>
+            <strong style="font-size:.85rem;color:#0a0d31;">BOPI OSIM</strong>
             <span style="font-size:.72rem;color:#888;margin-left:4px;">publicat zilnic (zile lucrătoare)</span>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input type="date" id="osimDate" style="padding:7px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.85rem;flex:1;min-width:130px;"
+            <input type="date" id="osimDate" style="padding:7px 10px;border:1.5px solid #e0e0e0;border-radius:6px;font-size:.85rem;flex:1;min-width:130px;"
                    max="" />
             <button class="btn-primary" style="padding:7px 14px;font-size:.82rem;white-space:nowrap;" onclick="fetchBulletin('osim')" id="osimFetchBtn">
               ⬇ Descarcă
@@ -785,14 +792,14 @@
         </div>
 
         <!-- EUIPO -->
-        <div style="background:#fff;border:1.5px solid #d0d9ee;border-radius:8px;padding:14px;">
+        <div style="background:#fff;border:1.5px solid #e0e0e0;border-radius:8px;padding:14px;">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
             <span style="font-size:1.1rem;">🇪🇺</span>
-            <strong style="font-size:.85rem;color:#0f3460;">Buletin EUIPO</strong>
+            <strong style="font-size:.85rem;color:#0a0d31;">Buletin EUIPO</strong>
             <span style="font-size:.72rem;color:#888;margin-left:4px;">publicat zilnic (zile lucrătoare)</span>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input type="date" id="euipoDate" style="padding:7px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.85rem;flex:1;min-width:130px;"
+            <input type="date" id="euipoDate" style="padding:7px 10px;border:1.5px solid #e0e0e0;border-radius:6px;font-size:.85rem;flex:1;min-width:130px;"
                    max="" />
             <button class="btn-primary" style="padding:7px 14px;font-size:.82rem;white-space:nowrap;" onclick="fetchBulletin('euipo')" id="euipoFetchBtn">
               ⬇ Descarcă
@@ -806,7 +813,7 @@
       </div>
 
       <!-- Comparație marcă din buletin ↔ listă de monitorizare -->
-      <div id="bulletinComparePanel" style="display:none;margin-bottom:14px;background:#fff;border:1.5px solid #d0d9ea;border-radius:8px;padding:14px;
+      <div id="bulletinComparePanel" style="display:none;margin-bottom:14px;background:#fff;border:1.5px solid #e0e0e0;border-radius:8px;padding:14px;
                   margin-left:-48px;margin-right:-48px;box-sizing:border-box;">
         <div id="bulletinCompareContent"></div>
       </div>
@@ -826,19 +833,19 @@
     </div>
 
     <!-- Bulletin history table (collapsed by default) -->
-    <div id="bulletinHistoryPanel" style="display:none;background:#fff;border:1.5px solid #d0d9ee;border-radius:10px;padding:16px;margin-bottom:18px;">
+    <div id="bulletinHistoryPanel" style="display:none;background:#fff;border:1.5px solid #e0e0e0;border-radius:10px;padding:16px;margin-bottom:18px;">
       <div id="savedBulletinsBox" style="margin-bottom:20px;"></div>
-      <h3 style="font-size:.88rem;color:#0f3460;margin-bottom:12px;">📋 Istoric buletine descărcate</h3>
+      <h3 style="font-size:.88rem;color:#0a0d31;margin-bottom:12px;">📋 Istoric buletine descărcate</h3>
       <div id="bulletinHistoryContent"><em style="color:#aaa;font-size:.83rem;">Se încarcă...</em></div>
     </div>
 
     <!-- Drop zone -->
     <div id="dropZone"
-         style="border:2px dashed #c8d5ea;border-radius:10px;padding:24px;text-align:center;color:#888;font-size:.88rem;
-                background:#f7f9fc;margin-bottom:16px;transition:all .2s;cursor:pointer;"
+         style="border:2px dashed #d6d6d6;border-radius:10px;padding:24px;text-align:center;color:#888;font-size:.88rem;
+                background:#f8f8f8;margin-bottom:16px;transition:all .2s;cursor:pointer;"
          onclick="document.getElementById('excelFileInput').click()"
-         ondragover="event.preventDefault();this.style.borderColor='#0f3460';this.style.background='#e8f0fb';"
-         ondragleave="this.style.borderColor='#c8d5ea';this.style.background='#f7f9fc';"
+         ondragover="event.preventDefault();this.style.borderColor='#0a0d31';this.style.background='#f1f1f3';"
+         ondragleave="this.style.borderColor='#d6d6d6';this.style.background='#f8f8f8';"
          ondrop="handleDrop(event)">
       <div style="font-size:2rem;margin-bottom:6px;">📊</div>
       <strong>Trage fișierul Excel aici</strong> sau apasă pentru a selecta<br>
@@ -846,7 +853,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-6px 0 16px;font-size:.82rem;color:#555;">
       <label for="importEmail">📧 Email notificare pentru mărcile importate:</label>
-      <input type="email" id="importEmail" placeholder="ex. office@protectmark.ro (opțional)" style="padding:6px 10px;border:1.5px solid #d0d9ee;border-radius:7px;min-width:260px;font-size:.82rem;" onchange="try{localStorage.setItem('importEmail',this.value)}catch(e){}">
+      <input type="email" id="importEmail" placeholder="ex. office@protectmark.ro (opțional)" style="padding:6px 10px;border:1.5px solid #e0e0e0;border-radius:7px;min-width:260px;font-size:.82rem;" onchange="try{localStorage.setItem('importEmail',this.value)}catch(e){}">
       <span style="font-size:.74rem;color:#999;">folosit pentru rândurile fără coloana „Email notificare”</span>
     </div>
 
@@ -854,8 +861,8 @@
     <div id="importResult" style="display:none;margin-bottom:14px;"></div>
 
     <!-- Add form -->
-    <div id="addForm" style="display:none;background:#f7f9fc;border-radius:10px;border:1.5px solid #d0d9ee;padding:20px;margin-bottom:18px;">
-      <h3 style="font-size:.92rem;color:#0f3460;margin-bottom:14px;">Adaugă marcă de monitorizat</h3>
+    <div id="addForm" style="display:none;background:#f8f8f8;border-radius:10px;border:1.5px solid #e0e0e0;padding:20px;margin-bottom:18px;">
+      <h3 style="font-size:.92rem;color:#0a0d31;margin-bottom:14px;">Adaugă marcă de monitorizat</h3>
       <div class="form-row" style="margin-bottom:12px;">
         <div class="form-col">
           <label>Denumire marcă *</label>
@@ -905,11 +912,11 @@
         <div style="font-size:.83rem;margin-top:5px;color:#aaa;">Importați un fișier Excel sau adăugați manual o marcă</div>
       </div>
       <div id="watchFilters" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:.82rem;">
-        <select id="watchPortfolio" onchange="renderWatches(_watchItems)" style="padding:6px 8px;border:1.5px solid #d0d9ee;border-radius:7px;font-size:.82rem;"></select>
-        <select id="watchOrigin" onchange="renderWatches(_watchItems)" style="padding:6px 8px;border:1.5px solid #d0d9ee;border-radius:7px;font-size:.82rem;">
+        <select id="watchPortfolio" onchange="renderWatches(_watchItems)" style="padding:6px 8px;border:1.5px solid #e0e0e0;border-radius:7px;font-size:.82rem;"></select>
+        <select id="watchOrigin" onchange="renderWatches(_watchItems)" style="padding:6px 8px;border:1.5px solid #e0e0e0;border-radius:7px;font-size:.82rem;">
           <option value="">Toate oficiile</option><option value="OSIM">OSIM</option><option value="EUIPO">EUIPO</option>
         </select>
-        <input type="search" id="watchSearch" placeholder="Caută marcă / titular / nr. depozit" oninput="renderWatches(_watchItems)" style="padding:6px 10px;border:1.5px solid #d0d9ee;border-radius:7px;min-width:240px;font-size:.82rem;">
+        <input type="search" id="watchSearch" placeholder="Caută marcă / titular / nr. depozit" oninput="renderWatches(_watchItems)" style="padding:6px 10px;border:1.5px solid #e0e0e0;border-radius:7px;min-width:240px;font-size:.82rem;">
         <span id="watchCount" style="color:#888;"></span>
       </div>
       <div id="watchList"></div>
@@ -1091,7 +1098,7 @@ function updateSessionBadge(active) {
     el.style.background = "#eafaf1"; el.style.color = "#1e8449";
     el.textContent = "● Activă — date live TMview";
   } else {
-    el.style.background = "#fdecea"; el.style.color = "#c0392b";
+    el.style.background = "#fdecea"; el.style.color = "#c4161c";
     el.textContent = "● Inactivă — folosind date demo";
   }
 }
@@ -1099,7 +1106,7 @@ function updateSessionBadge(active) {
 async function activateSession() {
   const curl = document.getElementById("curlInput").value.trim();
   const msg  = document.getElementById("sessionMsg");
-  if (!curl) { msg.style.display="block"; msg.style.color="#c0392b"; msg.textContent="⚠️ Lipește mai întâi cURL-ul."; return; }
+  if (!curl) { msg.style.display="block"; msg.style.color="#c4161c"; msg.textContent="⚠️ Lipește mai întâi cURL-ul."; return; }
   try {
     const r = await fetch("/api/set-curl", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -1112,11 +1119,11 @@ async function activateSession() {
       updateSessionBadge(true);
       document.getElementById("curlInput").value = "";
     } else {
-      msg.style.display="block"; msg.style.color="#c0392b";
+      msg.style.display="block"; msg.style.color="#c4161c";
       msg.textContent = "⚠️ " + (d.detail || "Eroare.");
     }
   } catch(e) {
-    msg.style.display="block"; msg.style.color="#c0392b";
+    msg.style.display="block"; msg.style.color="#c4161c";
     msg.textContent = "⚠️ Eroare la conectare cu serverul.";
   }
 }
@@ -1156,7 +1163,7 @@ function statusBadge(status) {
 
 function wildcardRiskBadge(tm) {
   if (tm._risk_high) {
-    return `<span style="font-size:.69rem;background:#ffe6e6;color:#c0392b;padding:2px 7px;border-radius:10px;font-weight:700;">⚠️ Risc Ridicat</span>`;
+    return `<span style="font-size:.69rem;background:#ffe6e6;color:#c4161c;padding:2px 7px;border-radius:10px;font-weight:700;">⚠️ Risc Ridicat</span>`;
   }
   return "";
 }
@@ -1397,15 +1404,15 @@ function renderSavedChecks() {
   const hadFocus = document.activeElement && document.activeElement.id === "savedChecksQ";
   const qVal = (document.getElementById("savedChecksQ") || {}).value || "";
   const fmt = t => t ? new Date(t + "Z").toLocaleString("ro-RO", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
-  const td = "padding:7px 8px;border-bottom:1px solid #eef1f6;vertical-align:middle;";
+  const td = "padding:7px 8px;border-bottom:1px solid #eeeeee;vertical-align:middle;";
   const rows = _savedChecks.map(c => {
     const risk = c.risky > 0
-      ? `<span style="color:#c0392b;font-weight:700;">${c.risky} risc ridicat</span>`
+      ? `<span style="color:#c4161c;font-weight:700;">${c.risky} risc ridicat</span>`
       : '<span style="color:#1e8449;font-weight:700;">fără risc ridicat</span>';
     const off = (c.offices || []).join(", ");
     return `<tr>
       <td style="${td}width:28px;"><input type="checkbox" class="sc-sel" value="${c.id}" onchange="updateSavedChecksSel()"></td>
-      <td style="${td}font-weight:700;color:#0f3460;cursor:pointer;" onclick="openSavedCheck(${c.id})" title="Deschide rezultatele">${_bEsc(c.name)}</td>
+      <td style="${td}font-weight:700;color:#0a0d31;cursor:pointer;" onclick="openSavedCheck(${c.id})" title="Deschide rezultatele">${_bEsc(c.name)}</td>
       <td style="${td}font-size:.78rem;">${_bEsc((c.classes || []).join(", "))}</td>
       <td style="${td}font-size:.78rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_bEsc(off)}">${_bEsc(off)}</td>
       <td style="${td}font-size:.78rem;">${risk}<br><span style="color:#888;">${c.similar} similare · ${c.total_found} găsite</span></td>
@@ -1417,27 +1424,27 @@ function renderSavedChecks() {
         <button class="btn-sm" title="Export Word" onclick="exportSavedCheck(${c.id},'word')">📝</button>
         <button class="btn-sm" title="Export PDF" onclick="exportSavedCheck(${c.id},'pdf')">📄</button>
         <button class="btn-sm" title="Export Excel" onclick="exportSavedCheck(${c.id},'excel')">📥</button>
-        <button class="btn-sm" style="color:#c0392b;" onclick="deleteSavedCheck(${c.id})" title="Șterge">🗑</button></td>
+        <button class="btn-sm" style="color:#c4161c;" onclick="deleteSavedCheck(${c.id})" title="Șterge">🗑</button></td>
     </tr>`;
   }).join("");
   body.innerHTML = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
       <input type="text" id="savedChecksQ" value="${_bEsc(qVal)}" placeholder="🔍 Caută după denumire sau notă…"
         oninput="clearTimeout(window._scT);window._scT=setTimeout(loadSavedChecks,300)"
-        style="flex:1;min-width:200px;max-width:340px;padding:6px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.82rem;">
+        style="flex:1;min-width:200px;max-width:340px;padding:6px 10px;border:1.5px solid #e0e0e0;border-radius:6px;font-size:.82rem;">
       <label class="btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;"><input type="checkbox" id="scSelAllTop" onchange="toggleAllSavedChecks(this.checked)"> Selectează tot</label>
-      <button class="btn-sm" id="scDelSelBtn" style="color:#c0392b;" disabled title="Bifează verificările din listă, apoi șterge-le pe toate odată" onclick="deleteSelectedChecks()">🗑 Șterge selectate (0)</button>
+      <button class="btn-sm" id="scDelSelBtn" style="color:#c4161c;" disabled title="Bifează verificările din listă, apoi șterge-le pe toate odată" onclick="deleteSelectedChecks()">🗑 Șterge selectate (0)</button>
       <button class="btn-sm" onclick="deleteOldChecks()">🧹 Șterge mai vechi de… zile</button>
     </div>
-    ${rows ? `<div style="overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;"><table style="width:100%;border-collapse:collapse;font-size:.82rem;">
-        <thead style="background:#f0f4fa;"><tr>
+    ${rows ? `<div style="overflow-x:auto;border:1px solid #eeeeee;border-radius:6px;"><table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+        <thead style="background:#f6f6f6;"><tr>
           <th style="padding:6px 8px;width:28px;"><input type="checkbox" id="scSelAll" onchange="toggleAllSavedChecks(this.checked)"></th>
-          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Denumire</th>
-          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Clase</th>
-          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Teritorii</th>
-          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Rezultat</th>
-          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Ultima verificare</th>
-          <th style="padding:6px 8px;text-align:left;color:#0f3460;font-size:.72rem;">Notă</th>
+          <th style="padding:6px 8px;text-align:left;color:#0a0d31;font-size:.72rem;">Denumire</th>
+          <th style="padding:6px 8px;text-align:left;color:#0a0d31;font-size:.72rem;">Clase</th>
+          <th style="padding:6px 8px;text-align:left;color:#0a0d31;font-size:.72rem;">Teritorii</th>
+          <th style="padding:6px 8px;text-align:left;color:#0a0d31;font-size:.72rem;">Rezultat</th>
+          <th style="padding:6px 8px;text-align:left;color:#0a0d31;font-size:.72rem;">Ultima verificare</th>
+          <th style="padding:6px 8px;text-align:left;color:#0a0d31;font-size:.72rem;">Notă</th>
           <th style="padding:6px 8px;"></th></tr></thead>
         <tbody>${rows}</tbody></table></div>`
       : '<div style="color:#aaa;font-size:.84rem;">Nicio verificare salvată încă — se salvează automat după fiecare căutare.</div>'}`;
@@ -1715,7 +1722,7 @@ function renderResults(data) {
           <div class="chips-grid" style="max-height:76px;">${chips(wildcard)}</div>
         </div>
         ${wildcardPatterns.length > 0 ? `<div style="grid-column:1/-1;">
-          <label style="background:#ffe6e6;padding:3px 8px;border-radius:6px;color:#c0392b;font-weight:700;display:inline-block;">⚠️ Wildcard-uri poziții specifice — Risc Ridicat (${wildcardPatterns.length})</label>
+          <label style="background:#ffe6e6;padding:3px 8px;border-radius:6px;color:#c4161c;font-weight:700;display:inline-block;">⚠️ Wildcard-uri poziții specifice — Risc Ridicat (${wildcardPatterns.length})</label>
           <div class="chips-grid" style="max-height:none;border:1.5px dashed #e74c3c;padding:6px;border-radius:6px;background:#fff5f5;">${chips(wildcardPatterns)}</div>
         </div>` : ''}
         <div>
@@ -1992,7 +1999,7 @@ function _buildCard(tm, sim, idx, container) {
         <div class="tm-row"><strong>Titular:</strong> ${applicant}${applicantCountry ? ' <span style="font-size:.7rem;color:#888;">('+applicantCountry+')</span>' : ''}</div>
         <div class="tm-row" id="rep-row-${idx}"${(() => { const r0=(tm.representatives||[])[0]; return (r0?.fullName||r0?.organizationName) ? '' : ' style="display:none"'; })()}><strong>Reprezentant:</strong> <span id="rep-name-${idx}">${(tm.representatives||[])[0]?.fullName||(tm.representatives||[])[0]?.organizationName||''}</span></div>
         <div class="tm-row"><strong>Nr. marcă:</strong> ${tm.registrationNumber||"—"} &nbsp;|&nbsp; <strong>Nr. depozit:</strong> ${tm.applicationNumber||"—"}</div>
-        <div class="tm-row"><strong>Depus:</strong> ${tm.applicationDate||"—"} &nbsp;|&nbsp; <strong>Înreg.:</strong> ${tm.registrationDate||"—"} &nbsp;|&nbsp; <strong>Expiră:</strong> <span style="color:${tm.expiryDate?"#c0392b":"#aaa"}"${tm.expiryDate && !tm.expiryIsReal ? ' title="Dată estimată (10 ani de la depozit, cu reînnoirile pentru mărcile active) — TMview nu o furnizează"' : ""}>${tm.expiryDate||"—"}${tm.expiryDate && !tm.expiryIsReal ? " *" : ""}</span></div>
+        <div class="tm-row"><strong>Depus:</strong> ${tm.applicationDate||"—"} &nbsp;|&nbsp; <strong>Înreg.:</strong> ${tm.registrationDate||"—"} &nbsp;|&nbsp; <strong>Expiră:</strong> <span style="color:${tm.expiryDate?"#c4161c":"#aaa"}"${tm.expiryDate && !tm.expiryIsReal ? ' title="Dată estimată (10 ani de la depozit, cu reînnoirile pentru mărcile active) — TMview nu o furnizează"' : ""}>${tm.expiryDate||"—"}${tm.expiryDate && !tm.expiryIsReal ? " *" : ""}</span></div>
         ${(tm.office==="WO"||tm.tmOffice==="WO") && (tm.designatedCountries||[]).length ? `<div class="tm-row"><strong>Țări desemnate (Madrid):</strong> <span style="font-size:.73rem;color:#555;">${tm.designatedCountries.join(", ")}</span></div>` : ""}
       </div>
       <div class="tm-nice" title="${niceShort}">${niceShort || "—"}</div>
@@ -2082,7 +2089,7 @@ async function toggleCard(idx, tm, sim) {
 
     const imgBig = tm.imageUrl
       ? `<img src="${tm.imageUrl}" style="max-width:100px;max-height:80px;object-fit:contain;border:1px solid #ddd;border-radius:7px;padding:4px;background:#fff;" onerror="this.style.display='none'">`
-      : `<span style="display:inline-block;width:60px;height:50px;background:#f0f2f5;border-radius:7px;font-size:1.5rem;text-align:center;line-height:50px;">™</span>`;
+      : `<span style="display:inline-block;width:60px;height:50px;background:#f6f6f6;border-radius:7px;font-size:1.5rem;text-align:center;line-height:50px;">™</span>`;
 
     const goodsHtml = (tm.goodAndServices || []).map(g =>
       `<div class="goods-block">
@@ -2139,7 +2146,7 @@ async function toggleCard(idx, tm, sim) {
       ["(220) Data depunere",           tm.applicationDate||"—"],
       ["(151) Data înregistrare",       tm.registrationDate||"—"],
       ["(450) Data publicare",          tm.publicationDate||"—"],
-      ["(180) Data expirare",           tm.expiryDate ? `<span style='color:#c0392b;font-weight:700'>${tm.expiryDate}${tm.expiryIsReal?"":" *"}</span>` : "—"],
+      ["(180) Data expirare",           tm.expiryDate ? `<span style='color:#c4161c;font-weight:700'>${tm.expiryDate}${tm.expiryIsReal?"":" *"}</span>` : "—"],
       // Opoziție
       ["Perioadă opoziție",             (tm.oppositionStartDate&&tm.oppositionEndDate) ? `${tm.oppositionStartDate} → ${tm.oppositionEndDate}` : "—"],
       // Tip marcă
@@ -2161,7 +2168,7 @@ async function toggleCard(idx, tm, sim) {
 
     // link dosar oficial
     const officialLink = tm.officeUrl
-      ? `<a href="${tm.officeUrl}" target="_blank" style="font-size:.78rem;color:#0f3460;font-weight:600;">🔗 Dosar oficial la oficiu</a>`
+      ? `<a href="${tm.officeUrl}" target="_blank" style="font-size:.78rem;color:#0a0d31;font-weight:600;">🔗 Dosar oficial la oficiu</a>`
       : "";
 
     det.innerHTML = `
@@ -2215,7 +2222,7 @@ function renderVariants(v) {
       <div class="chips-grid" style="max-height:80px;">${termHtml(wildcard)}</div>
     </div>
     <div style="margin-bottom:8px;">
-      <label style="background:#ffe6e6;padding:4px 8px;border-radius:6px;color:#c0392b;font-weight:700;display:inline-block;">⚠️ Wildcard-uri la poziții specifice — RISC RIDICAT (${wildcardPatterns.length})</label>
+      <label style="background:#ffe6e6;padding:4px 8px;border-radius:6px;color:#c4161c;font-weight:700;display:inline-block;">⚠️ Wildcard-uri la poziții specifice — RISC RIDICAT (${wildcardPatterns.length})</label>
       <div class="chips-grid" style="max-height:100px;border:1.5px dashed #e74c3c;padding:8px;border-radius:6px;background:#fff5f5;">${termHtml(wildcardPatterns)}</div>
     </div>
     <div style="margin-bottom:8px;">
@@ -2296,7 +2303,7 @@ async function saveToMonitor() {
   const email = document.getElementById("monitorEmail").value.trim();
   const msg   = document.getElementById("monitorSaveMsg");
   if (!email || !email.includes("@")) {
-    msg.style.display = "block"; msg.style.color = "#c0392b";
+    msg.style.display = "block"; msg.style.color = "#c4161c";
     msg.textContent = "Introduceți un email valid."; return;
   }
   msg.style.display = "block"; msg.style.color = "#888"; msg.textContent = "Se salvează...";
@@ -2321,10 +2328,10 @@ async function saveToMonitor() {
       setTimeout(() => { document.getElementById("addToMonitorForm").style.display = "none"; }, 2000);
     } else {
       const e = await r.json();
-      msg.style.color = "#c0392b"; msg.textContent = "Eroare: " + (e.detail || r.status);
+      msg.style.color = "#c4161c"; msg.textContent = "Eroare: " + (e.detail || r.status);
     }
   } catch(e) {
-    msg.style.color = "#c0392b"; msg.textContent = "Eroare conexiune.";
+    msg.style.color = "#c4161c"; msg.textContent = "Eroare conexiune.";
   }
 }
 
@@ -2372,7 +2379,7 @@ async function doExport(format) {
   const tick = setInterval(paint, 200);
   paint();
   if (wordBtn) wordBtn.classList.remove("export-success");
-  const failed = () => { if (durationEl) { durationEl.style.color = "#c0392b"; durationEl.textContent = `❌ eșuat după ${fmtT(elapsed())}`; } };
+  const failed = () => { if (durationEl) { durationEl.style.color = "#c4161c"; durationEl.textContent = `❌ eșuat după ${fmtT(elapsed())}`; } };
 
   try {
     const startRes = await fetch("/api/export/start", {
@@ -2451,9 +2458,9 @@ async function checkAppVersion() {
     if (b && b !== _appBuild && !document.getElementById("newVersionBar")) {
       const bar = document.createElement("div");
       bar.id = "newVersionBar";
-      bar.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;background:#0f3460;color:#fff;" +
+      bar.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;background:#0a0d31;color:#fff;" +
         "padding:12px 18px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:.9rem;display:flex;gap:14px;align-items:center;";
-      bar.innerHTML = `🔄 Aplicația a fost actualizată. <button onclick="location.reload()" style="background:#fff;color:#0f3460;border:0;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer;">Reîncarcă pagina</button>`;
+      bar.innerHTML = `🔄 Aplicația a fost actualizată. <button onclick="location.reload()" style="background:#fff;color:#0a0d31;border:0;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer;">Reîncarcă pagina</button>`;
       document.body.appendChild(bar);
     }
   } catch (e) {}
@@ -2468,6 +2475,15 @@ function showPage(page) {
   document.getElementById("page-monitorizare").style.display = page === "monitorizare" ? "" : "none";
   document.getElementById("tab-verificare").classList.toggle("active",  page === "verificare");
   document.getElementById("tab-monitorizare").classList.toggle("active", page === "monitorizare");
+  // Sigla din antet: ProSearch la verificare, ProMonitor la monitorizare.
+  const mon = page === "monitorizare";
+  const logo = document.getElementById("brandLogo");
+  logo.src = mon ? "promonitor-header.png" : "prosearch-header.png";
+  logo.alt = mon ? "ProMonitor" : "ProSearch";
+  logo.width = mon ? 186 : 169;
+  document.getElementById("brandTag").textContent = mon
+    ? "Monitorizare buletine OSIM / EUIPO / WIPO" : "Verificare disponibilitate marcă · TMview / EUIPO / WIPO";
+  document.title = mon ? "ProMonitor — Monitorizare mărci" : "ProSearch — Verificare disponibilitate marcă";
   if (page === "monitorizare") {
     loadWatches();
     loadDailyRuns();
@@ -2544,8 +2560,8 @@ async function fetchBulletin(source) {
     if (!r.ok) {
       _stopTimer("osim"); _stopTimer("euipo");
       const err = data.detail || "Eroare";
-      if (isOsim)  _setBulletinResult("osim",  `<span style="color:#c0392b;">❌ ${err}</span>`);
-      if (isEuipo) _setBulletinResult("euipo", `<span style="color:#c0392b;">❌ ${err}</span>`);
+      if (isOsim)  _setBulletinResult("osim",  `<span style="color:#c4161c;">❌ ${err}</span>`);
+      if (isEuipo) _setBulletinResult("euipo", `<span style="color:#c4161c;">❌ ${err}</span>`);
       return;
     }
 
@@ -2556,10 +2572,10 @@ async function fetchBulletin(source) {
       _setBulletinResult("osim", ok
         ? `<span style="color:#1e8449;">✅ ${info.marks} mărci · BOPI ${day}</span>${_dur(dOsim)}
            <button onclick="toggleBulletinMarks('osim','${day}')"
-             style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
+             style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #d6d6d6;border-radius:4px;background:#f6f6f6;cursor:pointer;color:#0a0d31;"
              id="osimToggleBtn">▼ Vezi mărci</button>
            <button onclick="toggleBulletinCompare('osim','${day}')"
-             style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
+             style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #d6d6d6;border-radius:4px;background:#f6f6f6;cursor:pointer;color:#0a0d31;"
              id="osimCompareBtn">⚖ Compară cu monitorizarea</button>`
         : `<span style="color:#e67e22;">⚠ ${info.error || "Nedisponibil pentru această dată"}</span>`
       );
@@ -2576,10 +2592,10 @@ async function fetchBulletin(source) {
         _setBulletinResult("euipo",
           `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>${_dur(dEuipo)}
            <button onclick="toggleBulletinMarks('euipo','${day}')"
-             style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
+             style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #d6d6d6;border-radius:4px;background:#f6f6f6;cursor:pointer;color:#0a0d31;"
              id="euipoToggleBtn">▼ Vezi mărci</button>
            <button onclick="toggleBulletinCompare('euipo','${day}')"
-             style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
+             style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #d6d6d6;border-radius:4px;background:#f6f6f6;cursor:pointer;color:#0a0d31;"
              id="euipoCompareBtn">⚖ Compară cu monitorizarea</button>`
         );
       } else {
@@ -2590,8 +2606,8 @@ async function fetchBulletin(source) {
     }
   } catch(e) {
     _stopTimer("osim"); _stopTimer("euipo");
-    if (isOsim)  _setBulletinResult("osim",  `<span style="color:#c0392b;">❌ ${e.message}</span>`);
-    if (isEuipo) _setBulletinResult("euipo", `<span style="color:#c0392b;">❌ ${e.message}</span>`);
+    if (isOsim)  _setBulletinResult("osim",  `<span style="color:#c4161c;">❌ ${e.message}</span>`);
+    if (isEuipo) _setBulletinResult("euipo", `<span style="color:#c4161c;">❌ ${e.message}</span>`);
   } finally {
     btn.disabled = false; btn.textContent = origText;
   }
@@ -2626,10 +2642,10 @@ async function _pollEuipoBulletin(targetDate, attempt) {
         _setBulletinResult("euipo",
           `<span style="color:#1e8449;">✅ ${info.marks} mărci · ${day} · sursa: ${src}</span>${_dur(dEuipo)}
            <button onclick="toggleBulletinMarks('euipo','${day}')"
-             style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
+             style="margin-left:8px;font-size:.75rem;padding:2px 8px;border:1px solid #d6d6d6;border-radius:4px;background:#f6f6f6;cursor:pointer;color:#0a0d31;"
              id="euipoToggleBtn">▼ Vezi mărci</button>
            <button onclick="toggleBulletinCompare('euipo','${day}')"
-             style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;"
+             style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #d6d6d6;border-radius:4px;background:#f6f6f6;cursor:pointer;color:#0a0d31;"
              id="euipoCompareBtn">⚖ Compară cu monitorizarea</button>`
         );
       } else {
@@ -2637,7 +2653,7 @@ async function _pollEuipoBulletin(targetDate, attempt) {
       }
     } catch (e) {
       _stopTimer("euipo");
-      _setBulletinResult("euipo", `<span style="color:#c0392b;">❌ ${e.message}</span>`);
+      _setBulletinResult("euipo", `<span style="color:#c4161c;">❌ ${e.message}</span>`);
     }
   }, 10000);
 }
@@ -2662,7 +2678,7 @@ async function runAllWatches() {
       return;
     }
     if (!r.ok) {
-      out.innerHTML = `<span style="color:#c0392b;">❌ ${data.detail || "Eroare"}</span>`;
+      out.innerHTML = `<span style="color:#c4161c;">❌ ${data.detail || "Eroare"}</span>`;
       btn.disabled = false; btn.textContent = origText;
       return;
     }
@@ -2670,7 +2686,7 @@ async function runAllWatches() {
     out.innerHTML = `<span style="color:#2471a3;">⏳ Verificare pornită (0/${data.total || "?"})...</span>`;
     _pollRunAll();
   } catch (e) {
-    out.innerHTML = `<span style="color:#c0392b;">❌ ${e.message}</span>`;
+    out.innerHTML = `<span style="color:#c4161c;">❌ ${e.message}</span>`;
     btn.disabled = false; btn.textContent = origText;
   }
 }
@@ -2692,7 +2708,7 @@ async function _pollRunAll() {
     const totalNew  = results.reduce((s, r) => s + (r.new_conflicts || 0) + (r.new_similar || 0), 0);
     const errors    = results.filter(r => r.error).length;
     out.innerHTML = totalNew > 0
-      ? `<span style="color:#c0392b;font-weight:600;">✅ Verificare completă — ${totalNew} marcă/mărci noi găsite în ${results.length} mărci verificate!</span>`
+      ? `<span style="color:#c4161c;font-weight:600;">✅ Verificare completă — ${totalNew} marcă/mărci noi găsite în ${results.length} mărci verificate!</span>`
       : `<span style="color:#1e8449;">✅ Verificare completă — ${results.length} mărci verificate, nicio noutate.</span>`;
     if (errors) out.innerHTML += ` <span style="color:#e67e22;">(${errors} erori — vezi consola serverului)</span>`;
 
@@ -2700,7 +2716,7 @@ async function _pollRunAll() {
     btn.textContent = "🔍 Monitorizează acum toate mărcile";
     if (typeof loadWatches === "function") loadWatches();
   } catch (e) {
-    out.innerHTML = `<span style="color:#c0392b;">❌ ${e.message}</span>`;
+    out.innerHTML = `<span style="color:#c4161c;">❌ ${e.message}</span>`;
     btn.disabled = false;
     btn.textContent = "🔍 Monitorizează acum toate mărcile";
   }
@@ -2752,7 +2768,7 @@ async function watchBulletinEnrich(source, date, data) {
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
       clearInterval(tick);
-      _setEnrichBar(source, `<span style="color:#c0392b;">❌ Detaliile nu au putut fi aduse: ${_bEsc(e.detail || r.status)}</span>`);
+      _setEnrichBar(source, `<span style="color:#c4161c;">❌ Detaliile nu au putut fi aduse: ${_bEsc(e.detail || r.status)}</span>`);
       return;
     }
     await new Promise(res => setTimeout(res, 1200));
@@ -2771,11 +2787,11 @@ async function watchBulletinEnrich(source, date, data) {
     clearInterval(tick);
     const dur = _fmtElapsed(Date.now() - t0);
     if (last && last.status === "done" && last.error) {
-      _setEnrichBar(source, `<span style="color:#c0392b;">❌ ${_bEsc(last.error)}</span>`);
+      _setEnrichBar(source, `<span style="color:#c4161c;">❌ ${_bEsc(last.error)}</span>`);
       return;
     }
     if (last && last.status === "error") {
-      _setEnrichBar(source, `<span style="color:#c0392b;">❌ Eroare la aducerea detaliilor: ${_bEsc(last.error)}</span>`);
+      _setEnrichBar(source, `<span style="color:#c4161c;">❌ Eroare la aducerea detaliilor: ${_bEsc(last.error)}</span>`);
       return;
     }
     // Reîncarcă mărcile cu detaliile aduse și redesenează tabelul
@@ -2792,7 +2808,7 @@ async function watchBulletinEnrich(source, date, data) {
     }
   } catch (e) {
     clearInterval(tick);
-    _setEnrichBar(source, `<span style="color:#c0392b;">❌ ${_bEsc(e.message)}</span>`);
+    _setEnrichBar(source, `<span style="color:#c4161c;">❌ ${_bEsc(e.message)}</span>`);
   } finally {
     clearInterval(tick);
     _enrichWatching[key] = false;
@@ -2829,7 +2845,7 @@ async function toggleBulletinMarks(source, date) {
     if (!r.ok) {
       const e = await r.json();
       document.getElementById(source + "MarksContent").innerHTML =
-        `<span style="color:#c0392b;font-size:.82rem;">❌ ${e.detail || "Eroare"}</span>`;
+        `<span style="color:#c4161c;font-size:.82rem;">❌ ${e.detail || "Eroare"}</span>`;
       return;
     }
     const data = await r.json();
@@ -2838,7 +2854,7 @@ async function toggleBulletinMarks(source, date) {
     watchBulletinEnrich(source, date, data);
   } catch(e) {
     document.getElementById(source + "MarksContent").innerHTML =
-      `<span style="color:#c0392b;font-size:.82rem;">❌ ${e.message}</span>`;
+      `<span style="color:#c4161c;font-size:.82rem;">❌ ${e.message}</span>`;
   }
 }
 
@@ -2852,13 +2868,13 @@ function renderBulletinMarks(source, data) {
 
   const filterId = source + "MarksFilter";
   const tableId  = source + "MarksTable";
-  const td = "padding:8px 6px;border-bottom:1px solid #eef1f6;";
+  const td = "padding:8px 6px;border-bottom:1px solid #eeeeee;";
 
   const rows = data.marks.map(m => {
     const img = m.markImageURI
-      ? `<img src="${_bEsc(m.markImageURI)}" alt="" style="max-height:52px;max-width:110px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
+      ? `<img src="${_bEsc(m.markImageURI)}" alt="" style="max-height:52px;max-width:110px;object-fit:contain;background:#fff;border:1px solid #eeeeee;border-radius:4px;padding:3px;" loading="lazy" />`
       : "—";
-    const extra = `<tr class="bm-detail" data-open="0" style="display:none;"><td colspan="8" style="padding:4px 10px 12px;border-bottom:2px solid #d0d9ea;">${bulletinMarkDetailHtml(m)}</td></tr>`;
+    const extra = `<tr class="bm-detail" data-open="0" style="display:none;"><td colspan="8" style="padding:4px 10px 12px;border-bottom:2px solid #e0e0e0;">${bulletinMarkDetailHtml(m)}</td></tr>`;
     return `<tr class="bm-main">
       <td style="${td}font-size:.8rem;white-space:nowrap;">${_bEsc(m.applicationNumber) || "—"}<br>
         <button class="btn-sm" style="margin-top:5px;padding:2px 7px;font-size:.68rem;"
@@ -2874,19 +2890,19 @@ function renderBulletinMarks(source, data) {
   }).join("");
 
   const th = (label, title, w) =>
-    `<th style="padding:7px 6px;width:${w}%;color:#0f3460;font-size:.72rem;" title="${title}">${label}</th>`;
+    `<th style="padding:7px 6px;width:${w}%;color:#0a0d31;font-size:.72rem;" title="${title}">${label}</th>`;
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-      <span style="font-size:.8rem;color:#0f3460;font-weight:600;">${data.total} mărci în buletin</span>
+      <span style="font-size:.8rem;color:#0a0d31;font-weight:600;">${data.total} mărci în buletin</span>
       <input type="text" id="${filterId}" placeholder="🔍 Caută denumire / titular / produse..."
         oninput="filterBulletinMarks('${source}')"
-        style="flex:1;padding:5px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.8rem;max-width:320px;" />
+        style="flex:1;padding:5px 10px;border:1.5px solid #e0e0e0;border-radius:6px;font-size:.8rem;max-width:320px;" />
       <button class="btn-sm" style="white-space:nowrap;" onclick="collapseBulletinDetails('${source}')">▲ Restrânge toate</button>
     </div>
     <div id="${source}EnrichBar" style="font-size:.78rem;font-weight:600;margin-bottom:8px;">${_enrichState[source] || ""}</div>
-    <div style="max-height:620px;overflow-y:auto;overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;">
+    <div style="max-height:620px;overflow-y:auto;overflow-x:auto;border:1px solid #eeeeee;border-radius:6px;">
       <table id="${tableId}" class="bm-table" style="font-size:.8rem;">
-        <thead style="position:sticky;top:0;background:#f0f4fa;z-index:1;">
+        <thead style="position:sticky;top:0;background:#f6f6f6;z-index:1;">
           <tr>
             ${th("(210) Nr. depozit", "Serial number of the application", 10)}
             ${th("Imagine", "Reproduction of the mark", 10)}
@@ -2939,7 +2955,7 @@ async function toggleBulletinCompare(source, date) {
     const data = await r.json();
     if (!r.ok) {
       document.getElementById("bulletinCompareContent").innerHTML =
-        `<span style="color:#c0392b;font-size:.82rem;">❌ ${data.detail || "Eroare"}</span>`;
+        `<span style="color:#c4161c;font-size:.82rem;">❌ ${data.detail || "Eroare"}</span>`;
       return;
     }
     if (data.status === "done") {
@@ -2950,7 +2966,7 @@ async function toggleBulletinCompare(source, date) {
     _pollBulletinCompare(source, date, 0);
   } catch (e) {
     document.getElementById("bulletinCompareContent").innerHTML =
-      `<span style="color:#c0392b;font-size:.82rem;">❌ ${e.message}</span>`;
+      `<span style="color:#c4161c;font-size:.82rem;">❌ ${e.message}</span>`;
   }
 }
 
@@ -2972,14 +2988,14 @@ async function _pollBulletinCompare(source, date, attempt) {
       }
       if (data.status === "error") {
         document.getElementById("bulletinCompareContent").innerHTML =
-          `<span style="color:#c0392b;font-size:.82rem;">❌ ${data.error || "Eroare"}</span>`;
+          `<span style="color:#c4161c;font-size:.82rem;">❌ ${data.error || "Eroare"}</span>`;
         return;
       }
       _bulletinCompareCache[cacheKey] = data;
       _renderBulletinCompare(data);
     } catch (e) {
       document.getElementById("bulletinCompareContent").innerHTML =
-        `<span style="color:#c0392b;font-size:.82rem;">❌ ${e.message}</span>`;
+        `<span style="color:#c4161c;font-size:.82rem;">❌ ${e.message}</span>`;
     }
   }, 4000);
 }
@@ -2996,15 +3012,15 @@ function _renderBulletinCompare(data) {
 
   // Partea „din buletin” pe coduri INID: 210 · IMG · 220 · 442 · 541 · 731 · 740 · 511,
   // apoi marca monitorizată și scorul de asemănare.
-  const td = "padding:8px 5px;border-bottom:1px solid #eef1f6;font-size:.78rem;";
+  const td = "padding:8px 5px;border-bottom:1px solid #eeeeee;font-size:.78rem;";
   const rows = data.rows.map(r => {
     const bm = r.bulletin_mark || {};
     const img = (bm.markImageURI || r.bulletin_image)
-      ? `<img src="${_bEsc(bm.markImageURI || r.bulletin_image)}" alt="" style="max-height:64px;max-width:120px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:3px;" loading="lazy" />`
+      ? `<img src="${_bEsc(bm.markImageURI || r.bulletin_image)}" alt="" style="max-height:64px;max-width:120px;object-fit:contain;background:#fff;border:1px solid #eeeeee;border-radius:4px;padding:3px;" loading="lazy" />`
       : "—";
-    const riskColor = { very_high:"#c0392b", high:"#e74c3c", medium:"#e67e22", low:"#e67e22" }[r.risk_level] || "#888";
+    const riskColor = { very_high:"#c4161c", high:"#e74c3c", medium:"#e67e22", low:"#e67e22" }[r.risk_level] || "#888";
     const extra = r.bulletin_mark
-      ? `<tr data-open="0" style="display:none;"><td colspan="14" style="padding:4px 12px 12px;border-bottom:2px solid #d0d9ea;">${bulletinMarkDetailHtml(bm)}</td></tr>`
+      ? `<tr data-open="0" style="display:none;"><td colspan="14" style="padding:4px 12px 12px;border-bottom:2px solid #e0e0e0;">${bulletinMarkDetailHtml(bm)}</td></tr>`
       : "";
     return `<tr>
       <td style="${td}font-weight:700;color:${riskColor};">${r.similarity_percent}%</td>
@@ -3018,7 +3034,7 @@ function _renderBulletinCompare(data) {
       <td style="${td}font-size:.74rem;">${r.bulletin_mark ? bulletinApplicantsHtml(bm) : (_bEsc(r.bulletin_holder) || "—")}</td>
       <td style="${td}font-size:.74rem;">${r.bulletin_mark ? bulletinRepsHtml(bm) : (_bEsc(r.bulletin_representative) || "—")}</td>
       <td style="${td}font-size:.8rem;font-weight:600;">${r.bulletin_mark ? _bEsc(bulletinClassNumbers(bm)) : _bEsc((r.bulletin_classes||[]).join(", ") || "—")}</td>
-      <td style="${td}border-left:2px solid #d0d9ea;font-weight:700;background:#f6f4fb;font-size:.82rem;">${_bEsc(r.watch_item_name) || "—"}</td>
+      <td style="${td}border-left:2px solid #e0e0e0;font-weight:700;background:#f6f4fb;font-size:.82rem;">${_bEsc(r.watch_item_name) || "—"}</td>
       <td style="${td}">${_bEsc((r.watch_item_classes||[]).join(", ")) || "—"}</td>
       <td style="${td}">${_bEsc(r.watch_item_holder) || "—"}</td>
       <td style="${td}font-weight:700;color:${riskColor};">${r.similarity_percent}%</td>
@@ -3036,14 +3052,14 @@ function _renderBulletinCompare(data) {
       ${data.total_matches} potriviri găsite din ${data.total_bulletin_marks} mărci în buletin
       (sortate după nivel de risc și procent de asemănare).
     </div>
-    <div style="overflow-x:auto;border:1px solid #eef1f6;border-radius:6px;">
+    <div style="overflow-x:auto;border:1px solid #eeeeee;border-radius:6px;">
       <table class="bm-table" style="font-size:.78rem;">
         ${colgroup}
-        <thead style="position:sticky;top:0;background:#f0f4fa;">
+        <thead style="position:sticky;top:0;background:#f6f6f6;">
           <tr>
             <th style="padding:8px 4px;"></th>
-            <th style="padding:8px 4px;color:#0f3460;font-size:.78rem;" colspan="8">🗞 Marcă din buletin</th>
-            <th style="padding:8px 4px;color:#0f3460;font-size:.78rem;border-left:2px solid #d0d9ea;" colspan="4">👁 Marcă monitorizată</th>
+            <th style="padding:8px 4px;color:#0a0d31;font-size:.78rem;" colspan="8">🗞 Marcă din buletin</th>
+            <th style="padding:8px 4px;color:#0a0d31;font-size:.78rem;border-left:2px solid #e0e0e0;" colspan="4">👁 Marcă monitorizată</th>
             <th style="padding:8px 4px;"></th>
           </tr>
           <tr>
@@ -3056,7 +3072,7 @@ function _renderBulletinCompare(data) {
             ${th("(731) Solicitant")}
             ${th("(740) Reprezentant")}
             ${th("(511) Clase")}
-            ${th("Denumire marcă", "border-left:2px solid #d0d9ea;")}
+            ${th("Denumire marcă", "border-left:2px solid #e0e0e0;")}
             ${th("Clase")}
             ${th("Titular")}
             ${th("Scor")}
@@ -3106,7 +3122,7 @@ async function loadBulletinHistory() {
     renderBulletinHistory(data);
     loadSavedBulletins();
   } catch(e) {
-    document.getElementById("bulletinHistoryContent").innerHTML = "<span style='color:#c0392b;font-size:.83rem;'>Eroare la încărcare.</span>";
+    document.getElementById("bulletinHistoryContent").innerHTML = "<span style='color:#c4161c;font-size:.83rem;'>Eroare la încărcare.</span>";
   }
 }
 
@@ -3128,7 +3144,7 @@ async function deleteAllSavedBulletins(n) {
     await loadSavedBulletins();
     const m = document.getElementById("savedBulletinsMsg");
     if (m) { m.style.color = "#1e8449"; m.textContent = `✅ Șterse: ${d.deleted_marks} mărci, ${d.deleted_images} imagini`; }
-  } catch (e) { if (msg) { msg.style.color = "#c0392b"; msg.textContent = "❌ " + e.message; } }
+  } catch (e) { if (msg) { msg.style.color = "#c4161c"; msg.textContent = "❌ " + e.message; } }
 }
 
 async function loadSavedBulletins() {
@@ -3148,16 +3164,16 @@ async function loadSavedBulletins() {
            ✅ Baza de date (${_bEsc(d.db ? d.db.engine : "?")}) este persistentă — mărcile salvate rămân după deploy.
          </div>`;
     const rows = (d.bulletins || []).map(b => `<tr>
-        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;">${srcName[b.source] || _bEsc(b.source)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;">${_bEsc(b.date)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;">${b.total}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;">${b.enriched}/${b.total}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;font-size:.75rem;color:#888;">${fmt(b.updated_at)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eef1f6;">
+        <td style="padding:6px 10px;border-bottom:1px solid #eeeeee;">${srcName[b.source] || _bEsc(b.source)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eeeeee;">${_bEsc(b.date)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eeeeee;">${b.total}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eeeeee;">${b.enriched}/${b.total}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eeeeee;font-size:.75rem;color:#888;">${fmt(b.updated_at)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eeeeee;">
           <button class="btn-sm" onclick="openSavedBulletin('${b.source}','${b.date}',${b.total})">▼ Vezi mărci</button></td>
       </tr>`).join("");
     box.innerHTML = `
-      <h3 style="font-size:.88rem;color:#0f3460;margin-bottom:10px;">🗄 Mărci salvate în baza de date</h3>
+      <h3 style="font-size:.88rem;color:#0a0d31;margin-bottom:10px;">🗄 Mărci salvate în baza de date</h3>
       ${warn}
       ${rows ? `<table class="watch-table" style="margin-bottom:14px;"><thead><tr>
           <th>Sursă</th><th>Data buletinului</th><th>Mărci</th><th>Cu detalii complete</th><th>Actualizat la</th><th></th>
@@ -3167,21 +3183,21 @@ async function loadSavedBulletins() {
         <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
           <input type="checkbox" ${d.prefetch_enabled ? "checked" : ""} onchange="setBulletinPrefetch(this.checked)">
           Descarcă automat buletinele noi (în fiecare oră, luni–vineri)</label>
-        ${rows ? `<button class="btn-sm" style="color:#c0392b;" onclick="deleteAllSavedBulletins(${(d.bulletins || []).length})">🗑 Șterge toate buletinele salvate</button>` : ""}
+        ${rows ? `<button class="btn-sm" style="color:#c4161c;" onclick="deleteAllSavedBulletins(${(d.bulletins || []).length})">🗑 Șterge toate buletinele salvate</button>` : ""}
         <span id="savedBulletinsMsg"></span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
         <input type="text" id="savedSearchQ" placeholder="🔍 Caută în toate mărcile salvate (denumire, solicitant, reprezentant, nr. cerere)…"
           onkeydown="if(event.key==='Enter')searchSavedMarks()"
-          style="flex:1;min-width:240px;padding:7px 10px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.82rem;" />
-        <select id="savedSearchSrc" style="padding:7px 8px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.82rem;">
+          style="flex:1;min-width:240px;padding:7px 10px;border:1.5px solid #e0e0e0;border-radius:6px;font-size:.82rem;" />
+        <select id="savedSearchSrc" style="padding:7px 8px;border:1.5px solid #e0e0e0;border-radius:6px;font-size:.82rem;">
           <option value="">Toate sursele</option><option value="osim">OSIM</option><option value="euipo">EUIPO</option></select>
-        <input type="text" id="savedSearchCls" placeholder="Clasa" style="width:70px;padding:7px 8px;border:1.5px solid #d0d9ee;border-radius:6px;font-size:.82rem;" />
+        <input type="text" id="savedSearchCls" placeholder="Clasa" style="width:70px;padding:7px 8px;border:1.5px solid #e0e0e0;border-radius:6px;font-size:.82rem;" />
         <button class="btn-primary" style="padding:7px 14px;font-size:.82rem;" onclick="searchSavedMarks()">Caută</button>
       </div>
       <div id="savedSearchResults"></div>
       <div style="margin-top:16px;padding-top:12px;border-top:1px dashed #d8e0ee;">
-        <div style="font-size:.8rem;color:#0f3460;font-weight:700;margin-bottom:6px;">💾 Backup baza de date</div>
+        <div style="font-size:.8rem;color:#0a0d31;font-weight:700;margin-bottom:6px;">💾 Backup baza de date</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <button class="btn-sm" onclick="downloadDbBackup()">⬇ Descarcă backup (zip)</button>
           <button class="btn-sm" onclick="document.getElementById('dbRestoreInput').click()">⬆ Restaurează din backup</button>
@@ -3195,7 +3211,7 @@ async function loadSavedBulletins() {
         </div>
       </div>`;
   } catch (e) {
-    box.innerHTML = `<span style="color:#c0392b;font-size:.83rem;">❌ Nu am putut citi baza de date: ${_bEsc(e.message)}</span>`;
+    box.innerHTML = `<span style="color:#c4161c;font-size:.83rem;">❌ Nu am putut citi baza de date: ${_bEsc(e.message)}</span>`;
   }
 }
 
@@ -3222,7 +3238,7 @@ async function downloadDbBackup() {
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
       if (r.status === 403) { try { sessionStorage.removeItem("backupToken"); } catch (x) {} }
-      _dbMsg(`<span style="color:#c0392b;">❌ ${_bEsc(e.detail || r.status)}</span>`);
+      _dbMsg(`<span style="color:#c4161c;">❌ ${_bEsc(e.detail || r.status)}</span>`);
       return;
     }
     const blob = await r.blob();
@@ -3234,7 +3250,7 @@ async function downloadDbBackup() {
     setTimeout(() => URL.revokeObjectURL(a.href), 10000);
     _dbMsg(`<span style="color:#1e8449;">✅ Backup descărcat: ${_bEsc(name)} (${(blob.size / 1048576).toFixed(1)} MB)</span>`);
   } catch (e) {
-    _dbMsg(`<span style="color:#c0392b;">❌ ${_bEsc(e.message)}</span>`);
+    _dbMsg(`<span style="color:#c4161c;">❌ ${_bEsc(e.message)}</span>`);
   }
 }
 
@@ -3253,14 +3269,14 @@ async function restoreDbBackup(input) {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) {
       if (r.status === 403) { try { sessionStorage.removeItem("backupToken"); } catch (x) {} }
-      _dbMsg(`<span style="color:#c0392b;">❌ ${_bEsc(d.detail || r.status)}</span>`);
+      _dbMsg(`<span style="color:#c4161c;">❌ ${_bEsc(d.detail || r.status)}</span>`);
     } else {
       _dbMsg(`<span style="color:#1e8449;">✅ Restaurat (${d.images} logo-uri).</span>`);
       loadSavedBulletins();
       if (typeof loadWatches === "function") loadWatches();
     }
   } catch (e) {
-    _dbMsg(`<span style="color:#c0392b;">❌ ${_bEsc(e.message)}</span>`);
+    _dbMsg(`<span style="color:#c4161c;">❌ ${_bEsc(e.message)}</span>`);
   }
   input.value = "";
 }
@@ -3273,7 +3289,7 @@ function openSavedBulletin(source, date, total) {
   _setBulletinResult(source,
     `<span style="color:#1e8449;">🗄 Din baza de date: ${total} mărci · ${_bEsc(date)}</span>
      <button onclick="toggleBulletinCompare('${source}','${date}')"
-       style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #c8d5ea;border-radius:4px;background:#f0f4fa;cursor:pointer;color:#0f3460;">⚖ Compară cu monitorizarea</button>`);
+       style="margin-left:6px;font-size:.75rem;padding:2px 8px;border:1px solid #d6d6d6;border-radius:4px;background:#f6f6f6;cursor:pointer;color:#0a0d31;">⚖ Compară cu monitorizarea</button>`);
   toggleBulletinMarks(source, date);
   const anchor = document.getElementById(source + "BulletinResult");
   if (anchor) anchor.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -3289,7 +3305,7 @@ async function searchSavedMarks() {
     const params = new URLSearchParams({ q, source: src, nice_class: cls, limit: "100" });
     const d = await (await fetch("/api/monitor/saved-marks?" + params.toString())).json();
     if (!d.marks.length) { out.innerHTML = '<span style="color:#888;font-size:.82rem;">Nicio marcă găsită.</span>'; return; }
-    const td = "padding:6px 8px;border-bottom:1px solid #eef1f6;";
+    const td = "padding:6px 8px;border-bottom:1px solid #eeeeee;";
     const rows = d.marks.map(m => `<tr>
         <td style="${td}white-space:nowrap;">${_bEsc(m.application_number)}</td>
         <td style="${td}">${m.source === "osim" ? "OSIM" : "EUIPO"}</td>
@@ -3301,13 +3317,13 @@ async function searchSavedMarks() {
       </tr>`).join("");
     out.innerHTML = `
       <div style="font-size:.78rem;color:#888;margin-bottom:6px;">${d.total} mărci găsite${d.total > d.marks.length ? ` (primele ${d.marks.length})` : ""}</div>
-      <div style="max-height:420px;overflow:auto;border:1px solid #eef1f6;border-radius:6px;">
-        <table class="watch-table" style="font-size:.8rem;"><thead style="position:sticky;top:0;background:#f0f4fa;"><tr>
+      <div style="max-height:420px;overflow:auto;border:1px solid #eeeeee;border-radius:6px;">
+        <table class="watch-table" style="font-size:.8rem;"><thead style="position:sticky;top:0;background:#f6f6f6;"><tr>
           <th>(210)</th><th>Sursă</th><th>Buletin</th><th>(541) Denumire</th><th>(731) Solicitant</th><th>(740) Reprezentant</th><th>(511) Clase</th>
         </tr></thead><tbody>${rows}</tbody></table>
       </div>`;
   } catch (e) {
-    out.innerHTML = `<span style="color:#c0392b;font-size:.82rem;">❌ ${_bEsc(e.message)}</span>`;
+    out.innerHTML = `<span style="color:#c4161c;font-size:.82rem;">❌ ${_bEsc(e.message)}</span>`;
   }
 }
 
@@ -3338,11 +3354,11 @@ function renderBulletinHistory(data) {
     const dateInfo = e.bopi_date || e.working_day || e.target_date || "—";
     const issueInfo = e.issue_nr ? ` · nr. ${e.issue_nr}` : "";
     return `<tr>
-      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${e._src}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${dateInfo}${issueInfo}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${e.marks ?? "—"}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${statusLabel[e.status] || e.status || "—"}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;font-size:.75rem;color:#888;">${at}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;">${e._src}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;">${dateInfo}${issueInfo}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;">${e.marks ?? "—"}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;">${statusLabel[e.status] || e.status || "—"}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;font-size:.75rem;color:#888;">${at}</td>
     </tr>`;
   }).join("");
 
@@ -3384,14 +3400,14 @@ async function loadSettings() {
     const cfg = await r.json();
 
     const row = (icon, label, ok, detail, hint) => `
-      <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f0f2f5;">
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f6f6f6;">
         <span style="font-size:1.1rem;margin-top:1px;">${icon}</span>
         <div style="flex:1;">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <strong style="font-size:.84rem;">${label}</strong>
             ${ok
               ? '<span style="font-size:.74rem;color:#1e8449;background:#eafaf1;padding:2px 7px;border-radius:10px;font-weight:700;">✓ Configurat</span>'
-              : '<span style="font-size:.74rem;color:#c0392b;background:#fdecea;padding:2px 7px;border-radius:10px;font-weight:700;">✗ Neconfigurat</span>'
+              : '<span style="font-size:.74rem;color:#c4161c;background:#fdecea;padding:2px 7px;border-radius:10px;font-weight:700;">✗ Neconfigurat</span>'
             }
             ${detail ? `<span style="font-size:.76rem;color:#888;">${detail}</span>` : ''}
           </div>
@@ -3435,7 +3451,7 @@ async function loadSettings() {
         )}
       </div>`;
   } catch(e) {
-    el.innerHTML = '<span style="color:#c0392b;font-size:.84rem;">Eroare la încărcare configurație.</span>';
+    el.innerHTML = '<span style="color:#c4161c;font-size:.84rem;">Eroare la încărcare configurație.</span>';
   }
 }
 
@@ -3454,10 +3470,10 @@ async function testSmtp() {
     if (r.ok) {
       if (res) res.innerHTML = `<span style="color:#1e8449;">✅ ${d.message}</span>`;
     } else {
-      if (res) res.innerHTML = `<span style="color:#c0392b;">❌ ${d.detail}</span>`;
+      if (res) res.innerHTML = `<span style="color:#c4161c;">❌ ${d.detail}</span>`;
     }
   } catch(e) {
-    if (res) res.innerHTML = `<span style="color:#c0392b;">❌ ${e.message}</span>`;
+    if (res) res.innerHTML = `<span style="color:#c4161c;">❌ ${e.message}</span>`;
   }
 }
 
@@ -3502,7 +3518,7 @@ function renderWatches(allItems) {
     const classes = (it.nice_classes||[]).join(", ") || "—";
     const offices = (it.offices||[]).join(", ") || "—";
     const img = it.reference_image
-      ? `<img src="/api/monitor/watch-image/${it.reference_image}" alt="" style="max-height:40px;max-width:70px;object-fit:contain;background:#fff;border:1px solid #eef1f6;border-radius:4px;padding:2px;" loading="lazy" />`
+      ? `<img src="/api/monitor/watch-image/${it.reference_image}" alt="" style="max-height:40px;max-width:70px;object-fit:contain;background:#fff;border:1px solid #eeeeee;border-radius:4px;padding:2px;" loading="lazy" />`
       : "—";
     return `
       <tr>
@@ -3559,7 +3575,7 @@ async function addWatch() {
   const email= document.getElementById("wEmail").value.trim();
 
   if (!name || !cls || !email) {
-    msg.style.display="block"; msg.style.color="#c0392b";
+    msg.style.display="block"; msg.style.color="#c4161c";
     msg.textContent="Completați câmpurile obligatorii (*)"; return;
   }
   const nice_classes = cls.split(/[,;\s]+/).map(s=>s.trim()).filter(s=>s);
@@ -3575,13 +3591,13 @@ async function addWatch() {
         frequency: document.getElementById("wFreq").value,
       }),
     });
-    if (!r.ok) { const e=await r.json(); msg.style.display="block"; msg.style.color="#c0392b"; msg.textContent="Eroare: "+(e.detail||r.status); return; }
+    if (!r.ok) { const e=await r.json(); msg.style.display="block"; msg.style.color="#c4161c"; msg.textContent="Eroare: "+(e.detail||r.status); return; }
     msg.style.display="block"; msg.style.color="#1e8449"; msg.textContent="Salvat!";
     ["wTmName","wHolder","wClasses","wEmail"].forEach(id=>document.getElementById(id).value="");
     document.getElementById("wOffices").value="RO, EM, WO";
     setTimeout(()=>{ document.getElementById("addForm").style.display="none"; msg.style.display="none"; loadWatches(); }, 800);
   } catch(e) {
-    msg.style.display="block"; msg.style.color="#c0392b"; msg.textContent="Eroare conexiune.";
+    msg.style.display="block"; msg.style.color="#c4161c"; msg.textContent="Eroare conexiune.";
   }
 }
 
@@ -3623,7 +3639,7 @@ function renderRunResult(res) {
 
   const emailStatus = {
     sent:    '<span style="color:#1e8449;font-weight:700;">✅ Email trimis</span>',
-    error:   '<span style="color:#c0392b;font-weight:700;">❌ Eroare la trimitere email</span>',
+    error:   '<span style="color:#c4161c;font-weight:700;">❌ Eroare la trimitere email</span>',
     skipped: '<span style="color:#888;">— Nicio noutate</span>',
     no_smtp: '<span style="color:#e67e22;">⚠ SMTP neconfigurat (email nesendas)</span>',
   }[res.email_status] || res.email_status;
@@ -3661,7 +3677,7 @@ function renderRunResult(res) {
       <div class="badge badge-warn">🔍 Similare noi: <strong>${res.new_similar}</strong></div>
       <div class="badge badge-blue">Email: ${emailStatus}</div>
     </div>
-    ${mkTable(res.new_conflict_marks, "Conflicte noi (risc ridicat)", "#c0392b")}
+    ${mkTable(res.new_conflict_marks, "Conflicte noi (risc ridicat)", "#c4161c")}
     ${mkTable(res.new_similar_marks,  "Similare noi (risc mediu)",   "#e67e22")}
     ${(!res.new_conflicts && !res.new_similar) ? '<div class="empty-state"><div class="icon">✅</div><strong>Nicio marcă nouă detectată față de ultima verificare</strong></div>' : ""}
   `;
@@ -3688,7 +3704,7 @@ async function showHistory(id, name) {
 
     const statusLabel = {
       sent: '<span style="color:#1e8449;font-weight:700;">Trimis</span>',
-      error: '<span style="color:#c0392b;font-weight:700;">Eroare</span>',
+      error: '<span style="color:#c4161c;font-weight:700;">Eroare</span>',
       skipped: '<span style="color:#888;">Fără noutăți</span>',
       no_smtp: '<span style="color:#e67e22;">SMTP lipsă</span>',
     };
@@ -3696,10 +3712,10 @@ async function showHistory(id, name) {
     const rows = logs.map(l => {
       const date = new Date(l.sent_at).toLocaleString("ro-RO",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
       return `<tr>
-        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${date}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${l.num_new_marks}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${l.email_to}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${statusLabel[l.status]||l.status}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;">${date}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;">${l.num_new_marks}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;">${l.email_to}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;">${statusLabel[l.status]||l.status}</td>
       </tr>`;
     }).join("");
 
@@ -3712,7 +3728,7 @@ async function showHistory(id, name) {
       </table>`;
   } catch(e) {
     document.getElementById("historyContent").innerHTML =
-      '<div style="color:#c0392b;font-size:.84rem;">Eroare la încărcare.</div>';
+      '<div style="color:#c4161c;font-size:.84rem;">Eroare la încărcare.</div>';
   }
 
   document.getElementById("historyPanel").scrollIntoView({behavior:"smooth"});
@@ -3725,7 +3741,7 @@ function closeHistory() {
 // ── Found marks (cumulativ) ──────────────────────────────────────────────────
 
 const _levelLabel = { conflict: "Conflict", similar: "Similar" };
-const _levelColor = { conflict: "#c0392b", similar: "#e67e22" };
+const _levelColor = { conflict: "#c4161c", similar: "#e67e22" };
 const _levelOrder = { conflict: 0, similar: 1 };
 
 const _foundMarksCache  = {};   // id -> mărci brute din API
@@ -3744,7 +3760,7 @@ async function showFoundMarks(id, name) {
 
     if (!r.ok) {
       document.getElementById("foundMarksContent").innerHTML =
-        `<div style="color:#c0392b;font-size:.84rem;">Eroare: ${marks.detail || r.status}</div>`;
+        `<div style="color:#c4161c;font-size:.84rem;">Eroare: ${marks.detail || r.status}</div>`;
       return;
     }
 
@@ -3752,7 +3768,7 @@ async function showFoundMarks(id, name) {
     _renderFoundMarks(id);
   } catch (e) {
     document.getElementById("foundMarksContent").innerHTML =
-      '<div style="color:#c0392b;font-size:.84rem;">Eroare la încărcare.</div>';
+      '<div style="color:#c4161c;font-size:.84rem;">Eroare la încărcare.</div>';
   }
 
   document.getElementById("foundMarksPanel").scrollIntoView({behavior:"smooth"});
@@ -3790,7 +3806,7 @@ function _renderFoundMarks(id) {
   const filterBtn = (level, label, count) => {
     const active = _foundMarksFilter === level;
     return `<button class="btn-sm" onclick="filterFoundMarks('${level}')"
-      style="${active ? 'background:#0f3460;color:#fff;border-color:#0f3460;' : ''}">${label} (${count})</button>`;
+      style="${active ? 'background:#0a0d31;color:#fff;border-color:#0a0d31;' : ''}">${label} (${count})</button>`;
   };
 
   const rows = sorted.map(m => {
@@ -3800,11 +3816,11 @@ function _renderFoundMarks(id) {
     const color = _levelColor[m.similarity_level] || "#888";
     const label = _levelLabel[m.similarity_level] || m.similarity_level || "—";
     return `<tr>
-      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;"><strong>${m.tm_name||"—"}</strong></td>
-      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${m.tm_office||"—"}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;">${m.application_date||"—"}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;color:${color};font-weight:700;">${label}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #eef1f6;font-size:.78rem;color:#888;">${date}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;"><strong>${m.tm_name||"—"}</strong></td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;">${m.tm_office||"—"}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;">${m.application_date||"—"}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;color:${color};font-weight:700;">${label}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid #eeeeee;font-size:.78rem;color:#888;">${date}</td>
     </tr>`;
   }).join("");
 
@@ -3959,7 +3975,7 @@ async function pollDailyStatus(quiet) {
 function handleDrop(event) {
   event.preventDefault();
   const dz = document.getElementById("dropZone");
-  dz.style.borderColor = "#c8d5ea"; dz.style.background = "#f7f9fc";
+  dz.style.borderColor = "#d6d6d6"; dz.style.background = "#f8f8f8";
   const file = event.dataTransfer.files[0];
   if (file) uploadExcel(file);
 }
@@ -3990,7 +4006,7 @@ async function uploadExcel(file) {
     html += `<strong>${data.imported} mărci importate</strong>`;
     if (data.skipped > 0) html += ` · ${data.skipped} rânduri ignorate`;
     if (data.duplicates > 0) html += ` · <span style="color:#e67e22;">${data.duplicates} mărci identice neimportate</span>`;
-    if (data.errors  > 0) html += ` · <span style="color:#c0392b;">${data.errors} erori</span>`;
+    if (data.errors  > 0) html += ` · <span style="color:#c4161c;">${data.errors} erori</span>`;
     if (data.sheets && data.sheets.length > 1)
       html += `<div style="font-size:.78rem;margin-top:4px;color:#555;">${data.sheets.map(s=>`${escHtml(s.sheet)}: ${s.imported}`).join(" · ")}</div>`;
     html += "</div>";
@@ -4010,7 +4026,7 @@ async function uploadExcel(file) {
     }
 
     if (data.details.errors.length) {
-      html += `<div style="margin-top:8px;font-size:.8rem;color:#c0392b;">
+      html += `<div style="margin-top:8px;font-size:.8rem;color:#c4161c;">
         <strong>Erori:</strong><ul style="margin:4px 0 0 16px;">
         ${data.details.errors.map(e=>`<li>${escHtml(e.row)}: ${escHtml(e.trademark)} — ${escHtml(e.reason)}</li>`).join("")}
         </ul></div>`;

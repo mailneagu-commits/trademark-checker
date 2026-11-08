@@ -4,33 +4,41 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Marcă din buletin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap">
 <style>
   * { box-sizing: border-box; }
-  body { margin:0; background:#f0f2f5; color:#1a1a2e; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
+  body { margin:0; background:#f6f6f6; color:#0a0d31; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
   .wrap { max-width:1100px; margin:0 auto; padding:24px 16px 48px; }
   .head { background:#fff; border-radius:12px; padding:20px 24px; display:flex; gap:24px; align-items:center; flex-wrap:wrap;
           box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px; }
-  .head img { max-width:200px; max-height:140px; object-fit:contain; border:1px solid #e3e8f0; border-radius:8px; padding:6px; background:#fff; }
-  .head .noimg { width:120px; height:90px; display:flex; align-items:center; justify-content:center; font-size:2rem; background:#f0f2f5; border-radius:8px; }
-  .name { font-size:1.9rem; font-weight:800; color:#0f3460; word-break:break-word; }
+  .head img { max-width:200px; max-height:140px; object-fit:contain; border:1px solid #e5e5e5; border-radius:8px; padding:6px; background:#fff; }
+  .head .noimg { width:120px; height:90px; display:flex; align-items:center; justify-content:center; font-size:2rem; background:#f6f6f6; border-radius:8px; }
+  .name { font-size:1.9rem; font-weight:800; color:#0a0d31; word-break:break-word; }
   .sub  { color:#666; font-size:.9rem; margin-top:4px; }
-  .badge { display:inline-block; padding:3px 10px; border-radius:12px; background:#e8f0fb; color:#0f3460; font-size:.75rem; font-weight:700; margin-right:6px; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:12px; background:#f1f1f3; color:#0a0d31; font-size:.75rem; font-weight:700; margin-right:6px; }
   .card { background:#fff; border-radius:12px; padding:18px 22px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
   .state { text-align:center; color:#888; padding:60px 20px; }
-  .err { color:#c0392b; }
+  .err { color:#c4161c; }
   .links { display:flex; gap:22px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:.95rem; }
-  .links a { color:#00c; }
+  .links a { color:#0a0d31; }
   table.inid { border-collapse:collapse; width:100%; font-size:.86rem; }
-  table.inid th { text-align:left; vertical-align:top; padding:6px 14px 6px 0; color:#0f3460; white-space:nowrap; width:70px; }
-  table.inid td { padding:6px 0; border-bottom:1px solid #f0f2f5; line-height:1.5; }
+  table.inid th { text-align:left; vertical-align:top; padding:6px 14px 6px 0; color:#0a0d31; white-space:nowrap; width:70px; }
+  table.inid td { padding:6px 0; border-bottom:1px solid #f6f6f6; line-height:1.5; }
   /* aceleași stiluri ca în cardul din aplicație */
   .detail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-bottom:14px; }
   .detail-item label { font-size:.69rem; font-weight:700; color:#999; text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px; }
-  .detail-item span  { font-size:.85rem; font-weight:600; color:#1a1a2e; }
-  .goods-block { margin-bottom:10px; padding:10px 12px; background:#fff; border-radius:7px; border-left:3px solid #0f3460; }
-  .goods-block .cls-title { font-weight:700; color:#0f3460; font-size:.85rem; margin-bottom:3px; }
+  .detail-item span  { font-size:.85rem; font-weight:600; color:#0a0d31; }
+  .goods-block { margin-bottom:10px; padding:10px 12px; background:#fff; border-radius:7px; border-left:3px solid #0a0d31; }
+  .goods-block .cls-title { font-weight:700; color:#0a0d31; font-size:.85rem; margin-bottom:3px; }
   .goods-block .cls-text  { font-size:.82rem; color:#444; line-height:1.55; }
   .goods-block .cls-desc  { font-size:.74rem; color:#999; margin-top:4px; font-style:italic; }
+
+  /* ── Aspect protectmark.ro: antet alb, bleumarin #0a0d31, roșu #e31e24, Inter Tight ── */
+  body { font-family: Helvetica, "Helvetica Neue", Arial, sans-serif; }
+  h1, h2, h3, th, button, .btn-primary, .btn-export, .btn-sm, .page-tab, .badge, .name, .dtitle { font-family: "Inter Tight", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  h1, h2, h3 { letter-spacing: -.2px; }
+  .card { border-radius: 4px !important; border: 1px solid #e5e5e5; box-shadow: 0 1px 2px rgba(0,0,0,.04) !important; }
+  a { color: #e31e24; }
 </style>
 </head>
 <body>

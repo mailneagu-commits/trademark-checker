@@ -110,7 +110,7 @@ function bulletinMarkDetailHtml(m) {
   const item = (label, val) =>
     `<div class="detail-item"><label style="display:block;">${label}</label><span>${val ? val : "—"}</span></div>`;
   const hasGoods = (m.goodAndServices || []).some(x => x.goodsAndServices);
-  return `<div style="background:#f7f9fc;border-radius:8px;padding:12px 14px;">
+  return `<div style="background:#f8f8f8;border-radius:8px;padding:12px 14px;">
     <div class="detail-grid">${[
       item("(210) Nr. cerere",     _bEsc(m.applicationNumber)),
       item("(220) Data depunere",  _bEsc(_bD10(m.applicationDate))),
