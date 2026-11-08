@@ -752,7 +752,7 @@
   </div>
 
   <!-- Import + Template bar -->
-  <div class="card">
+  <div class="card daily-wide">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
       <h2 style="margin:0;">📋 Mărci monitorizate</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -765,8 +765,9 @@
       </div>
     </div>
 
-    <!-- Bulletin panel -->
-    <div style="background:#f8f8f8;border:1px solid #e0e7f0;border-radius:10px;padding:18px;margin-bottom:18px;">
+    <!-- Panou vechi de descărcare manuală a buletinelor — ascuns: îl înlocuiește „Monitorizare zilnică buletine”
+         (elementele rămân în pagină pentru că le folosește codul existent). -->
+    <div style="display:none;background:#f8f8f8;border:1px solid #e0e7f0;border-radius:10px;padding:18px;margin-bottom:18px;">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
         <strong style="color:#0a0d31;font-size:.92rem;">📰 Buletine oficiale</strong>
         <button class="btn-sm" onclick="toggleBulletinHistory()" id="bulletinHistoryToggle">
