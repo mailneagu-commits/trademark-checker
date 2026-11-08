@@ -75,18 +75,22 @@ async def _details(st13s: List[str]) -> Dict[str, Dict]:
         return found
     sem = asyncio.Semaphore(5)
     fresh: Dict[str, Dict] = {}
-    async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
-        await session.get(TMVIEW_HOME, timeout=15, headers=_build_headers())
+    try:
+        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
+            await session.get(TMVIEW_HOME, timeout=15, headers=_build_headers())
 
-        async def one(s: str):
-            async with sem:
-                try:
-                    d = await asyncio.wait_for(fetch_detail_once(session, s), timeout=40)
-                    if d:
-                        fresh[s] = d
-                except Exception as e:
-                    print(f"[WIPO] Detaliu TMview {s}: {type(e).__name__}: {e}")
-        await asyncio.gather(*(one(s) for s in todo))
+            async def one(s: str):
+                async with sem:
+                    try:
+                        d = await asyncio.wait_for(fetch_detail_once(session, s), timeout=40)
+                        if d:
+                            fresh[s] = d
+                    except Exception as e:
+                        print(f"[WIPO] Detaliu TMview {s}: {type(e).__name__}: {e}")
+            await asyncio.gather(*(one(s) for s in todo))
+    except Exception as e:
+        # TMview indisponibil — clasele lipsă vin apoi din Madrid Monitor.
+        print(f"[WIPO] Sesiune TMview: {type(e).__name__}: {e}")
     if fresh:
         await loop.run_in_executor(None, export_cache.save_details, fresh)
     found.update(fresh)
