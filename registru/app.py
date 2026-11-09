@@ -254,6 +254,9 @@ def public_status(db: Session = Depends(get_db)):
     named = db.query(func.count(Mark.app_number)).filter(Mark.app_number.like("R%"), Mark.name != "").scalar() or 0
     return {"running": ingest.job["running"], "current": ingest.job["current"], "done": ingest.job["done"],
             "total": ingest.job["total"], "sources": by, "last_bulletin": last,
+            "first_bulletin": db.query(func.min(SourceFile.bulletin_date)).filter(SourceFile.status == "ok").scalar(),
+            "publications": [db.query(func.min(Mark.publication_date)).filter(Mark.publication_date != "").scalar(),
+                             db.query(func.max(Mark.publication_date)).scalar()],
             "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job,
             "errors": [{"bopi": e.label, "error": (e.error or "")[:160]} for e in
                        db.query(SourceFile).filter(SourceFile.status == "error").limit(10)],
