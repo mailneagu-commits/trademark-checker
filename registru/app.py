@@ -90,7 +90,7 @@ def _row(m: Mark) -> dict:
     reg = _reg_display(m)
     return {
         "app_number": m.app_number, "name": m.name, "reg_display": reg,
-        "app": f"marca nr. {reg}" if m.app_number.startswith("R") else display_app(m.app_number),
+        "app": reg if m.app_number.startswith("R") else display_app(m.app_number),
         "status": _status(m), "mark_type": m.mark_type, "filing_date": m.filing_date,
         "publication_date": m.publication_date, "reg_number": m.reg_number, "reg_date": m.reg_date,
         "expiry_date": m.expiry_date or ingest.expiry_of(m), "holder": m.holder, "representative": m.representative,

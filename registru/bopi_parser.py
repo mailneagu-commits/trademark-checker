@@ -58,7 +58,7 @@ def display_app(app: str) -> str:
     if m:
         return f"M {m.group(1)} {m.group(2)}"
     r = re.match(r"^R(\d+)$", app or "")       # marcă reînnoită, cunoscută doar după nr. de marcă
-    return f"marca nr. {r.group(1)}" if r else (app or "")
+    return f"R{r.group(1)}" if r else (app or "")
 
 
 def _iso(d: str) -> str:
