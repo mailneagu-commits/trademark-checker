@@ -209,6 +209,10 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
         ev["name"] = rec["name"]
     if rec.get("reg_number"):
         ev["reg_number"] = rec["reg_number"]
+    if rec.get("holder") or rec.get("name"):
+        # Reprezentantul (740) la data documentului — gol = fără reprezentant; așa se vede în istoric
+        # dacă un mandatar a fost înscris ulterior.
+        ev["representative"] = rec.get("representative") or ""
     _add_event(m, ev)
     if chapter == "registered":
         _merge_stub(db, m)
@@ -258,7 +262,8 @@ def _add_event(m: Mark, ev: Dict) -> None:
         if (e.get("date"), e.get("bopi"), e.get("chapter")) == key:
             changed = False
             for k, v in ev.items():
-                if v not in (None, "", []) and e.get(k) != v:
+                # „representative” gol înseamnă „fără reprezentant” — se păstrează și el.
+                if (v not in (None, "", []) or (k == "representative" and k not in e)) and e.get(k) != v:
                     e[k] = v
                     changed = True
             if changed:
@@ -326,6 +331,14 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
         detail = f"valabilă până la {c.expiry[8:10]}.{c.expiry[5:7]}.{c.expiry[:4]}" if c.expiry else ""
         if c.new_value:      # titularul la data reînnoirii (doar numele)
             holder_ev = {"holder": c.new_value.strip(), "holder_address": "", "prio": 0}
+        rep = (c.representative or "").strip()
+        if rep:
+            # Mandatarul de la reînnoire — adesea înscris după depunere (cererea fusese fără reprezentant).
+            holder_ev["representative"] = rep
+            last_doc = max((e.get("date") or "" for e in (m.events or []) if e.get("representative")), default="")
+            if not m.representative or (norm(rep) != norm(m.representative) and c.bulletin_date >= last_doc):
+                m.representative, m.rep_norm = rep, norm(rep)
+                m.representative_address = rep
     elif c.kind == "license":
         detail = c.new_value[:200]
     elif c.kind == "limitation":
@@ -442,7 +455,7 @@ def _process_changes(db, path: str, src: Dict) -> int:
         c = MarkChange(kind=r["kind"], app_number=r.get("app_number", ""), reg_number=r.get("reg_number", ""),
                        old_value=r.get("old", ""), new_value=r.get("new", ""), expiry=r.get("expiry", ""),
                        title=r.get("title", ""), bulletin_date=bdate, label=src["label"],
-                       name=(r.get("name") or "").strip())
+                       name=(r.get("name") or "").strip(), representative=(r.get("rep") or "").strip())
         db.add(c)
         m = db.get(Mark, c.app_number) if c.app_number else None
         if m is None and c.reg_number:

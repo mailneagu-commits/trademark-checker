@@ -19,7 +19,7 @@ const same = (a, b) => String(a || "").toLowerCase().replace(/[^a-z0-9]/g, "") =
 function historyHtml(events) {
   const evs = [...events].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   if (!evs.length) return '<p class="muted">—</p>';
-  const prev = { status: null, holder: null, classes: null, name: null, expiry: null };
+  const prev = { status: null, holder: null, classes: null, name: null, expiry: null, rep: undefined };
   const items = evs.map(e => {
     const ch = [];
     const st = STATUS_OF[e.chapter];
@@ -42,6 +42,12 @@ function historyHtml(events) {
       else if (before.join(", ") !== now) ch.push(["Clase Nisa", before.join(", "), now]);
       prev.classes = e.classes;
     }
+    if ("representative" in e) {
+      // Gol la un document = fără reprezentant; la reînnoiri apare doar când lista dă un mandatar.
+      const r = e.representative || "";
+      if (prev.rep === undefined) { if (r) ch.push(["Reprezentant", null, r]); prev.rep = r; }
+      else if (r && !same(prev.rep, r)) { ch.push(["Reprezentant", prev.rep || "fără reprezentant", r]); prev.rep = r; }
+    }
     if (e.expiry) { ch.push(["Valabilă până la", prev.expiry ? dmy(prev.expiry) : null, dmy(e.expiry)]); prev.expiry = e.expiry; }
     const rows = ch.map(([k, a, b]) => `<div class="tl-ch"><span class="tl-k">${esc(k)}</span>
         ${a ? `<s class="tl-old">${esc(a)}</s> <span class="tl-arrow">→</span> ` : ""}<b>${esc(b)}</b></div>`).join("");
@@ -55,6 +61,13 @@ function historyHtml(events) {
     </li>`;
   });
   return `<ol class="tl">${items.join("")}</ol>`;
+}
+// Mandatar înscris după depunere: primul document al mărcii nu avea reprezentant.
+function repLater(m) {
+  const evs = (m.events || []).filter(e => "representative" in e).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  if (!evs.length || evs[0].representative) return "";
+  const first = evs.find(e => e.representative && same(e.representative, m.representative)) || evs.find(e => e.representative);
+  return first ? `<br><span class="muted small">Înscris ulterior — ${esc(first.bopi)} (${dmy(first.date) || esc(first.date)}); la depunere marca nu avea reprezentant.</span>` : "";
 }
 (async () => {
   const app = decodeURIComponent(location.pathname.split("/").pop() || qs.get("app") || "");
@@ -87,7 +100,7 @@ function historyHtml(events) {
       </div>
       <section class="two">
         <div class="card"><h2>Titular (732)</h2><p style="margin:0;"><a href="/cauta.html?holder=${encodeURIComponent(m.holder)}"><strong>${esc(m.holder)}</strong></a><br><span class="muted small">${esc(m.holder_address)}</span></p></div>
-        <div class="card"><h2>Reprezentant (740)</h2>${m.representative ? `<p style="margin:0;"><a href="/cauta.html?representative=${encodeURIComponent(m.representative)}"><strong>${esc(m.representative)}</strong></a><br><span class="muted small">${esc(m.representative_address)}</span></p>` : '<p class="muted" style="margin:0;">Fără reprezentant.</p>'}</div>
+        <div class="card"><h2>Reprezentant (740)</h2>${m.representative ? `<p style="margin:0;"><a href="/cauta.html?representative=${encodeURIComponent(m.representative)}"><strong>${esc(m.representative)}</strong></a>${m.representative_address && m.representative_address !== m.representative ? `<br><span class="muted small">${esc(m.representative_address)}</span>` : ""}${repLater(m)}</p>` : '<p class="muted" style="margin:0;">Fără reprezentant.</p>'}</div>
       </section>
       ${m.vienna || m.colors ? `<section class="card"><div class="facts" style="margin:0;">${fact("Clasificare Viena (531)", esc(m.vienna))}${fact("Culori revendicate (591)", esc(m.colors))}</div></section>` : ""}
       ${m.disclaimer ? `<section class="card"><h2>Mențiuni</h2><p style="margin:0;">${esc(m.disclaimer)}</p></section>` : ""}

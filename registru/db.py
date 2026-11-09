@@ -108,6 +108,7 @@ class MarkChange(Base):
     label         = Column(String, default="")
     applied       = Column(Boolean, default=False)
     name          = Column(Text, default="")            # „Denumire marcă” din tabel, când există
+    representative = Column(Text, default="")           # (740) mandatarul, unde tabelul îl dă (reînnoiri)
 
 
 class Lead(Base):
@@ -166,6 +167,10 @@ def _ensure_columns():
         with engine.begin() as c:
             c.execute(text("ALTER TABLE mark_changes ADD COLUMN name TEXT DEFAULT ''"))
         print("[DB] Coloana mark_changes.name adăugată")
+    if "representative" not in have_mc:
+        with engine.begin() as c:
+            c.execute(text("ALTER TABLE mark_changes ADD COLUMN representative TEXT DEFAULT ''"))
+        print("[DB] Coloana mark_changes.representative adăugată")
     have = {c["name"] for c in inspect(engine).get_columns("marks")}
     if "tmview_checked" not in have:
         with engine.begin() as c:
@@ -241,6 +246,40 @@ def _reprocess_for_names():
         db.add(SourceFile(url=marker, kind="migration", status="ok", label="denumiri v2"))
         db.commit()
         print(f"[DB] Denumiri tăiate golite: {n}; buletine de recitit: {k}")
+    finally:
+        db.close()
+
+
+def _reprocess_changes_for_representatives():
+    """O singură dată: tabelele de modificări se recitesc, ca mandatarul din lista de reînnoiri (740)
+    să ajungă în fișa și istoricul mărcilor care n-aveau reprezentant la depunere."""
+    marker = "migration:change-rep-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        k = db.query(SourceFile).filter(SourceFile.kind == "changes", SourceFile.status == "ok")\
+            .delete(synchronize_session=False)
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="mandatari din reînnoiri v1"))
+        db.commit()
+        print(f"[DB] Tabele de modificări de recitit (mandatari): {k}")
+    finally:
+        db.close()
+
+
+def _reprocess_dailies_for_representatives():
+    """O singură dată: buletinele zilnice și de cereri admise (rapide) se recitesc, ca fiecare eveniment
+    să rețină reprezentantul de la data lui — așa se vede când a fost înscris un mandatar ulterior."""
+    marker = "migration:daily-rep-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        k = db.query(SourceFile).filter(SourceFile.kind.in_(("daily", "admise")), SourceFile.status == "ok")\
+            .delete(synchronize_session=False)
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="reprezentanți în istoric v1"))
+        db.commit()
+        print(f"[DB] Buletine zilnice de recitit (reprezentanți): {k}")
     finally:
         db.close()
 
@@ -363,6 +402,8 @@ def init_db():
     _reprocess_for_history()
     _reprocess_for_names()
     _reprocess_changes_for_names()
+    _reprocess_changes_for_representatives()
+    _reprocess_dailies_for_representatives()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
     _drop_part_duplicates()

@@ -554,6 +554,7 @@ def parse_changes(path: str) -> Iterator[Dict]:
                         rec["reg_number"] = re.sub(r"\D.*$", "", cells[0]).lstrip("0")
                         rec["expiry"] = _iso(cells[1] if len(cells) > 1 else "")
                         rec["new"] = cells[3] if len(cells) > 3 else ""
+                        rec["rep"] = cells[4] if len(cells) > 4 else ""      # (740) mandatarul la reînnoire
                         # Clasele reînnoite („-” = nespecificate), păstrate pentru mărcile care nu
                         # sunt încă în bază (înregistrate înainte de arhiva disponibilă).
                         rec["old"] = ", ".join(re.findall(r"\d{1,2}", cells[2] if len(cells) > 2 else "")) or "-"
