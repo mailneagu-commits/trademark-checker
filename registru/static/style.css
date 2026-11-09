@@ -14,7 +14,8 @@ body { background: var(--bg); color: var(--ink); font: 16px/1.45 var(--body); }
 h1, h2, h3, .nav a, .btn, .badge, .stat b, .mname, .tbl th, .fact b { font-family: var(--head); }
 h1, h2, h3 { color: var(--navy); font-weight: 600; letter-spacing: -.4px; }
 a { color: var(--accent); }
-.wrap { max-width: 1172px; margin: 0 auto; padding: 0 16px; }
+.wrap { max-width: 1600px; margin: 0 auto; padding: 0 20px; }
+@media (max-width: 560px) { .wrap { padding: 0 16px; } }
 
 /* Antet */
 .top { background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 40; }
