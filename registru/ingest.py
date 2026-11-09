@@ -643,7 +643,7 @@ def _stub_st13(m: Mark) -> str:
 goods_job: Dict = {"running": False, "done": 0, "found": 0, "last": None}
 
 
-def enrich_goods(limit: int = 300) -> None:
+def enrich_goods(limit: int = 400) -> None:
     """Produsele și serviciile (511) mărcilor reînnoite vechi — listele de reînnoiri din BOPI dau
     doar clasele. Le luăm din fișa TMview (în română), prin aplicația de monitorizare."""
     from concurrent.futures import ThreadPoolExecutor
@@ -654,7 +654,8 @@ def enrich_goods(limit: int = 300) -> None:
         db = SessionLocal()
         try:
             cand = [(m.app_number, _stub_st13(m)) for m in db.query(Mark).filter(
-                Mark.app_number.like("R%"), ~Mark.tmview_checked.like("%|gs%")).limit(limit * 4)]
+                Mark.app_number.like("R%"), ~Mark.tmview_checked.like("%|gs%")).order_by(
+                (Mark.name == "").asc()).limit(limit * 4)]
         finally:
             db.close()
         todo = [(a, s) for a, s in cand if s][:limit]
@@ -668,38 +669,41 @@ def enrich_goods(limit: int = 300) -> None:
                 print(f"[GOODS] {st13}: {type(e).__name__}: {e}")
                 return None
 
-        with ThreadPoolExecutor(max_workers=4) as ex:
-            results = list(ex.map(lambda t: fetch(t[1]), todo))
+        from concurrent.futures import as_completed
         db = SessionLocal()
         try:
-            for (app, st13), d in zip(todo, results):
-                if d is None:
-                    continue                                  # reîncercăm la rularea următoare
-                m = db.get(Mark, app)
-                if m is None:
-                    continue
-                gs = {}
-                for g in d.get("goodAndServices") or []:
-                    c = str(g.get("niceClass") or "").lstrip("0")
-                    if c.isdigit() and (g.get("goodsAndServices") or "").strip():
-                        gs[c] = (gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip()
-                if gs:
-                    keep = {str(c) for c in (m.classes or [])}
-                    # Doar clasele reînnoite (o reînnoire poate fi parțială); fără clase cunoscute — toate.
-                    m.goods = {c: t for c, t in gs.items() if not keep or c in keep} or m.goods
-                    if not m.classes:
-                        m.classes = sorted(int(c) for c in gs)
-                    goods_job["found"] += 1
-                a = (d.get("applicants_detail") or [{}])[0]
-                if a.get("address") and (not m.holder_address or m.holder_address == m.holder):
-                    m.holder_address = ", ".join(p for p in [m.holder or a.get("name"), a["address"].replace("\n", ", "),
-                                                             a.get("country") or ""] if p)
-                if not m.filing_date and d.get("applicationDate"):
-                    m.filing_date = d["applicationDate"][:10]
-                tc = m.tmview_checked or ""
-                m.tmview_checked = tc[:-4] + "|gs|img" if tc.endswith("|img") else tc + "|gs"
-                goods_job["done"] += 1
-            db.commit()
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                futs = {ex.submit(fetch, st13): (app, st13) for app, st13 in todo}
+                for fut in as_completed(futs):
+                    app, st13 = futs[fut]
+                    d = fut.result()
+                    if d is None:
+                        continue                                  # reîncercăm la rularea următoare
+                    m = db.get(Mark, app)
+                    if m is None:
+                        continue
+                    gs = {}
+                    for g in d.get("goodAndServices") or []:
+                        c = str(g.get("niceClass") or "").lstrip("0")
+                        if c.isdigit() and (g.get("goodsAndServices") or "").strip():
+                            gs[c] = (gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip()
+                    if gs:
+                        keep = {str(c) for c in (m.classes or [])}
+                        # Doar clasele reînnoite (o reînnoire poate fi parțială); fără clase cunoscute — toate.
+                        m.goods = {c: t for c, t in gs.items() if not keep or c in keep} or m.goods
+                        if not m.classes:
+                            m.classes = sorted(int(c) for c in gs)
+                        goods_job["found"] += 1
+                    a = (d.get("applicants_detail") or [{}])[0]
+                    if a.get("address") and (not m.holder_address or m.holder_address == m.holder):
+                        m.holder_address = ", ".join(p for p in [m.holder or a.get("name"), a["address"].replace("\n", ", "),
+                                                                 a.get("country") or ""] if p)
+                    if not m.filing_date and d.get("applicationDate"):
+                        m.filing_date = d["applicationDate"][:10]
+                    tc = m.tmview_checked or ""
+                    m.tmview_checked = tc[:-4] + "|gs|img" if tc.endswith("|img") else tc + "|gs"
+                    goods_job["done"] += 1
+                    db.commit()                                   # salvăm pe rând — progres vizibil
         finally:
             db.close()
     finally:
