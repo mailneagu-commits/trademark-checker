@@ -34,8 +34,8 @@ def _startup():
                   id="bopi_ingest")
     import mailer
     sched.add_job(mailer.keepalive, "cron", day_of_week="mon", hour=9, id="brevo_keepalive")
-    # Denumirile mărcilor reînnoite vechi, din TMview — în fiecare oră, în paralel cu încărcarea.
-    sched.add_job(ingest.enrich_renewed, "interval", hours=1, id="tmview_enrich")
+    # Denumirile mărcilor reînnoite vechi, din TMview — la 20 de minute, în paralel cu încărcarea.
+    sched.add_job(ingest.enrich_renewed, "interval", minutes=20, id="tmview_enrich")
     sched.add_job(ingest.enrich_logos, "interval", hours=1, minutes=30, id="tmview_logos")
     sched.start()
     if os.environ.get("AUTO_INGEST", "1") == "1":

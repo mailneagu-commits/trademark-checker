@@ -563,15 +563,19 @@ def enrich_renewed(limit: int = 600) -> None:
         today = date.today().isoformat()
         db = SessionLocal()
         try:
-            todo = [m.reg_number for m in db.query(Mark).filter(Mark.app_number.like("R%"), Mark.name == "",
-                                                               Mark.tmview_checked == "").limit(limit)]
+            # „|pad” = căutată cu nr. completat la 6 cifre; cele căutate înainte de asta (fără rezultat
+            # pentru numerele vechi, ex. 18279 în loc de 018279) se mai caută o dată.
+            todo = [m.reg_number for m in db.query(Mark).filter(
+                Mark.app_number.like("R%"), Mark.name == "",
+                (Mark.tmview_checked == "") | ~Mark.tmview_checked.like("%|pad%")).limit(limit)]
         finally:
             db.close()
         for i in range(0, len(todo), 25):
             batch = todo[i:i + 25]
             try:
+                # TMview are numerele de înregistrare RO pe cel puțin 6 cifre (018279).
                 r = requests.get(f"{MONITOR_API}/api/tm-regsearch", timeout=600,
-                                 params={"numbers": ",".join(batch), "mode": "registrationNumber"})
+                                 params={"numbers": ",".join(n.zfill(6) for n in batch), "mode": "registrationNumber"})
                 data = r.json() if r.status_code == 200 else {}
             except Exception as e:
                 print(f"[ENRICH] {type(e).__name__}: {e}")
@@ -582,10 +586,10 @@ def enrich_renewed(limit: int = 600) -> None:
                     m = db.get(Mark, f"R{reg}")
                     if m is None:
                         continue
-                    res = data.get(reg) or {}
+                    res = data.get(reg.zfill(6)) or data.get(reg) or {}
                     if "error" in res or not res:
                         continue                        # reîncercăm la rularea următoare
-                    m.tmview_checked = today + "|img"
+                    m.tmview_checked = today + "|pad|img"
                     hits = res.get("hits") or []
                     if hits:
                         t = hits[0]
