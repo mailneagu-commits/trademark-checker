@@ -628,6 +628,84 @@ def enrich_logos(limit: int = 300) -> int:
     return n
 
 
+def _stub_st13(m: Mark) -> str:
+    """ST13-ul TMview al unei mărci reînnoite vechi: din căutarea TMview sau din nr. de depozit
+    preluat din tabelele BOPI (RO50000 + M201307749)."""
+    for e in reversed(m.events or []):
+        if e.get("st13"):
+            return e["st13"]
+        app = re.sub(r"\s+", "", e.get("app") or "")
+        if re.fullmatch(r"M\d{8,10}", app):
+            return "RO50000" + app
+    return ""
+
+
+goods_job: Dict = {"running": False, "done": 0, "found": 0, "last": None}
+
+
+def enrich_goods(limit: int = 300) -> None:
+    """Produsele și serviciile (511) mărcilor reînnoite vechi — listele de reînnoiri din BOPI dau
+    doar clasele. Le luăm din fișa TMview (în română), prin aplicația de monitorizare."""
+    from concurrent.futures import ThreadPoolExecutor
+    if goods_job["running"]:
+        return
+    goods_job.update(running=True, done=0, found=0)
+    try:
+        db = SessionLocal()
+        try:
+            cand = [(m.app_number, _stub_st13(m)) for m in db.query(Mark).filter(
+                Mark.app_number.like("R%"), ~Mark.tmview_checked.like("%|gs%")).limit(limit * 4)]
+        finally:
+            db.close()
+        todo = [(a, s) for a, s in cand if s][:limit]
+
+        def fetch(st13):
+            try:
+                r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": st13}, timeout=120)
+                d = r.json() if r.status_code == 200 else None
+                return d if isinstance(d, dict) and "error" not in d else None
+            except Exception as e:
+                print(f"[GOODS] {st13}: {type(e).__name__}: {e}")
+                return None
+
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            results = list(ex.map(lambda t: fetch(t[1]), todo))
+        db = SessionLocal()
+        try:
+            for (app, st13), d in zip(todo, results):
+                if d is None:
+                    continue                                  # reîncercăm la rularea următoare
+                m = db.get(Mark, app)
+                if m is None:
+                    continue
+                gs = {}
+                for g in d.get("goodAndServices") or []:
+                    c = str(g.get("niceClass") or "").lstrip("0")
+                    if c.isdigit() and (g.get("goodsAndServices") or "").strip():
+                        gs[c] = (gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip()
+                if gs:
+                    keep = {str(c) for c in (m.classes or [])}
+                    # Doar clasele reînnoite (o reînnoire poate fi parțială); fără clase cunoscute — toate.
+                    m.goods = {c: t for c, t in gs.items() if not keep or c in keep} or m.goods
+                    if not m.classes:
+                        m.classes = sorted(int(c) for c in gs)
+                    goods_job["found"] += 1
+                a = (d.get("applicants_detail") or [{}])[0]
+                if a.get("address") and (not m.holder_address or m.holder_address == m.holder):
+                    m.holder_address = ", ".join(p for p in [m.holder or a.get("name"), a["address"].replace("\n", ", "),
+                                                             a.get("country") or ""] if p)
+                if not m.filing_date and d.get("applicationDate"):
+                    m.filing_date = d["applicationDate"][:10]
+                tc = m.tmview_checked or ""
+                m.tmview_checked = tc[:-4] + "|gs|img" if tc.endswith("|img") else tc + "|gs"
+                goods_job["done"] += 1
+            db.commit()
+        finally:
+            db.close()
+    finally:
+        goods_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")
+
+
 # Listele de reînnoiri din BOPI nu conțin denumirea. O luăm din TMview, după nr. de
 # înregistrare, prin aplicația de monitorizare (are deja accesul la TMview).
 MONITOR_API = os.environ.get("MONITOR_API", "https://web-production-c898f.up.railway.app")

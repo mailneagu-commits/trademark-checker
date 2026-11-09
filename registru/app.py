@@ -41,6 +41,9 @@ def _startup():
                   misfire_grace_time=900, coalesce=True)
     sched.add_job(ingest.enrich_logos, "interval", hours=1, minutes=30, id="tmview_logos",
                   misfire_grace_time=1800, coalesce=True)
+    # Produsele și serviciile mărcilor reînnoite vechi, din fișa TMview.
+    sched.add_job(ingest.enrich_goods, "interval", minutes=15, id="tmview_goods",
+                  misfire_grace_time=900, coalesce=True)
     sched.start()
     if os.environ.get("AUTO_INGEST", "1") == "1":
         ingest.start_background()
@@ -229,7 +232,7 @@ def public_status(db: Session = Depends(get_db)):
     named = db.query(func.count(Mark.app_number)).filter(Mark.app_number.like("R%"), Mark.name != "").scalar() or 0
     return {"running": ingest.job["running"], "current": ingest.job["current"], "done": ingest.job["done"],
             "total": ingest.job["total"], "sources": by, "last_bulletin": last,
-            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job,
+            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job,
             "errors": [{"bopi": e.label, "error": (e.error or "")[:160]} for e in
                        db.query(SourceFile).filter(SourceFile.status == "error").limit(10)],
             "changes_applied": dict(db.query(MarkChange.kind, func.count(MarkChange.id))
