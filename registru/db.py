@@ -267,6 +267,29 @@ def _reprocess_changes_for_representatives():
         db.close()
 
 
+def _flag_limited_goods():
+    """O singură dată: limitările recitite (migrarea mandatarilor) au suprascris lista finală de produse
+    din fișa „Mărci înregistrate”. Mărcile cu clase fără produse și o limitare primesc „|gsneed”:
+    produsele actuale se iau din TMview (job-ul tmview_goods)."""
+    marker = "migration:limited-goods-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for m in db.query(Mark).filter(~Mark.app_number.like("R%")).yield_per(2000):
+            if any((e.get("chapter") or "").startswith("Limitare") for e in (m.events or [])) and \
+                    any(not (m.goods or {}).get(str(c)) for c in (m.classes or [])):
+                tc = (m.tmview_checked or "").replace("|gs2", "")
+                m.tmview_checked = tc + "|gsneed"
+                n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="produse după limitare v1"))
+        db.commit()
+        print(f"[DB] Mărci cu produse de refăcut din TMview (limitări): {n}")
+    finally:
+        db.close()
+
+
 def _reprocess_dailies_for_representatives():
     """O singură dată: buletinele zilnice și de cereri admise (rapide) se recitesc, ca fiecare eveniment
     să rețină reprezentantul de la data lui — așa se vede când a fost înscris un mandatar ulterior."""
@@ -404,6 +427,7 @@ def init_db():
     _reprocess_changes_for_names()
     _reprocess_changes_for_representatives()
     _reprocess_dailies_for_representatives()
+    _flag_limited_goods()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
     _drop_part_duplicates()

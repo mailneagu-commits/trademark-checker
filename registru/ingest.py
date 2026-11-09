@@ -232,6 +232,12 @@ def _apply_limitation(m: Mark, c: MarkChange) -> str:
     except ValueError:
         return ""
     obs, deleted = meta.get("obs", {}), set(meta.get("deleted", []))
+    # O fișă BOPI ulterioară limitării (ex. marca înregistrată) are deja lista finală de produse:
+    # limitarea recitită nu o mai suprascrie (doar se consemnează în istoric).
+    later = [e for e in (m.events or []) if (e.get("date") or "") > (c.bulletin_date or "")
+             and e.get("chapter") == CHAPTER_LABEL["registered"]]
+    if later and m.goods:
+        return "limitare reflectată în fișa din " + later[-1].get("bopi", "")
     cur = dict(m.goods or {})
     for k in deleted:
         cur.pop(k, None)
@@ -644,6 +650,8 @@ def enrich_logos(limit: int = 300) -> int:
 def _stub_st13(m: Mark) -> str:
     """ST13-ul TMview al unei mărci reînnoite vechi: din căutarea TMview sau din nr. de depozit
     preluat din tabelele BOPI (RO50000 + M201307749)."""
+    if re.fullmatch(r"M\d{8,10}", m.app_number or ""):
+        return "RO50000" + m.app_number
     for e in reversed(m.events or []):
         if e.get("st13"):
             return e["st13"]
@@ -660,6 +668,7 @@ def enrich_goods(limit: int = 400) -> None:
     """Produsele și serviciile (511) mărcilor reînnoite vechi — listele de reînnoiri din BOPI dau
     doar clasele. Le luăm din fișa TMview (în română), prin aplicația de monitorizare."""
     from concurrent.futures import ThreadPoolExecutor
+    from sqlalchemy import or_
     if goods_job["running"]:
         return
     goods_job.update(running=True, done=0, found=0)
@@ -668,7 +677,9 @@ def enrich_goods(limit: int = 400) -> None:
         try:
             cand = [(m.app_number, _stub_st13(m)) for m in db.query(Mark).filter(
                 # „|gs2” = fișa TMview citită; „|gsf” = TMview a dat fișa goală (se reîncearcă de 3 ori).
-                Mark.app_number.like("R%"), ~Mark.tmview_checked.like("%|gs2%"),
+                # + mărcile „|gsneed”: clase fără produse după o limitare recitită peste fișa înregistrată.
+                or_(Mark.app_number.like("R%"), Mark.tmview_checked.like("%|gsneed%")),
+                ~Mark.tmview_checked.like("%|gs2%"),
                 ~Mark.tmview_checked.like("%|gsf|gsf|gsf%")).order_by(
                 (Mark.name == "").asc(), Mark.tmview_checked.like("%|gsf%").asc()).limit(limit * 4)]
         finally:
@@ -709,10 +720,10 @@ def enrich_goods(limit: int = 400) -> None:
                         if c.isdigit() and (g.get("goodsAndServices") or "").strip():
                             gs[c] = (gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip()
                     if gs:
-                        keep = {str(c) for c in (m.classes or [])}
+                        keep = {str(c) for c in (m.classes or [])} if app.startswith("R") else set()
                         # Doar clasele reînnoite (o reînnoire poate fi parțială); fără clase cunoscute — toate.
                         m.goods = {c: t for c, t in gs.items() if not keep or c in keep} or m.goods
-                        if not m.classes:
+                        if not m.classes or not app.startswith("R"):
                             m.classes = sorted(int(c) for c in gs)
                         goods_job["found"] += 1
                     a = (d.get("applicants_detail") or [{}])[0]
