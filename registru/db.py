@@ -283,6 +283,23 @@ def _fix_reg_zeros():
         db.close()
 
 
+def _fill_stub_filing_dates():
+    """Mărcile reînnoite vechi (R<nr.>) denumite din tabele: data de depozit din nr. de depozit + expirare."""
+    from ingest import _stub_filing_date
+    db = SessionLocal()
+    try:
+        n = 0
+        for m in db.query(Mark).filter(Mark.app_number.like("R%"), Mark.expiry_date != "",
+                                       (Mark.filing_date == "") | (Mark.filing_date == None)):  # noqa: E711
+            _stub_filing_date(m)
+            n += bool(m.filing_date)
+        db.commit()
+        if n:
+            print(f"[DB] Date de depozit completate la mărci reînnoite: {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -292,6 +309,7 @@ def init_db():
     _reprocess_for_names()
     _reprocess_changes_for_names()
     _fix_reg_zeros()
+    _fill_stub_filing_dates()
     if IS_PG:
         # Căutare „conține” rapidă pe sute de mii de rânduri: index trigram.
         with engine.begin() as c:

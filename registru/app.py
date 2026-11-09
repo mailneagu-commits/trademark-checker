@@ -31,12 +31,16 @@ def _startup():
     sched = BackgroundScheduler(timezone="Europe/Bucharest")
     # Buletinul zilnic apare după-amiaza; reîncercăm seara dacă întârzie.
     sched.add_job(ingest.start_background, "cron", day_of_week="mon-fri", hour="16,19", minute=30,
-                  id="bopi_ingest")
+                  id="bopi_ingest", misfire_grace_time=1800, coalesce=True)
     import mailer
     sched.add_job(mailer.keepalive, "cron", day_of_week="mon", hour=9, id="brevo_keepalive")
     # Denumirile mărcilor reînnoite vechi, din TMview — la 20 de minute, în paralel cu încărcarea.
-    sched.add_job(ingest.enrich_renewed, "interval", minutes=20, id="tmview_enrich")
-    sched.add_job(ingest.enrich_logos, "interval", hours=1, minutes=30, id="tmview_logos")
+    # misfire_grace_time: cât timp încărcarea PDF-urilor ține procesorul ocupat, planificatorul se
+    # trezește cu întârziere, iar fără toleranță (implicit 1 s) rulările se pierd.
+    sched.add_job(ingest.enrich_renewed, "interval", minutes=20, id="tmview_enrich",
+                  misfire_grace_time=900, coalesce=True)
+    sched.add_job(ingest.enrich_logos, "interval", hours=1, minutes=30, id="tmview_logos",
+                  misfire_grace_time=1800, coalesce=True)
     sched.start()
     if os.environ.get("AUTO_INGEST", "1") == "1":
         ingest.start_background()

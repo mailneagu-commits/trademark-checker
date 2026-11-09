@@ -378,7 +378,28 @@ def _name_stub(m: Mark, name: str, app: str, label: str, bdate: str) -> None:
     ev = {"date": bdate, "bopi": label, "chapter": "Denumire preluată din tabelele BOPI"}
     if detail:
         ev["detail"] = detail
+        ev["app"] = app                      # nr. de depozit original (M…)
     _add_event(m, ev)
+    _stub_filing_date(m)
+
+
+def _stub_filing_date(m: Mark) -> None:
+    """Data de depozit a unei mărci reînnoite vechi, din nr. de depozit (anul) și expirare (ziua, luna):
+    protecția curge 10 ani de la depozit (Legea 84/1998), deci expirarea = depozit + 10·n ani.
+    Doar dacă diferența de ani e un multiplu pozitiv de 10; altfel rămâne necompletată."""
+    if m.filing_date or not m.app_number.startswith("R") or not m.expiry_date:
+        return
+    app = next((e.get("app") or e.get("detail", "") for e in reversed(m.events or [])
+                if e.get("app") or e.get("chapter") == "Denumire preluată din tabelele BOPI"), "")
+    mm = re.search(r"M\s*(\d{4})\s*\d{4,6}", app or "")
+    if not mm:
+        return
+    y, ey = int(mm.group(1)), int(m.expiry_date[:4])
+    if ey > y and (ey - y) % 10 == 0:
+        try:
+            m.filing_date = date(y, int(m.expiry_date[5:7]), int(m.expiry_date[8:10])).isoformat()
+        except ValueError:
+            m.filing_date = date(y, int(m.expiry_date[5:7]), 28).isoformat()
 
 
 def _merge_stub(db, m: Mark) -> None:
@@ -430,6 +451,7 @@ def _process_changes(db, path: str, src: Dict) -> int:
             m = _renewal_stub(db, c)
         if m is not None:
             _apply_change(db, m, c)
+            _stub_filing_date(m)
         if c.name and c.reg_number:
             # Marca reînnoită veche (R<nr.>), fără denumire: o preia din tabel.
             stub = db.get(Mark, f"R{c.reg_number}")
@@ -634,17 +656,18 @@ def _regsearch(numbers: List[str], mode: str) -> Optional[Dict]:
 
 
 def _apply_tmview_hit(db, m: Mark, t: Dict, today: str) -> None:
-    m.name = (t.get("tmName") or "").strip()
-    m.name_norm = norm(m.name)
+    if not m.name:                       # o denumire din tabelele BOPI rămâne
+        m.name = (t.get("tmName") or "").strip()
+        m.name_norm = norm(m.name)
     m.filing_date = m.filing_date or (t.get("applicationDate") or "")[:10]
     if not m.classes and t.get("niceClass"):
         m.classes = sorted(int(c) for c in t["niceClass"] if str(c).isdigit())
     if not m.holder and t.get("applicantName"):
         m.holder = t["applicantName"][0]
         m.holder_norm = norm(m.holder)
-    m.mark_type = "Verbală" if m.name else m.mark_type
+    m.mark_type = ("Combinată" if m.has_image else "Verbală") if m.name else m.mark_type
     st13 = t.get("ST13") or ""
-    if t.get("markImageURI") and st13:
+    if t.get("markImageURI") and st13 and not m.has_image:
         _fetch_logo(db, m, st13)
     ev = {"date": today, "bopi": "TMview", "chapter": "Denumire preluată din TMview",
           "detail": f"nr. depozit {t.get('applicationNumber') or ''}".strip(), "st13": st13}
@@ -671,7 +694,7 @@ def enrich_renewed(limit: int = 600) -> None:
             # |v2) se mai caută o dată; cele negăsite se recaută după 30 de zile (TMview se actualizează).
             stale = (date.today() - timedelta(days=30)).isoformat()
             todo = [m.reg_number for m in db.query(Mark).filter(
-                Mark.app_number.like("R%"), Mark.name == "",
+                Mark.app_number.like("R%"), (Mark.name == "") | (Mark.filing_date == "") | (Mark.filing_date == None),  # noqa: E711
                 (Mark.tmview_checked == "") | ~Mark.tmview_checked.like("%|v2%") |
                 (Mark.tmview_checked < stale)).order_by(Mark.tmview_checked).limit(limit)]
         finally:
