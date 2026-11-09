@@ -182,3 +182,5 @@ html.embed footer { display: none; }
 .lead-x { position: absolute; top: 10px; right: 12px; border: 0; background: none; font-size: 1.1rem; color: var(--muted); cursor: pointer; padding: 4px 6px; }
 .lead-x:hover { color: var(--ink); }
 
+
+.bopi450 { margin: 0; padding-left: 0; list-style: none; line-height: 1.7; }
