@@ -66,9 +66,31 @@ def _status(m: Mark) -> str:
     return m.status
 
 
+def _renewals(m: Mark) -> int:
+    """De câte ori a fost reînnoită marca: din depozit și expirare (fiecare reînnoire = +10 ani);
+    fără data de depozit — câte reînnoiri apar în BOPI (cel puțin una pentru mărcile „R…”)."""
+    exp = m.expiry_date or ""
+    if m.filing_date and exp:
+        n = round((int(exp[:4]) - int(m.filing_date[:4])) / 10) - 1
+        if n >= 0:
+            return n
+    n = sum(1 for e in (m.events or []) if (e.get("chapter") or "").startswith("Reînnoire"))
+    return max(n, 1 if m.app_number.startswith("R") else 0)
+
+
+def _reg_display(m: Mark) -> str:
+    """Nr. de marcă cu prefixul reînnoirilor: R129804 (o dată), 2R129804, 3R… """
+    if not m.reg_number:
+        return ""
+    n = _renewals(m)
+    return f"{'' if n < 1 else 'R' if n == 1 else f'{n}R'}{m.reg_number}"
+
+
 def _row(m: Mark) -> dict:
+    reg = _reg_display(m)
     return {
-        "app_number": m.app_number, "app": display_app(m.app_number), "name": m.name,
+        "app_number": m.app_number, "name": m.name, "reg_display": reg,
+        "app": f"marca nr. {reg}" if m.app_number.startswith("R") else display_app(m.app_number),
         "status": _status(m), "mark_type": m.mark_type, "filing_date": m.filing_date,
         "publication_date": m.publication_date, "reg_number": m.reg_number, "reg_date": m.reg_date,
         "expiry_date": m.expiry_date or ingest.expiry_of(m), "holder": m.holder, "representative": m.representative,

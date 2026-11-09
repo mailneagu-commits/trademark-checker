@@ -75,7 +75,7 @@ function historyHtml(events) {
             ${fact("Nr. depozit (210)", esc(m.app))}
             ${fact("Data depozit", dmy(m.filing_date))}
             ${fact("Publicată (BOPI)", dmy(m.publication_date))}
-            ${fact("Nr. înregistrare (111)", esc(m.reg_number))}
+            ${fact("Nr. înregistrare (111)", esc(m.reg_display || m.reg_number))}
             ${fact("Înregistrată (BOPI)", dmy(m.reg_date))}
             ${fact("Expiră", dmy(m.expiry_date))}
           </div>

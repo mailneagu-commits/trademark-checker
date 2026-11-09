@@ -654,8 +654,10 @@ def enrich_goods(limit: int = 400) -> None:
         db = SessionLocal()
         try:
             cand = [(m.app_number, _stub_st13(m)) for m in db.query(Mark).filter(
-                Mark.app_number.like("R%"), ~Mark.tmview_checked.like("%|gs%")).order_by(
-                (Mark.name == "").asc()).limit(limit * 4)]
+                # „|gs2” = fișa TMview citită; „|gsf” = TMview a dat fișa goală (se reîncearcă de 3 ori).
+                Mark.app_number.like("R%"), ~Mark.tmview_checked.like("%|gs2%"),
+                ~Mark.tmview_checked.like("%|gsf|gsf|gsf%")).order_by(
+                (Mark.name == "").asc(), Mark.tmview_checked.like("%|gsf%").asc()).limit(limit * 4)]
         finally:
             db.close()
         todo = [(a, s) for a, s in cand if s][:limit]
@@ -682,6 +684,12 @@ def enrich_goods(limit: int = 400) -> None:
                     m = db.get(Mark, app)
                     if m is None:
                         continue
+                    tc = m.tmview_checked or ""
+                    if not d.get("goodAndServices") and not d.get("applicationNumber"):
+                        # Fișă goală — TMview n-a răspuns de fapt; mai încercăm la rulările următoare.
+                        m.tmview_checked = tc[:-4] + "|gsf|img" if tc.endswith("|img") else tc + "|gsf"
+                        db.commit()
+                        continue
                     gs = {}
                     for g in d.get("goodAndServices") or []:
                         c = str(g.get("niceClass") or "").lstrip("0")
@@ -700,8 +708,7 @@ def enrich_goods(limit: int = 400) -> None:
                                                                  a.get("country") or ""] if p)
                     if not m.filing_date and d.get("applicationDate"):
                         m.filing_date = d["applicationDate"][:10]
-                    tc = m.tmview_checked or ""
-                    m.tmview_checked = tc[:-4] + "|gs|img" if tc.endswith("|img") else tc + "|gs"
+                    m.tmview_checked = tc[:-4] + "|gs2|img" if tc.endswith("|img") else tc + "|gs2"
                     goods_job["done"] += 1
                     db.commit()                                   # salvăm pe rând — progres vizibil
         finally:
