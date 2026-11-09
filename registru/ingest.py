@@ -611,7 +611,7 @@ def enrich_logos(limit: int = 300) -> int:
     db = SessionLocal()
     n = 0
     try:
-        q = db.query(Mark).filter(Mark.app_number.like("R%"), Mark.name != "", Mark.has_image == False,  # noqa: E712
+        q = db.query(Mark).filter(Mark.app_number.like("R%"), Mark.has_image == False,  # noqa: E712
                                   Mark.tmview_checked != "", ~Mark.tmview_checked.like("%img")).limit(limit)
         for m in q:
             ev = next((e for e in (m.events or []) if e.get("bopi") == "TMview"), None)
@@ -667,7 +667,8 @@ def _apply_tmview_hit(db, m: Mark, t: Dict, today: str) -> None:
         m.holder_norm = norm(m.holder)
     m.mark_type = ("Combinată" if m.has_image else "Verbală") if m.name else m.mark_type
     st13 = t.get("ST13") or ""
-    if t.get("markImageURI") and st13 and not m.has_image:
+    # Și fără markImageURI: o marcă fără denumire în TMview e figurativă — încercăm logo-ul.
+    if st13 and not m.has_image and (t.get("markImageURI") or not m.name):
         _fetch_logo(db, m, st13)
     ev = {"date": today, "bopi": "TMview", "chapter": "Denumire preluată din TMview",
           "detail": f"nr. depozit {t.get('applicationNumber') or ''}".strip(), "st13": st13}

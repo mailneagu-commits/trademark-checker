@@ -300,6 +300,61 @@ def _fill_stub_filing_dates():
         db.close()
 
 
+def _drop_part_duplicates():
+    """O singură dată: buletinele 09–12/2022 au fost citite și întregi, și pe părți („partea I/II”) —
+    evenimentele și modificările dublate de pe părți se șterg (cele din fișierul întreg rămân)."""
+    marker = "migration:part-dupes-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from sqlalchemy import String, cast
+        n = 0
+        for m in db.query(Mark).filter(cast(Mark.events, String).like("%partea%")):
+            evs = m.events or []
+            keys = {(e.get("date"), e.get("bopi"), e.get("chapter")) for e in evs}
+            keep = []
+            for e in evs:
+                b = e.get("bopi") or ""
+                if " partea" in b and (e.get("date"), b.split(" partea")[0], e.get("chapter")) in keys:
+                    continue
+                keep.append(e)
+            if len(keep) != len(evs):
+                m.events = keep
+                n += 1
+        whole = {l for (l,) in db.query(MarkChange.label).filter(~MarkChange.label.like("% partea%")).distinct()}
+        k = 0
+        for (l,) in db.query(MarkChange.label).filter(MarkChange.label.like("% partea%")).distinct().all():
+            if l.split(" partea")[0] in whole:
+                k += db.query(MarkChange).filter(MarkChange.label == l).delete(synchronize_session=False)
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="dubluri părți 2022"))
+        db.commit()
+        print(f"[DB] Dubluri „partea”: {n} mărci curățate, {k} modificări șterse")
+    finally:
+        db.close()
+
+
+def _retry_nameless_logos():
+    """O singură dată: mărcile reînnoite găsite în TMview fără denumire (figurative), fără logo — logo-ul
+    se mai caută o dată (enrich_logos le ia pe cele fără „|img”)."""
+    marker = "migration:nameless-logos-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for m in db.query(Mark).filter(Mark.app_number.like("R%"), Mark.name == "", Mark.has_image == False,  # noqa: E712
+                                       Mark.tmview_checked.like("%img")):
+            if any(e.get("bopi") == "TMview" for e in (m.events or [])):
+                m.tmview_checked = m.tmview_checked.replace("|img", "")
+                n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="logo-uri figurative v1"))
+        db.commit()
+        print(f"[DB] Logo-uri de recăutat (mărci figurative din TMview): {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -310,6 +365,8 @@ def init_db():
     _reprocess_changes_for_names()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
+    _drop_part_duplicates()
+    _retry_nameless_logos()
     if IS_PG:
         # Căutare „conține” rapidă pe sute de mii de rânduri: index trigram.
         with engine.begin() as c:
