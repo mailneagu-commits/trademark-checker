@@ -78,16 +78,34 @@ def _flat(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip(" ,;")
 
 
-def _clean_lines(text: str) -> str:
+def _clean_lines(text: str, keep_short: bool = False) -> str:
+    """Fără antete și rânduri goale. `keep_short`: rândurile dintr-o literă / din cifre rămân — sunt
+    denumiri reale („1”, „108”, „G”, „BAG BANII\n2082”); nr. de pagină e tăiat după poziție."""
     out = []
     for line in (text or "").split("\n"):
         t = line.strip()
-        if not t or RE_HEADER.match(t) or re.fullmatch(r"\d{1,4}", t):
+        if not t or RE_HEADER.match(t):
             continue
-        if len(t) == 1 and t.isalpha():          # litere rătăcite din watermark
+        if not keep_short and (re.fullmatch(r"\d{1,4}", t) or (len(t) == 1 and t.isalpha())):
             continue
         out.append(line)
     return "\n".join(out)
+
+
+def _page_bottom(clean, page) -> float:
+    """Marginea de jos a textului, deasupra numărului de pagină: cifre singure pe rând, centrate,
+    în subsolul paginii."""
+    try:
+        y0 = page.height * 0.88
+        words = clean.crop((0, y0, page.width, page.height)).extract_words()
+        nums = [w for w in words if re.fullmatch(r"\d{1,4}", w["text"])
+                and page.width * 0.4 < (w["x0"] + w["x1"]) / 2 < page.width * 0.6
+                and not any(o is not w and abs(o["top"] - w["top"]) < 4 for o in words)]
+        if nums:
+            return min(w["top"] for w in nums) - 1
+    except Exception:
+        pass
+    return page.height
 
 
 def _chapter_of(page_text: str) -> Optional[Tuple[str, bool]]:
@@ -105,13 +123,32 @@ def _chapter_of(page_text: str) -> Optional[Tuple[str, bool]]:
 
 # Declarația de neinvocare a unui drept exclusiv (art. 22 din Legea 84/1998) apare uneori
 # lipită de denumirea mărcii, imediat după ea.
-RE_DISCLAIMER = re.compile(r"\s+(?=(?:Prin scrisoarea|Prin adresa|Prin răspunsul|Solicitantul|Titularul|"
-                           r"În conformitate|In conformitate|Conform (?:art|adresei|prevederilor)|Potrivit)\b)")
+# Din 2023 apare și ca notificare OSIM / decizie în cap. cererilor admise și al mărcilor înregistrate:
+# „La data de 02.02.2024, prin adresa nr. …, OSIM transmite … NOTIFICARE DE NEINVOCARE…”,
+# „Cu aplicarea prevederilor art. 22…”, „Prin Hotărârea nr. …”, „NU S-A RASPUNS LA NOTIFICARE…”.
+_DISC_OPENERS = (r"(?:Prin scrisoarea|Prin adresa|Prin răspunsul|Prin raspunsul|Prin Hot[ăa]r\w*|Solicitantul|Titularul|"
+                 r"[ÎI]?n conformitate|Conform\w* (?:cu )?(?:art|adresei|prevederilor)|Potrivit|"
+                 r"La data de\s+\d|Cu a\w+ prevederilor|NU S-A R[ĂA]SPUNS|Se fac aplicabile|La depunerea cererii|"
+                 r"Se invoc[ăa] prioritatea|[ÎI]n cazul dumneav)")
+RE_DISCLAIMER = re.compile(r"\s+(?=" + _DISC_OPENERS + r")")
+RE_DISC_START = re.compile(r"^" + _DISC_OPENERS)
 
 
 def split_disclaimer(name: str) -> Tuple[str, str]:
-    parts = RE_DISCLAIMER.split(name or "", maxsplit=1)
-    return parts[0].strip(), (parts[1].strip() if len(parts) > 1 else "")
+    name = (name or "").strip()
+    # Toată „denumirea” e de fapt declarația (marcă figurativă, fără text în (540)).
+    if len(name) > 40 and RE_DISC_START.match(name) and re.search(r"\bart\.?\s*\d|\bnr\.|OSIM|NOTIFICARE", name, re.I):
+        return "", name
+    parts = RE_DISCLAIMER.split(name, maxsplit=1)
+    if len(parts) > 1:
+        rest = parts[1].strip()
+        # Doar o declarație adevărată (articol de lege, adresă OSIM…), nu o denumire care conține
+        # întâmplător „Potrivit” / „Titularul”.
+        if len(rest) > 25 and re.search(r"\bart\.?\s*\d|\bart\b|\bnr\.?\s*\d|OSIM|NOTIFICARE|drept exclusiv|"
+                                         r"Legea|Legii|denumir|elementul|elementele|cuv[âa]nt|Comisi|contesta|refuz|prioritat",
+                                         rest, re.I):
+            return parts[0].strip(), rest
+    return name, ""
 
 
 def parse_block(block: str) -> Optional[Dict]:
@@ -127,7 +164,8 @@ def parse_block(block: str) -> Optional[Dict]:
     rec: Dict = {"app_number": compact_app(app_m.group(1))}
     if "111" in seg:
         n = re.search(r"\d{3,7}", seg["111"])
-        rec["reg_number"] = n.group(0) if n else ""
+        # Arhiva tipărește nr. de marcă pe 6 cifre (065304); în bază e fără zerouri, ca în tabele.
+        rec["reg_number"] = n.group(0).lstrip("0") if n else ""
     if "151" in seg:
         rec["date_151"] = _iso(seg["151"])
     if "220" in seg:
@@ -135,7 +173,27 @@ def parse_block(block: str) -> Optional[Dict]:
     for code, key in (("732", "holder_address"), ("740", "representative_address")):
         if code in seg:
             rec[key] = _flat(seg[code])
-    name = _flat(seg.get("540", seg.get("541", seg.get("546", ""))))
+    # Arhiva (≈2002–2008): denumirea verbală, centrată pe verticală lângă codul (540), e citită
+    # cu un rând mai sus, la capătul câmpului anterior: „…BUCUREȘTI\nROSAL\n(540)\n(511)…”.
+    # Doar la mărcile verbale (fără (531) Viena) — la cele figurative rândul anterior e adresa.
+    for code in ("540", "541", "546"):
+        if code in seg and not _flat(seg[code]) and "531" not in seg:
+            k = next((i for i, m in enumerate(marks) if m.group(1) == code), None)
+            if k:
+                prev = marks[k - 1].group(1)
+                lines = [l for l in seg.get(prev, "").rstrip().split("\n")]
+                last = lines[-1].strip() if lines else ""
+                if prev in ("732", "740", "750", "151", "111", "220", "300") and len(lines) >= 2 and last \
+                        and not last.endswith((",", "-")) \
+                        and not re.search(r"\bROM[AÂ]NIA$|\bnr\.|\bsector\b|\bjud(?:\.|ețul)", last, re.I):
+                    seg[code] = lines[-1]
+                    seg[prev] = "\n".join(lines[:-1])
+            break
+    raw_name = seg.get("540", seg.get("541", seg.get("546", "")))
+    if "531" in seg:
+        # Marcă figurativă / combinată: literele singure pe rând vin din textul logo-ului, nu din denumire.
+        raw_name = "\n".join(l for l in raw_name.split("\n") if not (len(l.strip()) == 1 and l.strip().isalpha()))
+    name = _flat(raw_name)
     rec["name"], disclaimer = split_disclaimer(name)
     if disclaimer:
         rec["disclaimer"] = disclaimer
@@ -178,9 +236,29 @@ def _thumb(page, img) -> Optional[bytes]:
 
 
 RE_ANY_APP = re.compile(r"\bM\s?(\d{4})\s?(\d{5})\b")
+# Anexele de la sfârșitul buletinului (liste lungi de produse): „Anexa M 2024 10268” + „Clasa 2: …”.
+# Fișa mărcii are atunci în (511) doar „2. Conform Anexa M 2024 10268 pdf publicat in bopi…”.
+RE_ANNEX = re.compile(r"(?m)^\s*Anexa\s+M\s*(\d{4})\s*(\d{4,6})\s*$")
 
 
-def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[str, Dict]]:
+def _annex_goods(text: str) -> Dict[str, Dict[str, str]]:
+    out: Dict[str, Dict[str, str]] = {}
+    parts = RE_ANNEX.split(text)
+    for i in range(1, len(parts) - 2, 3):
+        app = f"M{parts[i]}{parts[i + 1]}"
+        chunk = parts[i + 2]
+        cl = re.split(r"(?:^|\n|\s)Clasa\s+(\d{1,2})\s*:", chunk)
+        goods = out.setdefault(app, {})
+        for j in range(1, len(cl) - 1, 2):
+            c = int(cl[j])
+            if 1 <= c <= 45:
+                txt = _flat(cl[j + 1])
+                goods[str(c)] = (goods[str(c)] + " " + txt).strip() if goods.get(str(c)) else txt
+    return out
+
+
+def parse_pdf(path: str, kind: str, want_images: bool = True,
+              have_image: Optional[set] = None) -> Iterator[Tuple[str, Dict]]:
     """Generează (capitol, marcă) pentru fiecare bloc INID din PDF.
 
     daily → „published”; admise → „admitted”; monthly → „registered” dacă blocul are (111),
@@ -193,6 +271,9 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
     images: Dict[str, bytes] = {}
     rejected: set = set()
     last_app = None
+    annex: List[str] = []
+    in_annex = False
+    table_names: Dict[str, str] = {}
     mode, is_table = "inid", False
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
@@ -211,9 +292,30 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
                     page.flush_cache()
                     continue
             # Pagină-tabel fără titlu propriu (multe nr. de depozit, fără blocuri INID).
-            if n_inid <= 1 and len(RE_ANY_APP.findall(full)) >= 6:
+            # Nu și o pagină de fișe în care (511) trimite la anexă: „Conform Anexa M 2024 10268 pdf…”.
+            if n_inid <= 1 and len(set(RE_ANY_APP.findall(full))) >= 6 and \
+                    not any(c in full for c in ("(511)", "(531)", "(740)", "Conform Anexa")):
+                if kind == "daily" and "(540)" in full:
+                    # Tabelul-sumar al buletinului zilnic: denumirea exactă a fiecărei cereri.
+                    try:
+                        for t in clean.extract_tables():
+                            for row in t or []:
+                                cells = [_cell(c) for c in row]
+                                if len(cells) >= 5 and RE_APP_CELL.fullmatch(cells[1] or ""):
+                                    # „PUTNA-\nVRANCEA” → „PUTNA-VRANCEA” (cratima de la capăt de rând rămâne).
+                                    raw = re.sub(r"(?<=\S)-\n(?=[A-ZĂÂÎȘȚŞŢ0-9])", "-", row[4] or "")
+                                    table_names[compact_app(cells[1])] = _flat(raw)
+                    except Exception:
+                        pass
                 page.flush_cache()
                 continue
+            # Paginile de anexă (text pe toată lățimea, fără fișe) — citite separat, nu pe coloane.
+            if RE_ANNEX.search(full) or (in_annex and n_inid == 0):
+                in_annex = True
+                annex.append(_clean_lines(full))
+                page.flush_cache()
+                continue
+            in_annex = False
             # Antetul paginii e centrat peste ambele coloane — îl tăiem, altfel bucățile lui
             # ajung în textul mărcilor din coloana stângă / dreaptă.
             top0 = 0
@@ -229,9 +331,10 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
                         top0 = max(d["bottom"] for d in dates) + 1
             except Exception:
                 pass
-            for box in ((0, top0, page.width / 2, page.height), (page.width / 2, top0, page.width, page.height)):
+            bottom = _page_bottom(clean, page)
+            for box in ((0, top0, page.width / 2, bottom), (page.width / 2, top0, page.width, bottom)):
                 col = clean.crop(box)
-                stream.append(_clean_lines(col.extract_text() or ""))
+                stream.append(_clean_lines(col.extract_text() or "", keep_short=True))
                 found = sorted(col.search(RE_APP.pattern, regex=True, case=False), key=lambda m: m["top"])
                 if want_images and col.images:
                     for img in col.images:
@@ -240,7 +343,8 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
                             if m["top"] <= img["top"]:
                                 owner = compact_app(m["groups"][0])
                         owner = owner or last_app
-                        if owner and owner not in images:
+                        # `have_image`: mărcile care au deja logo în bază (buletin recitit) — nu-l mai decupăm.
+                        if owner and owner not in images and not (have_image and owner in have_image):
                             b = _thumb(page, img)
                             if b:
                                 images[owner] = b
@@ -260,6 +364,7 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
     if "(cid:" in text:
         for k, v in CID_LETTERS.items():
             text = text.replace(k, v)
+    annex_goods = _annex_goods("\n".join(annex)) if annex else {}
     starts = [m.start() for m in RE_APP.finditer(text)]
     yielded: set = set()
     for i, s in enumerate(starts):
@@ -273,6 +378,23 @@ def parse_pdf(path: str, kind: str, want_images: bool = True) -> Iterator[Tuple[
             continue
         if rec["app_number"] in images:
             rec["image"] = images[rec["app_number"]]
+        tn = table_names.get(rec["app_number"])
+        same = lambda a: re.sub(r"[\s-]", "", a or "")
+        if tn and same(tn) == same(rec.get("name")) and "- " in tn and "- " not in rec.get("name", ""):
+            tn = None                      # diferă doar o cratimă de la capăt de rând: fișa e mai curată
+        if tn and tn != rec.get("name"):
+            # Denumirea din tabelul-sumar e cea publicată; textul în plus din fișă rămâne declarație.
+            name, disc = split_disclaimer(tn)
+            rec["name"] = name
+            if disc and not rec.get("disclaimer"):
+                rec["disclaimer"] = disc
+        ag = annex_goods.get(rec["app_number"])
+        if ag:
+            goods = dict(rec.get("goods") or {})
+            for c, txt in ag.items():
+                if txt and (not goods.get(c) or re.search(r"Conform\s+Anexa", goods[c], re.I)):
+                    goods[c] = txt
+            rec["goods"], rec["classes"] = goods, sorted(int(c) for c in goods)
         chapter = fixed or ("registered" if rec.get("reg_number") else
                             "rejected" if rec["app_number"] in rejected else "admitted")
         yielded.add(rec["app_number"])
@@ -302,6 +424,8 @@ def _change_kind(title: str, header: str) -> Optional[str]:
         return "representation"
     if "licen" in h or "LICEN" in t:
         return "license"
+    if "adresă veche" in h or "adresa veche" in h:
+        return "Modificare adresă titular"
     if "titular vechi" in h or "cedent" in h:
         if "CESIUN" in t and ("PARȚIAL" in t or "PARTIAL" in t or "PARŢIAL" in t):
             return "Cesiune parțială"
@@ -414,8 +538,12 @@ def parse_changes(path: str) -> Iterator[Dict]:
                 kind = _change_kind(title, header)
                 if not kind or kind == "limitation":
                     continue
+                # Coloana „Denumire marcă” (transferuri, schimbări de nume / adresă, licențe, radieri):
+                # singura sursă BOPI pentru denumirea mărcilor vechi, reînnoite (lista de reînnoiri n-o are).
+                ni = next((i for i, c in enumerate(table[0]) if "denumire" in _cell(c).lower()), None)
                 for row in table[1:]:
                     cells = [_cell(c) for c in row]
+                    tm_name = cells[ni] if ni is not None and ni < len(cells) and kind != "representation" else ""
                     if kind == "representation" and len(cells) > 1:
                         # Nr. din registru (adesea gol) + nr. cererii în coloana a doua.
                         cells = [cells[1] + " " + cells[0]] + cells[1:]
@@ -444,6 +572,8 @@ def parse_changes(path: str) -> Iterator[Dict]:
                             rec["old"], rec["new"] = (cells[2] if len(cells) > 2 else ""), (cells[3] if len(cells) > 3 else "")
                         elif kind == "license":
                             rec["new"] = " · ".join(c for c in cells[3:6] if c)
+                    if tm_name and not RE_CODE.fullmatch(tm_name.strip()):
+                        rec["name"] = tm_name
                     yield rec
             page.flush_cache()
     for ids, obs_t, cls_t in lim_rows:

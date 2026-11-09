@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 
 import requests
 
-from bopi_parser import parse_changes, parse_pdf
+from bopi_parser import display_app, parse_changes, parse_pdf
 from db import Mark, MarkChange, MarkImage, SessionLocal, SourceFile, norm
 
 OSIM = "https://www.osim.ro"
@@ -75,6 +75,9 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
             # Tabelele aceluiași buletin (transferuri, reînnoiri, radieri...) — pas separat.
             out.append({"url": url + "#changes", "kind": "changes", "date": _month_end(y, mo),
                         "label": f"BOPI {mo:02d}/{y}{part}"})
+    # Buletinele lunare 09–10/2022 au și fișierul întreg, și părțile lui: părțile se sar (dubluri).
+    whole = {(x["kind"], x["date"]) for x in out if x["kind"] in ("monthly", "changes") and " partea" not in x["label"]}
+    out = [x for x in out if " partea" not in x["label"] or (x["kind"], x["date"]) not in whole]
     d = START
     while d <= today:
         if d.weekday() < 5:
@@ -144,7 +147,25 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
         m.filing_date = rec["date_151"]
     if rec.get("filing_date"):
         m.filing_date = rec["filing_date"]
+    # Denumirea publicată + un text în plus (notificare / decizie OSIM tipărită în câmpul (540) al
+    # capitolelor următoare): rămâne denumirea publicată, restul e declarație.
+    if rec.get("name") and m.name and rec["name"] != m.name and rec["name"].startswith(m.name + " "):
+        rest = rec["name"][len(m.name):].strip()
+        if len(rest) > 40 and re.search(r"\bart\.?\s*\d|\bnr\.?\s*\d|OSIM|NOTIFICARE|drept exclusiv|Legea|"
+                                        r"Comisi|contesta|refuz", rest, re.I):
+            rec = dict(rec, name=m.name, disclaimer=rec.get("disclaimer") or rest)
+    # Denumirea din buletinul zilnic (cererea publicată, cu tabelul-sumar) e cea de referință: capitolele
+    # următoare (admise, înregistrate) n-o mai înlocuiesc — acolo fișa are adesea text OSIM în (540).
+    published = CHAPTER_LABEL["published"]
+    keep_name = chapter != "published" and bool(m.name) and \
+        any(e.get("chapter") == published and e.get("name") for e in (m.events or []))
     for f in ("name", "representative", "representative_address", "vienna", "colors", "disclaimer"):
+        if f == "name" and keep_name:
+            continue
+        if f == "name" and chapter == "published" and rec.get("name") and \
+                not any(e.get("chapter") == CHANGE_LABEL["representation"] for e in (m.events or [])):
+            m.name = rec["name"]           # și la recitirea unui buletin mai vechi decât ultimul eveniment
+            continue
         if rec.get(f) and (is_newer or not getattr(m, f)):
             setattr(m, f, rec[f])
     if rec.get("holder") and not m.holder:
@@ -152,9 +173,9 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     if rec.get("goods") and (is_newer or not m.goods):
         m.goods = rec["goods"]
         m.classes = rec["classes"]
-    # O denumire / un titular citit anormal de lung (bloc PDF stricat) nu încape în indexul de căutare.
-    m.name, m.holder = (m.name or "")[:400], (m.holder or "")[:400]
-    m.representative = (m.representative or "")[:400]
+    # Denumirea se păstrează întreagă, oricât de lungă (cerință: nicio denumire trunchiată).
+    m.name, m.holder = (m.name or ""), (m.holder or "")
+    m.representative = (m.representative or "")
     m.name_norm = norm(m.name)
     m.holder_norm = norm(m.holder)
     m.rep_norm = norm(m.representative)
@@ -164,8 +185,10 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
         m.reg_number = rec.get("reg_number") or m.reg_number
         m.reg_date = m.reg_date if (m.reg_date and m.reg_date < bdate) else bdate
     new_status = STATUS.get(chapter, "")
+    # O admitere publicată după o respingere (contestație admisă) schimbă starea înapoi în „Admisă”.
     if new_status and bdate >= (m.status_date or "") and \
-            (_RANK.get(new_status, 0) >= _RANK.get(m.status, 0) or chapter == "rejected"):
+            (_RANK.get(new_status, 0) >= _RANK.get(m.status, 0) or chapter == "rejected" or
+             (chapter == "admitted" and m.status == "Respinsă" and bdate > (m.status_date or ""))):
         if not (m.status == "Înregistrată" and chapter != "registered"):
             m.status, m.status_date = new_status, bdate
     elif new_status and not m.status:
@@ -183,7 +206,7 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     if rec.get("classes"):
         ev["classes"] = rec["classes"]
     if rec.get("name"):
-        ev["name"] = rec["name"][:200]
+        ev["name"] = rec["name"]
     if rec.get("reg_number"):
         ev["reg_number"] = rec["reg_number"]
     _add_event(m, ev)
@@ -295,8 +318,8 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
         detail = f"cesiune parțială către {c.new_value.split(',')[0].strip()}"
     elif c.kind == "representation" and c.new_value:
         detail = f"„{c.old_value}” → „{c.new_value}”"
-        holder_ev["name"] = c.new_value[:200]
-        holder_ev["name_before"] = (c.old_value or "")[:200]
+        holder_ev["name"] = c.new_value
+        holder_ev["name_before"] = c.old_value or ""
         if norm(c.new_value) != norm(m.name):
             m.name, m.name_norm = c.new_value, norm(c.new_value)
     elif c.kind == "renewal":
@@ -339,14 +362,30 @@ def _renewal_stub(db, c: MarkChange) -> Optional[Mark]:
                  classes=classes, goods={}, events=[], mark_type="")
         db.add(m)
         db.flush()
+    if not m.name:
+        # Denumirea dintr-un tabel de modificări (transfer, adresă, licență…) citit anterior.
+        prev = db.query(MarkChange).filter(MarkChange.reg_number == c.reg_number, MarkChange.name != "")\
+            .order_by(MarkChange.bulletin_date.desc()).first()
+        if prev is not None:
+            _name_stub(m, prev.name, prev.app_number, prev.label, prev.bulletin_date)
     return m
+
+
+def _name_stub(m: Mark, name: str, app: str, label: str, bdate: str) -> None:
+    m.name, m.name_norm = name, norm(name)
+    m.mark_type = "Combinată" if m.has_image else "Verbală"
+    detail = f"nr. depozit {display_app(app)}" if app else ""
+    ev = {"date": bdate, "bopi": label, "chapter": "Denumire preluată din tabelele BOPI"}
+    if detail:
+        ev["detail"] = detail
+    _add_event(m, ev)
 
 
 def _merge_stub(db, m: Mark) -> None:
     """Marca originală a apărut (arhivă) — preia reînnoirile păstrate pe nr. de marcă."""
     if not m.reg_number:
         return
-    stub = db.get(Mark, f"R{m.reg_number}")
+    stub = db.get(Mark, f"R{m.reg_number.lstrip('0')}")
     if stub is None or stub is m:
         return
     for ev in stub.events or []:
@@ -354,6 +393,17 @@ def _merge_stub(db, m: Mark) -> None:
             m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
     if not m.classes and stub.classes:
         m.classes = stub.classes
+    # Denumirea / logo-ul aduse din TMview pe marca reînnoită rămân, dacă originalul nu le are.
+    if not m.name and stub.name:
+        m.name, m.name_norm = stub.name, norm(stub.name)
+    img = db.get(MarkImage, stub.app_number)
+    if img is not None:
+        if not m.has_image:
+            db.merge(MarkImage(app_number=m.app_number, data=img.data, content_type=img.content_type))
+            m.has_image = True
+        db.delete(img)
+    m.mark_type = ("Combinată" if m.has_image and m.name else
+                   "Figurativă" if m.has_image else "Verbală")
     db.delete(stub)
 
 
@@ -370,7 +420,8 @@ def _process_changes(db, path: str, src: Dict) -> int:
             r["new"] = _json.dumps(r.get("goods", {}), ensure_ascii=False)
         c = MarkChange(kind=r["kind"], app_number=r.get("app_number", ""), reg_number=r.get("reg_number", ""),
                        old_value=r.get("old", ""), new_value=r.get("new", ""), expiry=r.get("expiry", ""),
-                       title=r.get("title", ""), bulletin_date=bdate, label=src["label"])
+                       title=r.get("title", ""), bulletin_date=bdate, label=src["label"],
+                       name=(r.get("name") or "").strip())
         db.add(c)
         m = db.get(Mark, c.app_number) if c.app_number else None
         if m is None and c.reg_number:
@@ -379,6 +430,11 @@ def _process_changes(db, path: str, src: Dict) -> int:
             m = _renewal_stub(db, c)
         if m is not None:
             _apply_change(db, m, c)
+        if c.name and c.reg_number:
+            # Marca reînnoită veche (R<nr.>), fără denumire: o preia din tabel.
+            stub = db.get(Mark, f"R{c.reg_number}")
+            if stub is not None and not stub.name:
+                _name_stub(stub, c.name, c.app_number, c.label, c.bulletin_date)
         n += 1
         if n % 200 == 0:
             db.commit()
@@ -433,7 +489,8 @@ def process_source(src: Dict) -> int:
         if src["kind"] == "changes":
             n = _process_changes(db, path, src)
         else:
-            for chapter, rec in parse_pdf(path, src["kind"]):
+            have = {a for (a,) in db.query(Mark.app_number).filter(Mark.has_image == True)}  # noqa: E712
+            for chapter, rec in parse_pdf(path, src["kind"], have_image=have):
                 _upsert(db, chapter, rec, src)
                 n += 1
                 if n % 200 == 0:
@@ -555,31 +612,88 @@ MONITOR_API = os.environ.get("MONITOR_API", "https://web-production-c898f.up.rai
 enrich_job: Dict = {"running": False, "done": 0, "found": 0, "last": None}
 
 
+def _regsearch(numbers: List[str], mode: str) -> Optional[Dict]:
+    """Un lot de nr. de înregistrare căutat în TMview prin aplicația de monitorizare. Reîncearcă de
+    2 ori (TMview / Imperva resetează uneori conexiunea); None dacă lotul n-a putut fi căutat."""
+    import time
+    for attempt in range(3):
+        try:
+            r = requests.get(f"{MONITOR_API}/api/tm-regsearch", timeout=600,
+                             params={"numbers": ",".join(numbers), "mode": mode})
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, dict) and "error" not in data:
+                    return data
+                print(f"[ENRICH] {mode}: răspuns cu eroare: {str(data)[:200]}")
+            else:
+                print(f"[ENRICH] {mode}: HTTP {r.status_code} {r.text[:200]}")
+        except Exception as e:
+            print(f"[ENRICH] {mode}: {type(e).__name__}: {e}")
+        time.sleep(15 * (attempt + 1))
+    return None
+
+
+def _apply_tmview_hit(db, m: Mark, t: Dict, today: str) -> None:
+    m.name = (t.get("tmName") or "").strip()
+    m.name_norm = norm(m.name)
+    m.filing_date = m.filing_date or (t.get("applicationDate") or "")[:10]
+    if not m.classes and t.get("niceClass"):
+        m.classes = sorted(int(c) for c in t["niceClass"] if str(c).isdigit())
+    if not m.holder and t.get("applicantName"):
+        m.holder = t["applicantName"][0]
+        m.holder_norm = norm(m.holder)
+    m.mark_type = "Verbală" if m.name else m.mark_type
+    st13 = t.get("ST13") or ""
+    if t.get("markImageURI") and st13:
+        _fetch_logo(db, m, st13)
+    ev = {"date": today, "bopi": "TMview", "chapter": "Denumire preluată din TMview",
+          "detail": f"nr. depozit {t.get('applicationNumber') or ''}".strip(), "st13": st13}
+    # Control: titularul din TMview ar trebui să semene cu cel din lista de reînnoiri.
+    tv = norm((t.get("applicantName") or [""])[0])
+    if m.holder and tv:
+        a = {w for w in norm(m.holder).split() if len(w) > 2 and w not in ("srl", "sas", "s r l", "ltd", "inc")}
+        b = {w for w in tv.split() if len(w) > 2}
+        if a and b and not (a & b):
+            ev["detail"] += f" · titular în TMview: {t['applicantName'][0]} (de verificat)"
+            print(f"[ENRICH] titular diferit R{m.reg_number}: {m.holder!r} vs TMview {t['applicantName'][0]!r}")
+    m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+
+
 def enrich_renewed(limit: int = 600) -> None:
     if enrich_job["running"]:
         return
-    enrich_job.update(running=True, done=0, found=0)
+    enrich_job.update(running=True, done=0, found=0, failed_batches=0)
     try:
         today = date.today().isoformat()
         db = SessionLocal()
         try:
-            # „|pad” = căutată cu nr. completat la 6 cifre; cele căutate înainte de asta (fără rezultat
-            # pentru numerele vechi, ex. 18279 în loc de 018279) se mai caută o dată.
+            # „|v2” = căutată cu nr. completat la 6 cifre și cu reîncercări. Cele căutate înainte (fără
+            # |v2) se mai caută o dată; cele negăsite se recaută după 30 de zile (TMview se actualizează).
+            stale = (date.today() - timedelta(days=30)).isoformat()
             todo = [m.reg_number for m in db.query(Mark).filter(
                 Mark.app_number.like("R%"), Mark.name == "",
-                (Mark.tmview_checked == "") | ~Mark.tmview_checked.like("%|pad%")).limit(limit)]
+                (Mark.tmview_checked == "") | ~Mark.tmview_checked.like("%|v2%") |
+                (Mark.tmview_checked < stale)).order_by(Mark.tmview_checked).limit(limit)]
         finally:
             db.close()
+
+        def _ok(res):
+            # Un rezultat valid are „total”; altfel (eroare / HTTP ≠ 200 la TMview) se reîncearcă.
+            return isinstance(res, dict) and "total" in res and "error" not in res
+
+        fails = 0
         for i in range(0, len(todo), 25):
             batch = todo[i:i + 25]
-            try:
-                # TMview are numerele de înregistrare RO pe cel puțin 6 cifre (018279).
-                r = requests.get(f"{MONITOR_API}/api/tm-regsearch", timeout=600,
-                                 params={"numbers": ",".join(n.zfill(6) for n in batch), "mode": "registrationNumber"})
-                data = r.json() if r.status_code == 200 else {}
-            except Exception as e:
-                print(f"[ENRICH] {type(e).__name__}: {e}")
-                break
+            # TMview are numerele de înregistrare RO pe cel puțin 6 cifre (018279).
+            data = _regsearch([n.zfill(6) for n in batch], "registrationNumber")
+            if data is None:
+                enrich_job["failed_batches"] += 1
+                fails += 1
+                if fails >= 3:
+                    print("[ENRICH] 3 loturi eșuate la rând — reluăm la rularea următoare")
+                    break
+                continue
+            fails = 0
             db = SessionLocal()
             try:
                 for reg in batch:
@@ -587,27 +701,12 @@ def enrich_renewed(limit: int = 600) -> None:
                     if m is None:
                         continue
                     res = data.get(reg.zfill(6)) or data.get(reg) or {}
-                    if "error" in res or not res:
+                    if not _ok(res):
                         continue                        # reîncercăm la rularea următoare
-                    m.tmview_checked = today + "|pad|img"
                     hits = res.get("hits") or []
+                    m.tmview_checked = today + "|pad|v2|img"
                     if hits:
-                        t = hits[0]
-                        m.name = (t.get("tmName") or "").strip()
-                        m.name_norm = norm(m.name)
-                        m.filing_date = m.filing_date or (t.get("applicationDate") or "")[:10]
-                        if not m.classes and t.get("niceClass"):
-                            m.classes = sorted(int(c) for c in t["niceClass"] if str(c).isdigit())
-                        if not m.holder and t.get("applicantName"):
-                            m.holder = t["applicantName"][0]
-                            m.holder_norm = norm(m.holder)
-                        m.mark_type = "Verbală" if m.name else m.mark_type
-                        st13 = t.get("ST13") or ""
-                        if t.get("markImageURI") and st13:
-                            _fetch_logo(db, m, st13)
-                        ev = {"date": today, "bopi": "TMview", "chapter": "Denumire preluată din TMview",
-                              "detail": f"nr. depozit {t.get('applicationNumber') or ''}".strip(), "st13": st13}
-                        m.events = sorted((m.events or []) + [ev], key=lambda e: e["date"])
+                        _apply_tmview_hit(db, m, hits[0], today)
                         enrich_job["found"] += 1
                     enrich_job["done"] += 1
                 db.commit()

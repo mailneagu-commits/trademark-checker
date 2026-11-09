@@ -257,6 +257,10 @@ def quality(db: Session = Depends(get_db)):
         "inregistrata_fara_nr": lambda m: m.status == "Înregistrată" and not m.reg_number,
         "clase_fara_produse": lambda m: any(not (m.goods or {}).get(str(c)) for c in (m.classes or [])),
     }
+    # Aceleași verificări doar pe mărcile cu fișă BOPI (fără mărcile reînnoite vechi „R<nr.>”, care
+    # n-au prin natura lor data depozitului, adresa titularului sau produsele) — „<verificare>_M”.
+    for k, f in list(checks.items()):
+        checks[k + "_M"] = (lambda f: lambda m: not m.app_number.startswith("R") and f(m))(f)
     counts = {k: 0 for k in checks}
     examples = {k: [] for k in checks}
     total = 0

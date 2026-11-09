@@ -30,7 +30,9 @@ def norm(s) -> str:
     """Text comparabil pentru căutare: fără diacritice, litere mici, spații simple."""
     s = unicodedata.normalize("NFKD", str(s or ""))
     s = "".join(c for c in s if not unicodedata.combining(c)).lower()
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9&@+ ]+", " ", s)).strip()
+    # Denumirea rămâne întreagă; doar forma de căutare (index B-tree în PostgreSQL, max ≈2,7 kB
+    # pe intrare) e limitată, ca un bloc PDF stricat să nu blocheze salvarea mărcii.
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9&@+ ]+", " ", s)).strip()[:1000]
 
 
 class Mark(Base):
@@ -105,6 +107,7 @@ class MarkChange(Base):
     bulletin_date = Column(String, default="", index=True)
     label         = Column(String, default="")
     applied       = Column(Boolean, default=False)
+    name          = Column(Text, default="")            # „Denumire marcă” din tabel, când există
 
 
 class Lead(Base):
@@ -135,13 +138,19 @@ def _fix_disclaimers():
     db = SessionLocal()
     try:
         n = 0
-        q = db.query(Mark).filter(Mark.name.like("%conformitate%") | Mark.name.like("%Conform %") |
-                                  Mark.name.like("%Potrivit%"))
+        from sqlalchemy import or_
+        pats = ("%conformitate%", "%Conform%", "%Potrivit%", "%La data de%", "%prevederil%", "%Prin Hot%",
+                "%S-A R%", "%aplicabile%", "%La depunerea%", "%Prin adresa%", "%Prin scris%", "%Prin răsp%",
+                "%Solicitantul%", "%Titularul%", "%prioritatea%", "%cazul dumneav%")
+        q = db.query(Mark).filter(or_(*[Mark.name.like(p) for p in pats]))
         for m in q:
             name, disc = split_disclaimer(m.name)
             if disc:
                 m.name, m.name_norm = name, norm(name)
-                m.disclaimer = (m.disclaimer + " " + disc).strip() if m.disclaimer else disc
+                if disc not in (m.disclaimer or ""):
+                    m.disclaimer = (m.disclaimer + " " + disc).strip() if m.disclaimer else disc
+                m.mark_type = ("Combinată" if m.has_image and m.name else
+                               "Figurativă" if m.has_image else "Verbală")
                 n += 1
         db.commit()
         if n:
@@ -152,6 +161,11 @@ def _fix_disclaimers():
 
 def _ensure_columns():
     from sqlalchemy import inspect
+    have_mc = {c["name"] for c in inspect(engine).get_columns("mark_changes")}
+    if "name" not in have_mc:
+        with engine.begin() as c:
+            c.execute(text("ALTER TABLE mark_changes ADD COLUMN name TEXT DEFAULT ''"))
+        print("[DB] Coloana mark_changes.name adăugată")
     have = {c["name"] for c in inspect(engine).get_columns("marks")}
     if "tmview_checked" not in have:
         with engine.begin() as c:
@@ -206,12 +220,78 @@ def _reprocess_for_history():
         db.close()
 
 
+def _reprocess_for_names():
+    """O singură dată: buletinele cu fișe (zilnice, cereri admise, lunare) se recitesc cu parserul
+    corectat — denumiri întregi (fără limita de 400), rândurile dintr-o literă / din cifre păstrate
+    („1”, „G”, „BAG BANII 2082”), fișele de pe paginile cu „Conform Anexa” nemaisărite, notificările
+    OSIM scoase din denumire. Tabelele de modificări nu se recitesc. Denumirile tăiate la 400 de
+    caractere se golesc, ca buletinul recitit să le completeze."""
+    marker = "migration:names-v2"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from sqlalchemy import func
+        n = 0
+        for m in db.query(Mark).filter(func.length(Mark.name) >= 400):
+            m.name, m.name_norm = "", ""
+            n += 1
+        k = db.query(SourceFile).filter(SourceFile.kind.in_(("daily", "admise", "monthly")),
+                                        SourceFile.status == "ok").delete(synchronize_session=False)
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="denumiri v2"))
+        db.commit()
+        print(f"[DB] Denumiri tăiate golite: {n}; buletine de recitit: {k}")
+    finally:
+        db.close()
+
+
+def _reprocess_changes_for_names():
+    """O singură dată: tabelele de modificări se recitesc, ca denumirea („Denumire marcă”) să ajungă
+    la mărcile reînnoite vechi, păstrate doar după nr. de marcă (R<nr.>)."""
+    marker = "migration:change-names-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        k = db.query(SourceFile).filter(SourceFile.kind == "changes", SourceFile.status == "ok")\
+            .delete(synchronize_session=False)
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="denumiri din tabele v1"))
+        db.commit()
+        print(f"[DB] Tabele de modificări de recitit (denumiri): {k}")
+    finally:
+        db.close()
+
+
+def _fix_reg_zeros():
+    """Nr. de marcă citite cu zerouri în față (arhiva: „065304”) — normalizate ca în tabelele de
+    reînnoiri, apoi unite cu marca reînnoită păstrată pe nr. de marcă și cu modificările în așteptare."""
+    db = SessionLocal()
+    try:
+        ms = db.query(Mark).filter(Mark.reg_number.like("0%")).all()
+        if not ms:
+            return
+        from ingest import _apply_pending, _merge_stub, expiry_of
+        for m in ms:
+            m.reg_number = m.reg_number.lstrip("0")
+            db.flush()
+            _merge_stub(db, m)
+            _apply_pending(db, m)
+            m.expiry_date = expiry_of(m)
+        db.commit()
+        print(f"[DB] Nr. de marcă normalizate (zerouri în față): {len(ms)}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
     _fix_disclaimers()
     _reprocess_old_changes()
     _reprocess_for_history()
+    _reprocess_for_names()
+    _reprocess_changes_for_names()
+    _fix_reg_zeros()
     if IS_PG:
         # Căutare „conține” rapidă pe sute de mii de rânduri: index trigram.
         with engine.begin() as c:
