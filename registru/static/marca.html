@@ -62,6 +62,34 @@ function historyHtml(events) {
   });
   return `<ol class="tl">${items.join("")}</ol>`;
 }
+// Axa reprezentanților: toți reprezentanții mărcii de-a lungul timpului, din documentele BOPI
+// (gol = fără reprezentant) și din listele de reînnoiri (doar când lista dă un mandatar).
+function repAxis(m) {
+  const evs = (m.events || []).filter(e => "representative" in e && (e.representative || !/Reînnoire/.test(e.chapter || "")))
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const segs = [];
+  for (const e of evs) {
+    const last = segs[segs.length - 1];
+    if (last && same(last.rep, e.representative || "")) continue;
+    segs.push({ rep: e.representative || "", ev: e });
+  }
+  if (!segs.length) return "";
+  const nm = r => r ? r : "fără reprezentant";
+  // Același format ca „Istoricul mărcii”: data pe axă, documentul BOPI, schimbarea veche → nouă.
+  const items = segs.map((g, i) => {
+    const prev = i ? segs[i - 1].rep : null;
+    const who = g.rep ? `<a href="/cauta.html?representative=${encodeURIComponent(g.rep)}"><b>${esc(g.rep)}</b></a>` : `<b>${nm("")}</b>`;
+    const ch = `<div class="tl-ch"><span class="tl-k">Reprezentant</span>
+        ${prev !== null ? `<s class="tl-old">${esc(nm(prev))}</s> <span class="tl-arrow">→</span> ` : ""}${who}</div>`;
+    const now = i === segs.length - 1 ? ' <span class="badge light">actual</span>' : "";
+    return `<li class="tl-item ${i ? "tl-mod" : "tl-st"}">
+      <div class="tl-date">${dmy(g.ev.date) || esc(g.ev.date)}</div>
+      <div class="tl-body"><div class="tl-head"><strong>${esc(g.ev.chapter)}</strong> <span class="muted small">· ${esc(g.ev.bopi)}</span>${now}</div>${ch}</div>
+    </li>`;
+  });
+  return `<ol class="tl">${items.join("")}</ol>`;
+}
+
 // Mandatar înscris după depunere: primul document al mărcii nu avea reprezentant.
 function repLater(m) {
   const evs = (m.events || []).filter(e => "representative" in e).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
@@ -100,7 +128,7 @@ function repLater(m) {
       </div>
       <section class="two">
         <div class="card"><h2>Titular (732)</h2><p style="margin:0;"><a href="/cauta.html?holder=${encodeURIComponent(m.holder)}"><strong>${esc(m.holder)}</strong></a><br><span class="muted small">${esc(m.holder_address)}</span></p></div>
-        <div class="card"><h2>Reprezentant (740)</h2>${m.representative ? `<p style="margin:0;"><a href="/cauta.html?representative=${encodeURIComponent(m.representative)}"><strong>${esc(m.representative)}</strong></a>${m.representative_address && m.representative_address !== m.representative ? `<br><span class="muted small">${esc(m.representative_address)}</span>` : ""}${repLater(m)}</p>` : '<p class="muted" style="margin:0;">Fără reprezentant.</p>'}</div>
+        <div class="card"><h2>Reprezentant (740)</h2>${repAxis(m) || (m.representative ? `<p style="margin:0;"><a href="/cauta.html?representative=${encodeURIComponent(m.representative)}"><strong>${esc(m.representative)}</strong></a>${m.representative_address && m.representative_address !== m.representative ? `<br><span class="muted small">${esc(m.representative_address)}</span>` : ""}${repLater(m)}</p>` : '<p class="muted" style="margin:0;">Fără reprezentant.</p>')}</div>
       </section>
       ${m.vienna || m.colors ? `<section class="card"><div class="facts" style="margin:0;">${fact("Clasificare Viena (531)", esc(m.vienna))}${fact("Culori revendicate (591)", esc(m.colors))}</div></section>` : ""}
       ${m.disclaimer ? `<section class="card"><h2>Mențiuni</h2><p style="margin:0;">${esc(m.disclaimer)}</p></section>` : ""}

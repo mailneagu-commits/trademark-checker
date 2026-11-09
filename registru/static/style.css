@@ -180,3 +180,4 @@ html.embed footer { display: none; }
 .lead-thanks strong { display: block; margin-top: 10px; font-weight: 600; color: var(--accent); }
 .lead-x { position: absolute; top: 10px; right: 12px; border: 0; background: none; font-size: 1.1rem; color: var(--muted); cursor: pointer; padding: 4px 6px; }
 .lead-x:hover { color: var(--ink); }
+
