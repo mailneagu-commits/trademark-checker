@@ -338,7 +338,17 @@ async def tm_regsearch(numbers: str, office: str = "RO", mode: str = "basic"):
     nums = [n.strip() for n in numbers.split(",") if n.strip()][:50]
     out = {}
     async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
-        await session.get(TMVIEW_HOME, timeout=15, headers=_build_headers())
+        # TMview (Imperva) mai închide conexiunea — reîncercăm; dacă tot nu merge, 503 ca ProWatch
+        # să reia aceleași numere la rularea următoare.
+        for attempt in range(3):
+            try:
+                await session.get(TMVIEW_HOME, timeout=15, headers=_build_headers())
+                break
+            except Exception as e:
+                if attempt == 2:
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse({"error": f"TMview indisponibil: {type(e).__name__}"}, status_code=503)
+                await _aio.sleep(3 * (attempt + 1))
         for n in nums:
             payload = {"page": "1", "pageSize": "10", "criteria": "F", "basicSearch": n, "newPage": True,
                        "offices": [office],
