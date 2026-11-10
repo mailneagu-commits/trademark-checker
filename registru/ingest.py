@@ -714,15 +714,25 @@ def enrich_goods(limit: int = 400) -> None:
             return d if isinstance(d, dict) and "error" not in d else None
 
         from concurrent.futures import as_completed
+        fails = 0
         db = SessionLocal()
         try:
-            with ThreadPoolExecutor(max_workers=6) as ex:
+            with ThreadPoolExecutor(max_workers=2) as ex:
                 futs = {ex.submit(fetch, st13): (app, st13) for app, st13 in todo}
                 for fut in as_completed(futs):
                     app, st13 = futs[fut]
                     d = fut.result()
-                    if d is None:
-                        continue                                  # reîncercăm la rularea următoare
+                    if not d:
+                        # TMview blochează (Imperva) — ne oprim, ca să nu afectăm căutările din aplicația
+                        # de monitorizare; continuăm la rularea următoare.
+                        fails += 1
+                        if fails >= 10:
+                            print("[GOODS] TMview nu răspunde — oprit până la rularea următoare")
+                            for f in futs:
+                                f.cancel()
+                            break
+                        continue
+                    fails = 0
                     m = db.get(Mark, app)
                     if m is None:
                         continue
