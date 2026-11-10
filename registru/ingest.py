@@ -282,12 +282,22 @@ def _recompute_holder(m: Mark) -> None:
     """Titularul curent = cel din documentul cu data cea mai recentă (buletin, cesiune, fuziune,
     schimbare de nume, reînnoire), indiferent de ordinea în care au fost citite buletinele.
     La aceeași dată: cesiunea / schimbarea de nume > buletinul mărcii > lista de reînnoiri."""
-    cands = [e for e in (m.events or []) if e.get("holder")]
+    ADDR = "Modificare adresă titular"
+    evs = [e for e in (m.events or []) if e.get("holder")]
+    # Schimbarea de adresă nu schimbă titularul (poate privi un co-titular) — dă doar adresa nouă.
+    cands = [e for e in evs if e.get("chapter") != ADDR] or evs
     if not cands:
         return
+    RANK = {"Cesiune": 4, "Fuziune": 4, "Modificare titular": 3}
+
     def prio(e):
-        return e.get("prio", 1)
+        # La aceeași dată: cesiunea / fuziunea > schimbarea de nume > buletinul mărcii > reînnoirea.
+        return RANK.get(e.get("chapter"), e.get("prio", 1))
     best = max(cands, key=lambda e: (e["date"], prio(e)))
+    addr = [e for e in evs if e.get("chapter") == ADDR and e["date"] >= best["date"]
+            and norm(e["holder"]) == norm(best["holder"]) and e.get("holder_address")]
+    if addr and best.get("chapter") != ADDR:
+        best = dict(best, holder_address=max(addr, key=lambda e: e["date"])["holder_address"])
     if norm(best["holder"]) != norm(m.holder) or (best.get("holder_address") and best["holder_address"] != m.holder_address):
         m.holder = best["holder"]
         # Lista de reînnoiri are doar numele: păstrăm adresa cunoscută dacă e același titular.
@@ -358,6 +368,8 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
         ev["detail"] = detail
     if c.kind == "renewal" and c.expiry:
         ev["expiry"] = c.expiry
+    if c.kind == "renewal" and getattr(c, "renewal_no", 0):
+        ev["renewal_no"] = c.renewal_no
     ev.update(holder_ev)
     _add_event(m, ev)
     _recompute_holder(m)
@@ -461,7 +473,8 @@ def _process_changes(db, path: str, src: Dict) -> int:
         c = MarkChange(kind=r["kind"], app_number=r.get("app_number", ""), reg_number=r.get("reg_number", ""),
                        old_value=r.get("old", ""), new_value=r.get("new", ""), expiry=r.get("expiry", ""),
                        title=r.get("title", ""), bulletin_date=bdate, label=src["label"],
-                       name=(r.get("name") or "").strip(), representative=(r.get("rep") or "").strip())
+                       name=(r.get("name") or "").strip(), representative=(r.get("rep") or "").strip(),
+                       renewal_no=r.get("renewal_no") or 0)
         db.add(c)
         m = db.get(Mark, c.app_number) if c.app_number else None
         if m is None and c.reg_number:
@@ -470,6 +483,10 @@ def _process_changes(db, path: str, src: Dict) -> int:
             m = _renewal_stub(db, c)
         if m is not None:
             _apply_change(db, m, c)
+            if m.app_number.startswith("R"):
+                # Modificările publicate înainte de reînnoire (inclusiv în același buletin) — în așteptare.
+                db.flush()
+                _apply_pending(db, m)
             _stub_filing_date(m)
         if c.name and c.reg_number:
             # Marca reînnoită veche (R<nr.>), fără denumire: o preia din tabel.

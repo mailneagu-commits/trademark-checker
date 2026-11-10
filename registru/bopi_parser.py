@@ -552,6 +552,9 @@ def parse_changes(path: str) -> Iterator[Dict]:
                     rec: Dict = {"kind": kind, "title": title}
                     if kind == "renewal":
                         rec["reg_number"] = re.sub(r"\D.*$", "", cells[0]).lstrip("0")
+                        # „008649(5R)” — a câta reînnoire, tipărită de OSIM (fără sufix = prima).
+                        nr = re.search(r"\((\d*)\s*R\)", cells[0])
+                        rec["renewal_no"] = int(nr.group(1) or 1) if nr else 0
                         rec["expiry"] = _iso(cells[1] if len(cells) > 1 else "")
                         rec["new"] = cells[3] if len(cells) > 3 else ""
                         rec["rep"] = cells[4] if len(cells) > 4 else ""      # (740) mandatarul la reînnoire

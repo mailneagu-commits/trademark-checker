@@ -109,6 +109,7 @@ class MarkChange(Base):
     applied       = Column(Boolean, default=False)
     name          = Column(Text, default="")            # „Denumire marcă” din tabel, când există
     representative = Column(Text, default="")           # (740) mandatarul, unde tabelul îl dă (reînnoiri)
+    renewal_no    = Column(Integer, default=0)          # a câta reînnoire („008649(5R)” → 5), 0 = netipărit
 
 
 class Lead(Base):
@@ -171,6 +172,10 @@ def _ensure_columns():
         with engine.begin() as c:
             c.execute(text("ALTER TABLE mark_changes ADD COLUMN representative TEXT DEFAULT ''"))
         print("[DB] Coloana mark_changes.representative adăugată")
+    if "renewal_no" not in have_mc:
+        with engine.begin() as c:
+            c.execute(text("ALTER TABLE mark_changes ADD COLUMN renewal_no INTEGER DEFAULT 0"))
+        print("[DB] Coloana mark_changes.renewal_no adăugată")
     have = {c["name"] for c in inspect(engine).get_columns("marks")}
     if "tmview_checked" not in have:
         with engine.begin() as c:
@@ -330,6 +335,47 @@ def _flag_missing_publication():
         db.close()
 
 
+def _reprocess_changes_for_renewal_no():
+    """O singură dată: tabelele de modificări se recitesc, ca reînnoirile să rețină numărul tipărit
+    de OSIM („008649(5R)”) — prefixul R / 2R / 5R al mărcii nu se mai deduce din date."""
+    marker = "migration:renewal-no-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        k = db.query(SourceFile).filter(SourceFile.kind == "changes", SourceFile.status == "ok")\
+            .delete(synchronize_session=False)
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="număr reînnoire v1"))
+        db.commit()
+        print(f"[DB] Tabele de modificări de recitit (nr. reînnoire): {k}")
+    finally:
+        db.close()
+
+
+def _repair_stubs_and_holders():
+    """O singură dată: modificările publicate înainte de apariția mărcii reînnoite „R…” se aplică acum,
+    iar titularul tuturor mărcilor se recalculează cu noua ordine (cesiune > schimbare de nume >
+    schimbare de adresă, la aceeași dată)."""
+    marker = "migration:stubs-holders-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from ingest import _apply_pending, _recompute_holder
+        n = 0
+        for m in db.query(Mark).filter(Mark.app_number.like("R%")).all():
+            _apply_pending(db, m)
+            n += 1
+        db.commit()
+        for m in db.query(Mark).yield_per(2000):
+            _recompute_holder(m)
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="modificări + titulari v1"))
+        db.commit()
+        print(f"[DB] Mărci reînnoite verificate pentru modificări în așteptare: {n}")
+    finally:
+        db.close()
+
+
 def _reprocess_dailies_for_representatives():
     """O singură dată: buletinele zilnice și de cereri admise (rapide) se recitesc, ca fiecare eveniment
     să rețină reprezentantul de la data lui — așa se vede când a fost înscris un mandatar ulterior."""
@@ -470,6 +516,8 @@ def init_db():
     _flag_limited_goods()
     _fix_old_filing_expiry()
     _flag_missing_publication()
+    _reprocess_changes_for_renewal_no()
+    _repair_stubs_and_holders()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
     _drop_part_duplicates()

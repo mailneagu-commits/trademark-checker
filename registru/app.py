@@ -69,6 +69,10 @@ def _status(m: Mark) -> str:
 def _renewals(m: Mark) -> int:
     """De câte ori a fost reînnoită marca: din depozit și expirare (fiecare reînnoire = +10 ani);
     fără data de depozit — câte reînnoiri apar în BOPI (cel puțin una pentru mărcile „R…”)."""
+    # Numărul tipărit de OSIM în lista de reînnoiri („008649(5R)”) are prioritate.
+    printed = max((e.get("renewal_no") or 0 for e in (m.events or [])), default=0)
+    if printed:
+        return printed
     exp = m.expiry_date or ""
     if m.filing_date and exp:
         n = round((int(exp[:4]) - int(m.filing_date[:4])) / 10) - 1
