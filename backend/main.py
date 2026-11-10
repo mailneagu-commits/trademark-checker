@@ -462,9 +462,12 @@ async def tm_detail(st13: str):
     if cached:
         return cached
     try:
-        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
-            await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
-            detail = await fetch_detail_once(session, st13)
+        async def _get():
+            async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
+                await session.get(TMVIEW_HOME, timeout=10, headers=_build_headers())
+                return await fetch_detail_once(session, st13)
+        # Limită fermă: când TMview blochează, conexiunile rămase agățate nu trebuie să țină aplicația ocupată.
+        detail = await asyncio.wait_for(_get(), timeout=40)
         if detail:   # salvat și pentru export (nu-l mai cerem încă o dată la TMview)
             await loop.run_in_executor(None, export_cache.save_details, {st13: detail})
         return detail
