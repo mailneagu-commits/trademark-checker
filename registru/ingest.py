@@ -698,18 +698,25 @@ def enrich_goods(limit: int = 400) -> None:
         todo = [(a, s) for a, s in cand if s][:limit]
 
         def fetch(st13):
-            try:
-                r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": st13}, timeout=120)
-                d = r.json() if r.status_code == 200 else None
-                return d if isinstance(d, dict) and "error" not in d else None
-            except Exception as e:
-                print(f"[GOODS] {st13}: {type(e).__name__}: {e}")
-                return None
+            # TMview (Imperva) dă des o fișă goală „{}” sub sarcină — reîncercăm de câteva ori, cu pauză.
+            import time as _t
+            d = None
+            for i in range(3):
+                try:
+                    r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": st13}, timeout=120)
+                    d = r.json() if r.status_code == 200 else None
+                except Exception as e:
+                    print(f"[GOODS] {st13}: {type(e).__name__}: {e}")
+                    d = None
+                if isinstance(d, dict) and d and "error" not in d:
+                    return d
+                _t.sleep(3 * (i + 1))
+            return d if isinstance(d, dict) and "error" not in d else None
 
         from concurrent.futures import as_completed
         db = SessionLocal()
         try:
-            with ThreadPoolExecutor(max_workers=8) as ex:
+            with ThreadPoolExecutor(max_workers=6) as ex:
                 futs = {ex.submit(fetch, st13): (app, st13) for app, st13 in todo}
                 for fut in as_completed(futs):
                     app, st13 = futs[fut]
