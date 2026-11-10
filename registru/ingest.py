@@ -665,6 +665,18 @@ def _stub_st13(m: Mark) -> str:
 
 
 goods_job: Dict = {"running": False, "done": 0, "found": 0, "last": None}
+# Când TMview blochează serverul aplicației de monitorizare (Imperva), ProWatch face o pauză ca să nu
+# afecteze căutările ProSearch / ProMonitor. La pornire: pauză de o oră (blocajul poate fi în curs).
+tmview_pause = {"until": datetime.utcnow() + timedelta(hours=1)}
+
+
+def _tmview_paused() -> bool:
+    return datetime.utcnow() < tmview_pause["until"]
+
+
+def _tmview_backoff(hours: float = 2) -> None:
+    tmview_pause["until"] = datetime.utcnow() + timedelta(hours=hours)
+    print(f"[TMVIEW] pauză până la {tmview_pause['until']:%H:%M} UTC")
 TM_FEATURE = {"Word": "Verbală", "Figurative": "Figurativă", "Combined": "Combinată", "Shape": "Tridimensională",
               "3-D": "Tridimensională", "Sound": "Sonoră", "Colour": "Culoare", "Position": "Poziție",
               "Pattern": "Model", "Motion": "Mișcare", "Multimedia": "Multimedia", "Hologram": "Hologramă",
@@ -676,7 +688,7 @@ def enrich_goods(limit: int = 400) -> None:
     doar clasele. Le luăm din fișa TMview (în română), prin aplicația de monitorizare."""
     from concurrent.futures import ThreadPoolExecutor
     from sqlalchemy import or_
-    if goods_job["running"]:
+    if goods_job["running"] or _tmview_paused():
         return
     goods_job.update(running=True, done=0, found=0)
     try:
@@ -727,7 +739,8 @@ def enrich_goods(limit: int = 400) -> None:
                         # de monitorizare; continuăm la rularea următoare.
                         fails += 1
                         if fails >= 10:
-                            print("[GOODS] TMview nu răspunde — oprit până la rularea următoare")
+                            print("[GOODS] TMview nu răspunde — pauză")
+                            _tmview_backoff()
                             for f in futs:
                                 f.cancel()
                             break
@@ -842,7 +855,7 @@ def _apply_tmview_hit(db, m: Mark, t: Dict, today: str) -> None:
 
 
 def enrich_renewed(limit: int = 600) -> None:
-    if enrich_job["running"]:
+    if enrich_job["running"] or _tmview_paused():
         return
     enrich_job.update(running=True, done=0, found=0, failed_batches=0)
     try:
@@ -872,7 +885,8 @@ def enrich_renewed(limit: int = 600) -> None:
                 enrich_job["failed_batches"] += 1
                 fails += 1
                 if fails >= 3:
-                    print("[ENRICH] 3 loturi eșuate la rând — reluăm la rularea următoare")
+                    print("[ENRICH] 3 loturi eșuate la rând — pauză")
+                    _tmview_backoff()
                     break
                 continue
             fails = 0
