@@ -702,7 +702,7 @@ def _tmview_paused() -> bool:
     return datetime.utcnow() < tmview_pause["until"]
 
 
-def _tmview_backoff(hours: float = 2) -> None:
+def _tmview_backoff(hours: float = 0.5) -> None:
     tmview_pause["until"] = datetime.utcnow() + timedelta(hours=hours)
     print(f"[TMVIEW] pauză până la {tmview_pause['until']:%H:%M} UTC")
 TM_FEATURE = {"Word": "Verbală", "Figurative": "Figurativă", "Combined": "Combinată", "Shape": "Tridimensională",
@@ -715,7 +715,7 @@ def enrich_goods(limit: int = 400) -> None:
     """Produsele și serviciile (511) mărcilor reînnoite vechi — listele de reînnoiri din BOPI dau
     doar clasele. Le luăm din fișa TMview (în română), prin aplicația de monitorizare."""
     from concurrent.futures import ThreadPoolExecutor
-    from sqlalchemy import or_
+    from sqlalchemy import Text, cast, or_
     if goods_job["running"] or _tmview_paused():
         return
     goods_job.update(running=True, done=0, found=0)
@@ -730,7 +730,8 @@ def enrich_goods(limit: int = 400) -> None:
                     Mark.tmview_checked.like("%|pubneed%")),
                 ~Mark.tmview_checked.like("%|gs3%"),
                 ~Mark.tmview_checked.like("%|gsf|gsf|gsf%")).order_by(
-                # întâi cele necitite deloc, apoi cele cu fișa veche „|gs2” (de completat cu câmpurile noi)
+                # întâi cele fără produse deloc, apoi necitite, apoi cele cu fișa veche „|gs2” (câmpuri noi)
+                (Mark.goods.is_(None) | cast(Mark.goods, Text).in_(["{}", "null"])).desc(),
                 Mark.tmview_checked.like("%|gs2%").asc(),
                 (Mark.name == "").asc(), Mark.tmview_checked.like("%|gsf%").asc()).limit(limit * 4)]
         finally:
