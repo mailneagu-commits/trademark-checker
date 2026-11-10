@@ -694,8 +694,8 @@ def _stub_st13(m: Mark) -> str:
 
 goods_job: Dict = {"running": False, "done": 0, "found": 0, "last": None}
 # Când TMview blochează serverul aplicației de monitorizare (Imperva), ProWatch face o pauză ca să nu
-# afecteze căutările ProSearch / ProMonitor. La pornire: pauză de o oră (blocajul poate fi în curs).
-tmview_pause = {"until": datetime.utcnow() + timedelta(hours=1)}
+# afecteze căutările ProSearch / ProMonitor (pauza se pune la primele refuzuri, vezi _tmview_backoff).
+tmview_pause = {"until": datetime.utcnow()}
 
 
 def _tmview_paused() -> bool:
