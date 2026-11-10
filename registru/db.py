@@ -352,6 +352,27 @@ def _reprocess_changes_for_renewal_no():
         db.close()
 
 
+def _link_known_deposits():
+    """Mărci reînnoite al căror nr. de depozit TMview nu-l are legat de nr. de înregistrare
+    (căutarea după înregistrare nu le găsește) — legătura dată de utilizator."""
+    known = {"R135640": "M201407160"}
+    marker = "migration:known-deposits-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        for app, dep in known.items():
+            m = db.get(Mark, app)
+            if m is not None:
+                m.events = list(m.events or []) + [{"date": "2026-11-11", "bopi": "TMview", "chapter": "Nr. depozit",
+                                                    "detail": dep, "app": dep, "st13": "RO50000" + dep}]
+                m.tmview_checked = None
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="depozite cunoscute v1"))
+        db.commit()
+    finally:
+        db.close()
+
+
 def _repair_stubs_and_holders():
     """O singură dată: modificările publicate înainte de apariția mărcii reînnoite „R…” se aplică acum,
     iar titularul tuturor mărcilor se recalculează cu noua ordine (cesiune > schimbare de nume >
@@ -518,6 +539,7 @@ def init_db():
     _flag_missing_publication()
     _reprocess_changes_for_renewal_no()
     _repair_stubs_and_holders()
+    _link_known_deposits()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
     _drop_part_duplicates()
