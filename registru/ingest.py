@@ -491,8 +491,11 @@ def expiry_of(m: Mark) -> str:
     if m.status != "Înregistrată" or not m.filing_date:
         return ""
     exp = _add_years(m.filing_date, 10)
-    # O dată de expirare anterioară înregistrării înseamnă că nu știm istoricul (reînnoiri etc.).
-    return exp if not m.reg_date or exp > m.reg_date else ""
+    # Data depozitului mai veche cu peste 10 ani decât înregistrarea: marcă UE transformată în marcă
+    # națională (OSIM tipărește depozitul mărcii UE) — termenul curge în continuare din 10 în 10 ani.
+    while m.reg_date and exp <= m.reg_date:
+        exp = _add_years(exp, 10)
+    return exp
 
 
 # ── Procesarea unui PDF ─────────────────────────────────────────────────────────
@@ -682,7 +685,9 @@ def enrich_goods(limit: int = 400) -> None:
             cand = [(m.app_number, _stub_st13(m)) for m in db.query(Mark).filter(
                 # „|gs2” = fișa TMview citită; „|gsf” = TMview a dat fișa goală (se reîncearcă de 3 ori).
                 # + mărcile „|gsneed”: clase fără produse după o limitare recitită peste fișa înregistrată.
-                or_(Mark.app_number.like("R%"), Mark.tmview_checked.like("%|gsneed%")),
+                # + „|pubneed”: mărci publicate înainte de 2022 (fără data publicării) — doar câmpurile goale.
+                or_(Mark.app_number.like("R%"), Mark.tmview_checked.like("%|gsneed%"),
+                    Mark.tmview_checked.like("%|pubneed%")),
                 ~Mark.tmview_checked.like("%|gs3%"),
                 ~Mark.tmview_checked.like("%|gsf|gsf|gsf%")).order_by(
                 # întâi cele necitite deloc, apoi cele cu fișa veche „|gs2” (de completat cu câmpurile noi)
@@ -725,7 +730,7 @@ def enrich_goods(limit: int = 400) -> None:
                         c = str(g.get("niceClass") or "").lstrip("0")
                         if c.isdigit() and (g.get("goodsAndServices") or "").strip():
                             gs[c] = (gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip()
-                    if gs:
+                    if gs and (app.startswith("R") or "|gsneed" in tc or not m.goods):
                         keep = {str(c) for c in (m.classes or [])} if app.startswith("R") else set()
                         # Doar clasele reînnoite (o reînnoire poate fi parțială); fără clase cunoscute — toate.
                         m.goods = {c: t for c, t in gs.items() if not keep or c in keep} or m.goods

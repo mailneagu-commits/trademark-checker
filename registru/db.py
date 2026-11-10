@@ -290,6 +290,46 @@ def _flag_limited_goods():
         db.close()
 
 
+def _fix_old_filing_expiry():
+    """O singură dată: expirarea mărcilor înregistrate cu depozit mai vechi de 10 ani față de
+    înregistrare (mărci UE transformate), rămasă goală de vechea regulă de calcul."""
+    marker = "migration:old-filing-expiry-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from ingest import expiry_of
+        n = 0
+        for m in db.query(Mark).filter(Mark.status == "Înregistrată", Mark.expiry_date == "").all():
+            e = expiry_of(m)
+            if e:
+                m.expiry_date, n = e, n + 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="expirare mărci UE transformate v1"))
+        db.commit()
+        print(f"[DB] Expirări completate (depozit vechi): {n}")
+    finally:
+        db.close()
+
+
+def _flag_missing_publication():
+    """O singură dată: mărcile publicate înainte de 2022 (intrate în bază la admitere / înregistrare)
+    n-au data publicării — o luăm din TMview („|pubneed”), până ajunge citirea arhivei la ele."""
+    marker = "migration:missing-publication-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for m in db.query(Mark).filter(~Mark.app_number.like("R%"), Mark.publication_date == "").all():
+            if "|pubneed" not in (m.tmview_checked or ""):
+                m.tmview_checked, n = (m.tmview_checked or "").replace("|gs3", "") + "|pubneed", n + 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="data publicării din TMview v1"))
+        db.commit()
+        print(f"[DB] Mărci fără data publicării (de completat din TMview): {n}")
+    finally:
+        db.close()
+
+
 def _reprocess_dailies_for_representatives():
     """O singură dată: buletinele zilnice și de cereri admise (rapide) se recitesc, ca fiecare eveniment
     să rețină reprezentantul de la data lui — așa se vede când a fost înscris un mandatar ulterior."""
@@ -428,6 +468,8 @@ def init_db():
     _reprocess_changes_for_representatives()
     _reprocess_dailies_for_representatives()
     _flag_limited_goods()
+    _fix_old_filing_expiry()
+    _flag_missing_publication()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
     _drop_part_duplicates()
