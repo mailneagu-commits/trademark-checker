@@ -662,6 +662,10 @@ def _stub_st13(m: Mark) -> str:
 
 
 goods_job: Dict = {"running": False, "done": 0, "found": 0, "last": None}
+TM_FEATURE = {"Word": "Verbală", "Figurative": "Figurativă", "Combined": "Combinată", "Shape": "Tridimensională",
+              "3-D": "Tridimensională", "Sound": "Sonoră", "Colour": "Culoare", "Position": "Poziție",
+              "Pattern": "Model", "Motion": "Mișcare", "Multimedia": "Multimedia", "Hologram": "Hologramă",
+              "Other": "Alt tip"}
 
 
 def enrich_goods(limit: int = 400) -> None:
@@ -679,8 +683,10 @@ def enrich_goods(limit: int = 400) -> None:
                 # „|gs2” = fișa TMview citită; „|gsf” = TMview a dat fișa goală (se reîncearcă de 3 ori).
                 # + mărcile „|gsneed”: clase fără produse după o limitare recitită peste fișa înregistrată.
                 or_(Mark.app_number.like("R%"), Mark.tmview_checked.like("%|gsneed%")),
-                ~Mark.tmview_checked.like("%|gs2%"),
+                ~Mark.tmview_checked.like("%|gs3%"),
                 ~Mark.tmview_checked.like("%|gsf|gsf|gsf%")).order_by(
+                # întâi cele necitite deloc, apoi cele cu fișa veche „|gs2” (de completat cu câmpurile noi)
+                Mark.tmview_checked.like("%|gs2%").asc(),
                 (Mark.name == "").asc(), Mark.tmview_checked.like("%|gsf%").asc()).limit(limit * 4)]
         finally:
             db.close()
@@ -732,7 +738,22 @@ def enrich_goods(limit: int = 400) -> None:
                                                                  a.get("country") or ""] if p)
                     if not m.filing_date and d.get("applicationDate"):
                         m.filing_date = d["applicationDate"][:10]
-                    m.tmview_checked = tc[:-4] + "|gs2|img" if tc.endswith("|img") else tc + "|gs2"
+                    # Restul câmpurilor fișei, doar unde lipsesc (BOPI rămâne sursa de referință).
+                    if not m.reg_date and (d.get("registrationDate") or "")[:4].isdigit():
+                        m.reg_date = d["registrationDate"][:10]
+                    if not m.publication_date and (d.get("publicationDate") or "")[:4].isdigit():
+                        m.publication_date = d["publicationDate"][:10]
+                    if not m.mark_type and TM_FEATURE.get(d.get("markFeature") or ""):
+                        m.mark_type = TM_FEATURE[d["markFeature"]]
+                    if not m.vienna and d.get("viennaCodes"):
+                        m.vienna = ", ".join(str(v) for v in d["viennaCodes"])
+                    r0 = (d.get("representatives") or [{}])[0]
+                    if not m.representative and r0.get("fullName"):
+                        m.representative = r0["fullName"].strip()
+                        m.rep_norm = norm(m.representative)
+                        m.representative_address = ", ".join(p for p in [m.representative, (r0.get("fullAddress") or "").replace("\n", ", ")] if p)
+                    tc = tc.replace("|gs2", "")
+                    m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
                     goods_job["done"] += 1
                     db.commit()                                   # salvăm pe rând — progres vizibil
         finally:

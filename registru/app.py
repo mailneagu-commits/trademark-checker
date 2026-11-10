@@ -42,7 +42,7 @@ def _startup():
     sched.add_job(ingest.enrich_logos, "interval", hours=1, minutes=30, id="tmview_logos",
                   misfire_grace_time=1800, coalesce=True)
     # Produsele și serviciile mărcilor reînnoite vechi, din fișa TMview.
-    sched.add_job(ingest.enrich_goods, "interval", minutes=15, id="tmview_goods",
+    sched.add_job(ingest.enrich_goods, "interval", minutes=10, id="tmview_goods",
                   misfire_grace_time=900, coalesce=True)
     sched.start()
     if os.environ.get("AUTO_INGEST", "1") == "1":
@@ -288,6 +288,12 @@ def quality(db: Session = Depends(get_db)):
         "titular_fara_adresa": lambda m: bool(m.holder) and m.holder_address == m.holder,
         "inregistrata_fara_nr": lambda m: m.status == "Înregistrată" and not m.reg_number,
         "clase_fara_produse": lambda m: any(not (m.goods or {}).get(str(c)) for c in (m.classes or [])),
+        "fara_tip": lambda m: not m.mark_type,
+        "fara_data_publicare": lambda m: not m.publication_date,
+        "inregistrata_fara_data_inregistrare": lambda m: m.status == "Înregistrată" and not m.reg_date,
+        "inregistrata_fara_expirare": lambda m: m.status == "Înregistrată" and not m.expiry_date,
+        "figurativa_fara_logo": lambda m: m.mark_type in ("Figurativă", "Combinată") and not m.has_image,
+        "fara_stare": lambda m: not m.status,
     }
     # Aceleași verificări doar pe mărcile cu fișă BOPI (fără mărcile reînnoite vechi „R<nr.>”, care
     # n-au prin natura lor data depozitului, adresa titularului sau produsele) — „<verificare>_M”.
