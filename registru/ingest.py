@@ -293,7 +293,17 @@ def _recompute_holder(m: Mark) -> None:
     def prio(e):
         # La aceeași dată: cesiunea / fuziunea > schimbarea de nume > buletinul mărcii > reînnoirea.
         return RANK.get(e.get("chapter"), e.get("prio", 1))
-    best = max(cands, key=lambda e: (e["date"], prio(e)))
+    top = max(e["date"] for e in cands)
+    same_day = [e for e in cands if e["date"] == top]
+    if len(same_day) > 1:
+        # Mai multe modificări în aceeași zi: urmăm lanțul vechi → nou — titularul final e cel care nu
+        # apare ca titular „vechi” într-o altă modificare din ziua respectivă.
+        befores = [norm(e.get("holder_before") or "") for e in same_day]
+        final = [e for e in same_day if not any(norm(e["holder"]) and norm(e["holder"]) in b
+                                                for b, o in zip(befores, same_day) if o is not e)]
+        if final:
+            same_day = final
+    best = max(same_day, key=prio)
     addr = [e for e in evs if e.get("chapter") == ADDR and e["date"] >= best["date"]
             and norm(e["holder"]) == norm(best["holder"]) and e.get("holder_address")]
     if addr and best.get("chapter") != ADDR:
@@ -333,7 +343,8 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
     holder_ev = {}
     if c.kind in ("Cesiune", "Fuziune", "Modificare titular", "Modificare adresă titular") and c.new_value:
         new_holder = c.new_value.split(",")[0].strip()
-        holder_ev = {"holder": new_holder, "holder_address": c.new_value, "prio": 2}
+        holder_ev = {"holder": new_holder, "holder_address": c.new_value, "prio": 2,
+                     "holder_before": (c.old_value or "").strip()}
         detail = f"titular nou: {new_holder}" + (f" (anterior: {c.old_value.split(',')[0].strip()})" if c.old_value else "")
     elif c.kind == "Cesiune parțială" and c.new_value:
         detail = f"cesiune parțială către {c.new_value.split(',')[0].strip()}"
