@@ -731,8 +731,10 @@ def enrich_goods(limit: int = 400) -> None:
                             for f in futs:
                                 f.cancel()
                             break
-                        continue
-                    fails = 0
+                        if d is None:
+                            continue
+                    else:
+                        fails = 0
                     m = db.get(Mark, app)
                     if m is None:
                         continue
