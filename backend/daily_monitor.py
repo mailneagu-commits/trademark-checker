@@ -6,6 +6,8 @@ salvează în DB conflictele găsite — afișate apoi în tabelele „Results�
 Regula de conflict (stabilită cu utilizatorul):
   • scor de similaritate ≥ pragul mărcii din portofoliu (`monitor_like`, implicit 0.6)
     ȘI cel puțin o clasă Nisa comună; SAU
+  • un cuvânt identic cu un cuvânt din marca monitorizată (NOIR ↔ N NOIR COFFEE ROASTERS)
+    ȘI cel puțin o clasă Nisa comună — cuvintele generice / descriptive nu contează; SAU
   • marcă identică (scor 1), indiferent de clase.
 
 Rulează automat în fiecare zi lucrătoare după 15:00 (ora României), după ce apar buletinele, și
@@ -33,6 +35,26 @@ _job: Dict = {"running": False}
 def _norm_identity(name: str) -> str:
     t = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower()
     return re.sub(r"[^a-z0-9]", "", t)
+
+
+# Cuvinte care nu fac o marcă distinctivă — un cuvânt comun dintre acestea nu e conflict.
+GENERIC_WORDS = {
+    "the", "and", "for", "with", "von", "der", "die", "das", "les", "des", "del", "della", "los", "las",
+    "din", "pentru", "sau", "cel", "cea", "cei", "lui", "noi",
+    "srl", "pfa", "ltd", "llc", "inc", "gmbh", "sas", "spa", "company", "group", "grup", "holding",
+    "international", "romania", "romanian", "europe", "european", "global", "world", "new", "best",
+    "premium", "original", "classic", "plus", "pro", "max", "super", "top", "smart", "line", "style",
+    "coffee", "cafe", "caffe", "roasters", "roastery", "shop", "store", "market", "bar", "bistro",
+    "restaurant", "pizza", "food", "foods", "home", "house", "studio", "center", "centre", "centrul",
+    "clinic", "clinica", "medical", "pharma", "beauty", "fashion", "design", "concept", "solutions",
+    "services", "service", "consulting", "academy", "school", "club", "events", "media", "tech",
+    "digital", "online", "auto", "construct", "imobiliare", "brand", "made", "since", "est",
+}
+
+
+def _words(name: str) -> set:
+    t = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower()
+    return {w for w in re.split(r"[^a-z0-9]+", t) if len(w) >= 3 and not w.isdigit() and w not in GENERIC_WORDS}
 
 
 def _watch_snapshot(item: WatchItem) -> Dict:
@@ -93,6 +115,23 @@ def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
                 rows.append({"application_number": app, "watch_item_id": item.id,
                              "like": min(like, 1.0), "identical": identical,
                              "watch": _watch_snapshot(item)})
+        # Cuvânt identic cu un cuvânt din marca monitorizată + o clasă comună — oricât de mic ar fi
+        # scorul de ansamblu („NOIR” față de „N NOIR COFFEE ROASTERS”).
+        watch_words = _words(name)
+        if watch_words:
+            from rapidfuzz import fuzz
+            for m in marks:
+                app = str(m.get("applicationNumber") or "")
+                if not app or app in seen or (own_app and _norm_app(app) == own_app):
+                    continue
+                common = watch_words & _words(m.get("tmName") or "")
+                if not common or not (watch_classes & set(_classes(m))):
+                    continue
+                seen.add(app)
+                like = round(fuzz.token_set_ratio(_norm_identity(name), _norm_identity(m.get("tmName") or "")) / 100.0, 2)
+                rows.append({"application_number": app, "watch_item_id": item.id,
+                             "like": min(like, 1.0), "identical": False,
+                             "watch": {**_watch_snapshot(item), "common_words": sorted(common)}})
     rows.sort(key=lambda r: -r["like"])
     return rows
 

@@ -108,7 +108,7 @@ const COLS = {
     { h: "list_511", key: r => (r.classes || [])[0] || 0, cell: r => `<td class="cls">${cls(r.classes)}</td>` },
   ],
   conflicts: [
-    { h: "like",           key: r => -r.like, cell: r => `<td class="num">${r.like.toFixed(2)}${r.identical ? '<span class="ident">identică</span>' : ''}</td>` },
+    { h: "like",           key: r => -r.like, cell: r => `<td class="num">${r.like.toFixed(2)}${r.identical ? '<span class="ident">identică</span>' : ''}${!r.identical && (r.monitor || {}).common_words ? `<span class="ident" title="cuvânt identic cu marca monitorizată">cuvânt comun: ${r.monitor.common_words.join(", ").toUpperCase()}</span>` : ''}</td>` },
     { h: "Nr. Depozit",    key: r => r.application_number, cell: r => `<td class="num">${idLink(r)}</td>` },
     { h: "Titular",        key: r => (r.applicant || "").toLowerCase(), cell: r => `<td class="multi">${party(r.applicant, r.applicant_names)}</td>` },
     { h: "Reprezentant",   key: r => (r.representative || "").toLowerCase(), cell: r => `<td class="multi">${party(r.representative, r.representative_names) || "(-)"}</td>` },
