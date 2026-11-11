@@ -388,9 +388,19 @@ _BAD_CHARS = re.compile(r"[A-Za-z][|Õõ¹º³þÞãÃ][a-z]|\bÕi\b")
 
 
 @app.get("/api/quality-chars")
-def quality_chars(limit: int = 4000, db: Session = Depends(get_db)):
+def quality_chars(limit: int = 4000, ch: str = "", db: Session = Depends(get_db)):
     """Contextele caracterelor stricate (pentru tabelul de corespondență a diacriticelor)."""
     from collections import Counter
+    if ch:
+        out = []
+        for m in db.query(Mark).yield_per(2000):
+            text = " ".join((m.goods or {}).values()) + " | " + (m.name or "") + " | " + (m.holder or "")
+            i = text.find(ch)
+            if i >= 0:
+                out.append({"app": m.app_number, "ctx": text[max(0, i - 60):i + 60]})
+                if len(out) >= 25:
+                    break
+        return {"ch": ch, "examples": out}
     ctx = Counter()
     n = 0
     for m in db.query(Mark).yield_per(2000):
