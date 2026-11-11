@@ -80,12 +80,15 @@ async def _cache_headers(request: Request, call_next):
 GRACE = "În termen de grație"
 
 
-def _grace_start() -> str:
+RENEW_MAYBE = "Posibil în curs de reînnoire"
+
+
+def _grace_start(months: int = 6) -> str:
     """Reînnoirea se mai poate cere 6 luni după expirare (cu taxă suplimentară) — OSIM o arată
     „în curs de reînnoire”; până apare reînnoirea în BOPI, marca nu e încă expirată definitiv."""
     t = date.today()
-    y, mo = (t.year, t.month - 6) if t.month > 6 else (t.year - 1, t.month + 6)
-    return date(y, mo, min(t.day, 28)).isoformat()
+    k = t.year * 12 + t.month - 1 - months
+    return date(k // 12, k % 12 + 1, min(t.day, 28)).isoformat()
 
 
 def _status(m: Mark) -> str:
@@ -93,7 +96,13 @@ def _status(m: Mark) -> str:
     if m.status == "Înregistrată" and m.expiry_date and m.expiry_date < today:
         if "renew" in (m.tm_status or "").lower():
             return "În curs de reînnoire"
-        return GRACE if m.expiry_date >= _grace_start() else "Expirată"
+        if m.expiry_date >= _grace_start():
+            return GRACE
+        # Expirată de peste 6 luni, dar TMview o arată tot „Registered”: reînnoirea poate fi cerută și
+        # nepublicată încă (OSIM: „în curs de reînnoire”) — ex. M 2016 01750. Până la un an după expirare.
+        if (m.tm_status or "").lower().startswith("registered") and m.expiry_date >= _grace_start(12):
+            return RENEW_MAYBE
+        return "Expirată"
     if m.status == "Înregistrată" and "renew" in (m.tm_status or "").lower():
         return "În curs de reînnoire"
     # Cereri în curs: opoziția / contestația / retragerea apar doar în TMview, nu în BOPI.
@@ -247,7 +256,11 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
     if status == "Valabile":
         q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date >= today, alive)
     elif status == "Expirată":
-        q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date != "", Mark.expiry_date < _grace_start())
+        q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date != "", Mark.expiry_date < _grace_start(),
+                     ~(Mark.tm_status.ilike("registered%") & (Mark.expiry_date >= _grace_start(12))))
+    elif status == RENEW_MAYBE:
+        q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date < _grace_start(),
+                     Mark.expiry_date >= _grace_start(12), Mark.tm_status.ilike("registered%"))
     elif status == GRACE:
         q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date >= _grace_start(), Mark.expiry_date < today)
     elif status == "Înregistrată":
