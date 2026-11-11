@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 
 import requests
 
-from bopi_parser import display_app, parse_changes, parse_pdf
+from bopi_parser import display_app, fix_record, parse_changes, parse_pdf
 from db import Mark, MarkChange, MarkImage, SessionLocal, SourceFile, norm
 
 OSIM = "https://www.osim.ro"
@@ -129,6 +129,7 @@ def _add_years(iso: str, years: int) -> str:
 
 
 def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
+    rec = fix_record(rec)                      # diacriticele fonturilor vechi BOPI („Õi” → „şi”)
     app = rec["app_number"]
     m = db.get(Mark, app)
     if m is None and rec.get("_status_only"):
@@ -476,7 +477,7 @@ def _process_changes(db, path: str, src: Dict) -> int:
     # Reprocesare fără dubluri.
     db.query(MarkChange).filter(MarkChange.label == src["label"], MarkChange.bulletin_date == bdate)\
         .delete(synchronize_session=False)
-    for r in parse_changes(path):
+    for r in map(fix_record, parse_changes(path)):
         if r["kind"] == "limitation":
             import json as _json
             r["old"] = _json.dumps({"obs": r.get("obs", {}), "deleted": r.get("deleted", [])}, ensure_ascii=False)

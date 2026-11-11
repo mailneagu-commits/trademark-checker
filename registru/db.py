@@ -405,6 +405,39 @@ def _flag_archive_publication():
         db.close()
 
 
+def _fix_legacy_diacritics():
+    """O singură dată: diacriticele fonturilor vechi BOPI („Õi”, „b|uturi”, „protecÛie”) refăcute în
+    toate mărcile deja citite; separatorul „˜˜˜˜˜˜˜” scos."""
+    marker = "migration:legacy-diacritics-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from bopi_parser import fix_record, has_legacy_diacritics, _strings
+        fields = ("name", "holder", "holder_address", "representative", "representative_address",
+                  "disclaimer", "colors")
+        n = 0
+        for m in db.query(Mark).yield_per(2000):
+            vals = {f: getattr(m, f) or "" for f in fields}
+            texts = list(vals.values()) + list(_strings(m.goods or {})) + list(_strings(m.events or []))
+            if not (has_legacy_diacritics(*texts) or any("˜" in t for t in texts)):
+                continue
+            legacy = has_legacy_diacritics(*texts)
+            for f, v in vals.items():
+                setattr(m, f, fix_record(v, legacy))
+            m.goods = fix_record(dict(m.goods or {}), legacy)
+            m.events = fix_record(list(m.events or []), legacy)
+            m.name_norm, m.holder_norm, m.rep_norm = norm(m.name), norm(m.holder), norm(m.representative)
+            n += 1
+            if n % 2000 == 0:
+                db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="diacritice fonturi vechi v1"))
+        db.commit()
+        print(f"[DB] Mărci cu diacritice refăcute: {n}")
+    finally:
+        db.close()
+
+
 def _reprocess_changes_for_renewal_no():
     """O singură dată: tabelele de modificări se recitesc, ca reînnoirile să rețină numărul tipărit
     de OSIM („008649(5R)”) — prefixul R / 2R / 5R al mărcii nu se mai deduce din date."""
@@ -611,6 +644,7 @@ def init_db():
     _repair_stubs_and_holders()
     _link_known_deposits()
     _flag_archive_publication()
+    _fix_legacy_diacritics()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
     _drop_part_duplicates()

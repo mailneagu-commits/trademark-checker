@@ -49,6 +49,53 @@ CHAPTERS = (
 )
 
 
+# Fonturile vechi din PDF-urile BOPI (≈2003–2017) codifică diacriticele altfel: „Õi” = „şi”,
+# „b|uturi” = „băuturi”, „protecÛie” = „protecţie”, „R{DULESCU” = „RĂDULESCU”. Le refacem doar într-o
+# marcă în care apar semnele sigure (Õ, Û, „|” / „{” lipite de litere) — „HAJDÚ”, „BOKÚ” rămân neatinse.
+_LEGACY_MARK = re.compile(r"[ÕÛ]|(?<=[A-Za-zĂÂÎŞŢăâîşţ])[|{]|[|{](?=[A-Za-zĂÂÎŞŢăâîşţ])")
+_LEGACY_MAP = str.maketrans({"Õ": "ş", "Ô": "Ş", "Û": "ţ", "Ú": "Ţ"})
+
+
+def has_legacy_diacritics(*texts) -> bool:
+    return any(_LEGACY_MARK.search(t or "") for t in texts)
+
+
+def fix_legacy_diacritics(text: str) -> str:
+    if not text:
+        return text
+    t = re.sub(r"(?<=[A-Za-zĂÂÎŞŢăâîşţÕÛÔÚ])\|", "ă", text)
+    t = re.sub(r"\|(?=[a-zăâîşţÕÛ])", "ă", t)
+    t = re.sub(r"(?<=[A-ZĂÂÎŞŢÔÚ])\{|\{(?=[A-ZĂÂÎŞŢÔÚ])", "Ă", t)
+    t = t.translate(_LEGACY_MAP)
+    t = re.sub(r"\s*˜{3,}\s*", " ", t)               # separatorul „˜˜˜˜˜˜˜” dintre fișe
+    return re.sub(r"  +", " ", t).strip()
+
+
+def _strings(x):
+    if isinstance(x, str):
+        yield x
+    elif isinstance(x, dict):
+        for v in x.values():
+            yield from _strings(v)
+    elif isinstance(x, list):
+        for v in x:
+            yield from _strings(v)
+
+
+def fix_record(x, legacy: Optional[bool] = None):
+    """Diacriticele vechi refăcute peste tot într-o fișă (dict / listă / text), dacă fișa are semnele
+    sigure; separatorul „˜˜˜” se scoate oricum."""
+    if legacy is None:
+        legacy = has_legacy_diacritics(*_strings(x))
+    if isinstance(x, str):
+        return fix_legacy_diacritics(x) if legacy else re.sub(r"\s*˜{3,}\s*", " ", x).strip() if "˜" in x else x
+    if isinstance(x, dict):
+        return {k: fix_record(v, legacy) for k, v in x.items()}
+    if isinstance(x, list):
+        return [fix_record(v, legacy) for v in x]
+    return x
+
+
 def compact_app(raw: str) -> str:
     return re.sub(r"\s+", "", raw or "").upper()
 
