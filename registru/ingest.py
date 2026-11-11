@@ -804,10 +804,15 @@ tmview_pause = {"until": datetime.utcnow()}
 
 
 def _tmview_paused() -> bool:
-    return datetime.utcnow() < tmview_pause["until"]
+    # Fereastra monitorizării zilnice ProMonitor (după 15:00 ora României, zile lucrătoare): TMview
+    # rămâne liber pentru ea — completările ProWatch stau pe loc între 12:30 și 15:30 UTC.
+    now = datetime.utcnow()
+    if now.weekday() < 5 and (12, 30) <= (now.hour, now.minute) < (15, 30):
+        return True
+    return now < tmview_pause["until"]
 
 
-def _tmview_backoff(hours: float = 0.5) -> None:
+def _tmview_backoff(hours: float = 0.25) -> None:
     tmview_pause["until"] = datetime.utcnow() + timedelta(hours=hours)
     print(f"[TMVIEW] pauză până la {tmview_pause['until']:%H:%M} UTC")
 TM_FEATURE = {"Word": "Verbală", "Figurative": "Figurativă", "Combined": "Combinată", "Shape": "Tridimensională",
@@ -836,7 +841,7 @@ def tm_status_ro(code: str) -> str:
     return ""
 
 
-def enrich_status(limit: int = 200) -> None:
+def enrich_status(limit: int = 600) -> None:
     """Pentru cererile publicate / admise: starea din fișa TMview, reverificată săptămânal."""
     import time as _t
     if status_job["running"] or _tmview_paused():
@@ -887,7 +892,7 @@ def enrich_status(limit: int = 200) -> None:
         status_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")
 
 
-def enrich_goods(limit: int = 400) -> None:
+def enrich_goods(limit: int = 1500) -> None:
     """Produsele și serviciile (511) mărcilor reînnoite vechi — listele de reînnoiri din BOPI dau
     doar clasele. Le luăm din fișa TMview (în română), prin aplicația de monitorizare."""
     from concurrent.futures import ThreadPoolExecutor
@@ -934,7 +939,7 @@ def enrich_goods(limit: int = 400) -> None:
         fails = 0
         db = SessionLocal()
         try:
-            with ThreadPoolExecutor(max_workers=2) as ex:
+            with ThreadPoolExecutor(max_workers=4) as ex:
                 futs = {ex.submit(fetch, st13): (app, st13) for app, st13 in todo}
                 for fut in as_completed(futs):
                     app, st13 = futs[fut]
@@ -981,8 +986,13 @@ def enrich_goods(limit: int = 400) -> None:
                     if not m.filing_date and d.get("applicationDate"):
                         m.filing_date = d["applicationDate"][:10]
                     # Restul câmpurilor fișei, doar unde lipsesc (BOPI rămâne sursa de referință).
-                    if not m.reg_date and (d.get("registrationDate") or "")[:4].isdigit():
-                        m.reg_date = d["registrationDate"][:10]
+                    rd = (d.get("registrationDate") or "")[:10]
+                    # Mărcile din arhivă au ca dată a înregistrării data buletinului lunar care a publicat
+                    # înregistrarea; TMview are data exactă (decizia) — o preferăm.
+                    from_monthly = any(e.get("chapter") == "Mărci înregistrate" and e.get("date") == m.reg_date
+                                       and "/" in (e.get("bopi") or "") for e in (m.events or []))
+                    if rd[:4].isdigit() and (not m.reg_date or (from_monthly and not app.startswith("R"))):
+                        m.reg_date = rd
                     if not m.publication_date and (d.get("publicationDate") or "")[:4].isdigit():
                         m.publication_date = d["publicationDate"][:10]
                     if not m.mark_type and TM_FEATURE.get(d.get("markFeature") or ""):

@@ -43,10 +43,10 @@ def _startup():
     sched.add_job(ingest.enrich_logos, "interval", hours=1, minutes=30, id="tmview_logos",
                   misfire_grace_time=1800, coalesce=True)
     # Produsele și serviciile mărcilor reînnoite vechi, din fișa TMview.
-    sched.add_job(ingest.enrich_goods, "interval", minutes=10, id="tmview_goods",
+    sched.add_job(ingest.enrich_goods, "interval", minutes=5, id="tmview_goods",
                   misfire_grace_time=900, coalesce=True)
     # Starea cererilor în curs (opoziție, contestație…) din TMview.
-    sched.add_job(ingest.enrich_status, "interval", minutes=30, id="tmview_status",
+    sched.add_job(ingest.enrich_status, "interval", minutes=15, id="tmview_status",
                   misfire_grace_time=1800, coalesce=True)
     # Siglele originale din TMview, pentru toate mărcile — pornește singur după terminarea încărcării.
     sched.add_job(ingest.enrich_logos_hq, "interval", minutes=15, id="tmview_logos_hq",

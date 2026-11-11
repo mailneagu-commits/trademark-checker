@@ -355,6 +355,28 @@ def _flag_missing_publication():
         db.close()
 
 
+def _flag_archive_publication():
+    """O singură dată, după citirea arhivei: mărcile din arhivă (doar „Mărci înregistrate” în
+    buletinele lunare) primesc din TMview data publicării și data exactă a înregistrării."""
+    marker = "migration:archive-publication-v2"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for m in db.query(Mark).filter(~Mark.app_number.like("R%"), Mark.publication_date == "").yield_per(5000):
+            tc = (m.tmview_checked or "").replace("|gs3", "").replace("|gsf", "")
+            if "|pubneed" not in tc:
+                tc += "|pubneed"
+            if tc != m.tmview_checked:
+                m.tmview_checked, n = tc, n + 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="date publicare arhivă din TMview v2"))
+        db.commit()
+        print(f"[DB] Mărci din arhivă de completat din TMview (publicare / înregistrare): {n}")
+    finally:
+        db.close()
+
+
 def _reprocess_changes_for_renewal_no():
     """O singură dată: tabelele de modificări se recitesc, ca reînnoirile să rețină numărul tipărit
     de OSIM („008649(5R)”) — prefixul R / 2R / 5R al mărcii nu se mai deduce din date."""
@@ -560,6 +582,7 @@ def init_db():
     _reprocess_changes_for_renewal_no()
     _repair_stubs_and_holders()
     _link_known_deposits()
+    _flag_archive_publication()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
     _drop_part_duplicates()
