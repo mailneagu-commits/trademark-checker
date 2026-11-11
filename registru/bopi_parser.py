@@ -97,7 +97,7 @@ def _page_bottom(clean, page) -> float:
     în subsolul paginii."""
     try:
         y0 = page.height * 0.88
-        words = clean.crop((0, y0, page.width, page.height)).extract_words()
+        words = clean.crop((0, y0, page.width, page.height), strict=False).extract_words()
         nums = [w for w in words if re.fullmatch(r"\d{1,4}", w["text"])
                 and page.width * 0.4 < (w["x0"] + w["x1"]) / 2 < page.width * 0.6
                 and not any(o is not w and abs(o["top"] - w["top"]) < 4 for o in words)]
@@ -226,7 +226,7 @@ def _thumb(page, img) -> Optional[bytes]:
         x1, bottom = min(img["x1"], page.width), min(img["bottom"], page.height)
         if x1 - x0 < 8 or bottom - top < 8:
             return None
-        pil = page.crop((x0, top, x1, bottom)).to_image(resolution=150).original.convert("RGB")
+        pil = page.crop((x0, top, x1, bottom), strict=False).to_image(resolution=150).original.convert("RGB")
         pil.thumbnail((320, 320))
         buf = io.BytesIO()
         pil.save(buf, "WEBP", quality=80)
@@ -333,7 +333,8 @@ def parse_pdf(path: str, kind: str, want_images: bool = True,
                 pass
             bottom = _page_bottom(clean, page)
             for box in ((0, top0, page.width / 2, bottom), (page.width / 2, top0, page.width, bottom)):
-                col = clean.crop(box)
+                # strict=False: unele pagini au cutia decalată (BOPI 09–10/2025) — decupăm ce e în pagină.
+                col = clean.crop(box, strict=False)
                 stream.append(_clean_lines(col.extract_text() or "", keep_short=True))
                 found = sorted(col.search(RE_APP.pattern, regex=True, case=False), key=lambda m: m["top"])
                 if want_images and col.images:
