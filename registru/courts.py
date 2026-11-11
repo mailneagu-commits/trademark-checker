@@ -21,7 +21,7 @@ INSTITUTIONS = {"TribunalulBUCURESTI": "Tribunalul București", "CurteadeApelBUC
 FIRST_YEAR = 2008
 NS = "{portalquery.just.ro}"
 # Forme juridice și cuvinte de legătură care nu deosebesc un titular de altul.
-_FORMS = {"sc", "srl", "sa", "s", "r", "l", "a", "snc", "pfa", "ii", "ltd", "llc", "inc", "gmbh", "ag", "bv",
+_FORMS = {"sc", "srl", "sa", "s", "c", "r", "l", "a", "snc", "pfa", "ii", "ltd", "llc", "inc", "gmbh", "ag", "bv",
           "spa", "sas", "co", "company", "corporation", "corp", "limited", "si", "and"}
 
 job: Dict = {"running": False, "cases": 0, "links": 0, "last": None, "error": ""}
