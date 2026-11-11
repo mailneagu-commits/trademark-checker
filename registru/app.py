@@ -314,6 +314,7 @@ def quality(db: Session = Depends(get_db)):
         "inregistrata_fara_expirare": lambda m: m.status == "Înregistrată" and not m.expiry_date,
         "figurativa_fara_logo": lambda m: m.mark_type in ("Figurativă", "Combinată") and not m.has_image,
         "fara_stare": lambda m: not m.status,
+        "fara_nr_depozit": lambda m: not _deposit(m),
     }
     # Aceleași verificări doar pe mărcile cu fișă BOPI (fără mărcile reînnoite vechi „R<nr.>”, care
     # n-au prin natura lor data depozitului, adresa titularului sau produsele) — „<verificare>_M”.

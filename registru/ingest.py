@@ -896,8 +896,9 @@ def enrich_renewed(limit: int = 600) -> None:
             stale = (date.today() - timedelta(days=30)).isoformat()
             todo = [m.reg_number for m in db.query(Mark).filter(
                 Mark.app_number.like("R%"), (Mark.name == "") | (Mark.filing_date == "") | (Mark.filing_date == None),  # noqa: E711
-                (Mark.tmview_checked == "") | ~Mark.tmview_checked.like("%|v2%") |
-                (Mark.tmview_checked < stale)).order_by(Mark.tmview_checked).limit(limit)]
+                # NULL = marcă reînnoită nou intrată (din arhivă / buletine noi) — necăutată încă.
+                Mark.tmview_checked.is_(None) | (Mark.tmview_checked == "") | ~Mark.tmview_checked.like("%|v2%") |
+                (Mark.tmview_checked < stale)).order_by(Mark.tmview_checked.asc().nullsfirst()).limit(limit)]
         finally:
             db.close()
 
