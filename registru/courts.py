@@ -142,9 +142,17 @@ def link_cases() -> int:
                     if len(k) >= 4 and not k.startswith("oficiul de stat"):
                         by_party.setdefault(k, []).append(c.id)
         if by_party:
+            hits: Dict[str, List[str]] = {}
             for app, holder in db.query(Mark.app_number, Mark.holder).yield_per(5000):
-                for cid in by_party.get(party_key(holder), []):
-                    links.add((cid, app, "titular"))
+                k = party_key(holder)
+                if k in by_party:
+                    hits.setdefault(k, []).append(app)
+            # Un titular cu multe mărci: dosarul nu se poate atribui uneia anume — nu-l lipim pe toate.
+            for k, apps in hits.items():
+                if len(apps) <= 15:
+                    for cid in by_party[k]:
+                        for app in apps:
+                            links.add((cid, app, "titular"))
         for cid, app, kind in links:
             db.add(CourtLink(case_id=cid, app_number=app, kind=kind))
         db.commit()
