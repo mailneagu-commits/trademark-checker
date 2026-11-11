@@ -737,6 +737,20 @@ def enrich_logos_hq(limit: int = 150) -> None:
     from db import MarkImageHQ
     if hq_job["running"] or job["running"] or _tmview_paused():
         return
+    # Prioritatea stabilită cu utilizatorul: întâi datele mărcilor (produse, date, stări, depozite),
+    # apoi siglele — cât timp mai sunt fișe TMview de completat, siglele așteaptă (cu excepția celor
+    # cerute la deschiderea unei mărci).
+    db = SessionLocal()
+    try:
+        from sqlalchemy import or_
+        pending = db.query(Mark.app_number).filter(
+            or_(Mark.app_number.like("R%"), Mark.tmview_checked.like("%|gsneed%"), Mark.tmview_checked.like("%|pubneed%")),
+            or_(Mark.tmview_checked.is_(None), ~Mark.tmview_checked.like("%|gs3%")),
+            or_(Mark.tmview_checked.is_(None), ~Mark.tmview_checked.like("%|gsf|gsf|gsf%"))).first()
+    finally:
+        db.close()
+    if pending is not None:
+        return
     hq_job.update(running=True, done=0, found=0)
     try:
         retry = datetime.utcnow() - timedelta(days=30)
