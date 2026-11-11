@@ -408,24 +408,25 @@ def _flag_archive_publication():
 def _fix_legacy_diacritics():
     """O singură dată: diacriticele fonturilor vechi BOPI („Õi”, „b|uturi”, „protecÛie”) refăcute în
     toate mărcile deja citite; separatorul „˜˜˜˜˜˜˜” scos."""
-    marker = "migration:legacy-diacritics-v2"
+    marker = "migration:legacy-diacritics-v3"
     db = SessionLocal()
     try:
         if db.get(SourceFile, marker):
             return
-        from bopi_parser import fix_record, has_legacy_diacritics, _strings
+        from bopi_parser import fix_cp1252_goods, fix_record, has_legacy_diacritics, _strings
         fields = ("name", "holder", "holder_address", "representative", "representative_address",
                   "disclaimer", "colors")
         n = 0
         for m in db.query(Mark).yield_per(2000):
             vals = {f: getattr(m, f) or "" for f in fields}
             texts = list(vals.values()) + list(_strings(m.goods or {})) + list(_strings(m.events or []))
-            if not (has_legacy_diacritics(*texts) or any("˜" in t for t in texts)):
+            if not (has_legacy_diacritics(*texts) or any("˜" in t for t in texts) or
+                    any(fix_cp1252_goods(t) != t for t in (m.goods or {}).values())):
                 continue
             legacy = has_legacy_diacritics(*texts)
             for f, v in vals.items():
                 setattr(m, f, fix_record(v, legacy))
-            m.goods = fix_record(dict(m.goods or {}), legacy)
+            m.goods = {c: fix_cp1252_goods(t) for c, t in fix_record(dict(m.goods or {}), legacy).items()}
             m.events = fix_record(list(m.events or []), legacy)
             m.name_norm, m.holder_norm, m.rep_norm = norm(m.name), norm(m.holder), norm(m.representative)
             n += 1

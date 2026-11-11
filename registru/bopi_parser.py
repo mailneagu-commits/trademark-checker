@@ -58,6 +58,17 @@ _LEGACY_MARK = re.compile(r"[ÕÛ]|(?<=[A-Za-zĂÂÎŞŢăâîşţ])[|{]|[|{](?=
 _LEGACY_MAP = str.maketrans({"Õ": "ş", "Ô": "Ş", "Û": "ţ", "Ú": "Ţ"})
 
 
+# Alt caz: text românesc din Windows-1250 citit ca Windows-1252 („cofetãrie”, „substanþelor”, „ºi”).
+# Doar în listele de produse (în nume, „ã” / „þ” pot fi legitime: „JOÃO”, „ÞÓR”).
+_CP1252 = str.maketrans({"ã": "ă", "Ã": "Ă", "þ": "ţ", "Þ": "Ţ", "º": "ş", "ª": "Ş"})
+
+
+def fix_cp1252_goods(text: str) -> str:
+    if not text or not re.search(r"[A-Za-zăâîşţ][ãþº][a-zăâîşţ]|\bºi\b", text):
+        return text
+    return text.translate(_CP1252)
+
+
 def has_legacy_diacritics(*texts) -> bool:
     return any(_LEGACY_MARK.search(t or "") for t in texts)
 
@@ -92,10 +103,16 @@ def fix_record(x, legacy: Optional[bool] = None):
     if isinstance(x, str):
         return fix_legacy_diacritics(x) if legacy else re.sub(r"\s*˜{3,}\s*", " ", x).strip() if "˜" in x else x
     if isinstance(x, dict):
-        return {k: fix_record(v, legacy) for k, v in x.items()}
+        return {k: (fix_goods(v) if k == "goods" and isinstance(v, dict) else fix_record(v, legacy))
+                for k, v in x.items()}
     if isinstance(x, list):
         return [fix_record(v, legacy) for v in x]
     return x
+
+
+def fix_goods(goods: dict) -> dict:
+    legacy = has_legacy_diacritics(*goods.values())
+    return {c: fix_cp1252_goods(fix_record(t, legacy)) for c, t in goods.items()}
 
 
 def compact_app(raw: str) -> str:
