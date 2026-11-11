@@ -4,6 +4,7 @@ Căutare (denumire / titular / reprezentant / clase), pagina mărcii, statistici
 reprezentanților, cereri recente și formularul de solicitare informații.
 """
 import os
+import re
 from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import List, Optional
@@ -90,10 +91,25 @@ def _reg_display(m: Mark) -> str:
     return f"{'' if n < 1 else 'R' if n == 1 else f'{n}R'}{m.reg_number}"
 
 
+def _deposit(m: Mark) -> str:
+    """Nr. de depozit afișat. Mărcile reînnoite vechi („R…”) îl au doar din TMview sau din tabelele
+    BOPI (până la unirea cu fișa originală din arhivă); altfel rămâne necunoscut."""
+    if not m.app_number.startswith("R"):
+        return display_app(m.app_number)
+    for e in reversed(m.events or []):
+        app = re.sub(r"\s+", "", e.get("app") or "")
+        if re.fullmatch(r"M\d{8,10}", app):
+            return display_app(app)
+        d = re.search(r"nr\. depozit ([A-Z]?[\d ]{4,})", e.get("detail") or "")
+        if d and d.group(1).strip():
+            return display_app(re.sub(r"\s+", "", d.group(1)))
+    return ""
+
+
 def _row(m: Mark) -> dict:
     reg = _reg_display(m)
     return {
-        "app_number": m.app_number, "name": m.name, "reg_display": reg,
+        "app_number": m.app_number, "name": m.name, "reg_display": reg, "deposit": _deposit(m),
         "app": reg if m.app_number.startswith("R") else display_app(m.app_number),
         "status": _status(m), "mark_type": m.mark_type, "filing_date": m.filing_date,
         "publication_date": m.publication_date, "reg_number": m.reg_number, "reg_date": m.reg_date,

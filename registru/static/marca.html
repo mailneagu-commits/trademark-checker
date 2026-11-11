@@ -134,7 +134,7 @@ function repLater(m) {
           ${m.placeholder && !m.name ? `<p class="muted small" style="margin:-4px 0 10px;">Marcă reînnoită, înregistrată înainte de 2001 — denumirea nu apare în listele de reînnoiri publicate în BOPI; se completează automat din TMview.</p>` : ""}
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">${statusBadge(m.status)}<span class="muted small">${esc(m.mark_type)} · OSIM</span></div>
           <div class="facts">
-            ${fact("Nr. depozit (210)", esc(m.app))}
+            ${fact("Nr. depozit (210)", esc(m.deposit || "necunoscut încă"))}
             ${fact("Data depozit", dmy(m.filing_date))}
             ${fact("Publicată (BOPI)", dmy(m.publication_date))}
             ${fact("Nr. înregistrare (111)", esc(m.reg_display || m.reg_number))}

@@ -146,12 +146,12 @@ async function sendLead(e) {
 // ── Tabel de rezultate (căutare, recente) ────────────────────────────────────
 function resultsTable(rows) {
   if (!rows.length) return `<div class="empty-state">Niciun rezultat.</div>`;
-  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th></th><th>Marcă</th><th>Nr. depozit</th><th>Titular</th><th>Clase</th><th>Stare</th><th>Data depozit</th></tr></thead><tbody>
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th></th><th>Marcă</th><th>Nr. depozit / înreg.</th><th>Titular</th><th>Clase</th><th>Stare</th><th>Data depozit</th></tr></thead><tbody>
     ${rows.map(r => `<tr>
       <td><input type="checkbox" class="pick" data-app="${esc(r.app)}" ${picked.has(r.app) ? "checked" : ""} onchange="togglePick('${esc(r.app)}', this.checked)" aria-label="Selectează ${esc(r.name)}"></td>
       <td class="img"><a href="${markLink(r)}">${thumb(r)}</a></td>
       <td><a class="mname" href="${markLink(r)}">${esc(r.name || (r.placeholder ? `(${r.placeholder})` : "(figurativă)"))}</a><div class="muted small">${esc(r.mark_type)}</div></td>
-      <td style="white-space:nowrap;">${esc(r.app)}</td>
+      <td style="white-space:nowrap;">${esc(r.deposit || "—")}${r.reg_display || r.reg_number ? `<div class="muted small">nr. înreg. ${esc(r.reg_display || r.reg_number)}</div>` : ""}</td>
       <td>${esc(r.holder)}</td>
       <td>${chips(r.classes)}</td>
       <td>${statusBadge(r.status)}</td>
