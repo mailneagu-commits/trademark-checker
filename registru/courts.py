@@ -169,3 +169,6 @@ def start_backfill_if_empty() -> None:
         db.close()
     if empty:
         threading.Thread(target=sync, kwargs={"full": True}, daemon=True).start()
+    else:
+        # Legăturile se refac la pornire (regulile de potrivire se pot schimba între versiuni).
+        threading.Thread(target=lambda: job.update(links=link_cases()), daemon=True).start()
