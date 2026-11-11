@@ -408,7 +408,7 @@ def _flag_archive_publication():
 def _fix_legacy_diacritics():
     """O singură dată: diacriticele fonturilor vechi BOPI („Õi”, „b|uturi”, „protecÛie”) refăcute în
     toate mărcile deja citite; separatorul „˜˜˜˜˜˜˜” scos."""
-    marker = "migration:legacy-diacritics-v1"
+    marker = "migration:legacy-diacritics-v2"
     db = SessionLocal()
     try:
         if db.get(SourceFile, marker):
@@ -644,7 +644,9 @@ def init_db():
     _repair_stubs_and_holders()
     _link_known_deposits()
     _flag_archive_publication()
-    _fix_legacy_diacritics()
+    # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
+    import threading
+    threading.Thread(target=_fix_legacy_diacritics, daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
     _drop_part_duplicates()

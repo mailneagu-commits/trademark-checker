@@ -52,7 +52,9 @@ CHAPTERS = (
 # Fonturile vechi din PDF-urile BOPI (≈2003–2017) codifică diacriticele altfel: „Õi” = „şi”,
 # „b|uturi” = „băuturi”, „protecÛie” = „protecţie”, „R{DULESCU” = „RĂDULESCU”. Le refacem doar într-o
 # marcă în care apar semnele sigure (Õ, Û, „|” / „{” lipite de litere) — „HAJDÚ”, „BOKÚ” rămân neatinse.
-_LEGACY_MARK = re.compile(r"[ÕÛ]|(?<=[A-Za-zĂÂÎŞŢăâîşţ])[|{]|[|{](?=[A-Za-zĂÂÎŞŢăâîşţ])")
+_LEGACY_MARK = re.compile(r"[ÕÛ]|(?<=[A-Za-zĂÂÎŞŢăâîşţ])[|{]|[|{](?=[A-Za-zĂÂÎŞŢăâîşţ])"
+                          # doar majuscule: „ÔI” = „ŞI”, „MARAMUREÔ”, „ASOCIAÚIA”, „COMERÚ” (dar nu „CÔTE”, „HAJDÚ”)
+                          r"|\bÔI\b|(?<![CHP])Ô(?=[A-Z]|\b)(?!TEL|TE\b|LE\b)|ÚI(?:A|I|LOR)?\b|ERÚ\b")
 _LEGACY_MAP = str.maketrans({"Õ": "ş", "Ô": "Ş", "Û": "ţ", "Ú": "Ţ"})
 
 
