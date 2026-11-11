@@ -168,8 +168,8 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
     page = max(page, 1)
     q = db.query(Mark)
     n, h, r = norm(name), norm(holder), norm(representative)
-    if not (n or h or r or classes.strip()):
-        raise HTTPException(400, "Introduceți o denumire, un titular, un reprezentant sau o clasă.")
+    if not (n or h or r or classes.strip() or status):
+        raise HTTPException(400, "Introduceți o denumire, un titular, un reprezentant, o clasă sau alegeți o stare.")
     order = []
     if n:
         if mode == "similar" and IS_PG:

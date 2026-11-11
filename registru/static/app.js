@@ -169,16 +169,16 @@ function searchForm() {
       <div><label for="f-holder">Titular</label><input id="f-holder" name="holder" value="${v("holder")}" placeholder="ex. SC EXEMPLU SRL" autocomplete="off"></div>
       <div><label for="f-rep">Reprezentant</label><input id="f-rep" name="representative" value="${v("representative")}" placeholder="consilier / agenție" autocomplete="off"></div>
       <div><label for="f-cls">Clase Nisa</label><input id="f-cls" name="classes" value="${v("classes")}" placeholder="ex. 9, 35" inputmode="numeric"></div>
+      <div><label for="f-status">Stare</label><select id="f-status" name="status">
+        ${[["", "toate"], ["Valabile", "valabile (înregistrate, neexpirate)"], ["Înregistrată", "înregistrate"], ["Expirată", "expirate"],
+           ["Cerere publicată", "cereri publicate"], ["Admisă la înregistrare", "admise la înregistrare"], ["Respinsă", "respinse"],
+           ["Radiată", "radiate"], ["Retrasă", "retrase"]].map(([v, t]) =>
+          `<option value="${v}" ${qs.get("status") === v ? "selected" : ""}>${t}</option>`).join("")}</select></div>
       <div class="go"><button class="btn alt" style="width:100%;">Caută</button></div>
     </div>
     <div class="sopts">
       <label><input type="radio" name="mode" value="contains" ${qs.get("mode") !== "similar" ? "checked" : ""}> conține textul</label>
       <label><input type="radio" name="mode" value="similar" ${qs.get("mode") === "similar" ? "checked" : ""}> denumiri asemănătoare</label>
-      <label>Stare: <select name="status" style="width:auto;padding:4px 8px;">
-        ${[["", "toate"], ["Valabile", "valabile (înregistrate, neexpirate)"], ["Înregistrată", "înregistrate"], ["Expirată", "expirate"],
-           ["Cerere publicată", "cereri publicate"], ["Admisă la înregistrare", "admise la înregistrare"], ["Respinsă", "respinse"],
-           ["Radiată", "radiate"], ["Retrasă", "retrase"]].map(([v, t]) =>
-          `<option value="${v}" ${qs.get("status") === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
     </div>
   </form>`;
 }

@@ -42,7 +42,7 @@ a { color: var(--accent); }
 .hero.compact h1 { font-size: clamp(1.7rem, 3.4vw, 2.4rem); }
 .searchbox { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin: 26px 0 8px;
              box-shadow: 0 8px 28px rgba(10, 13, 49, .07); }
-.sgrid { display: grid; grid-template-columns: 2fr 1.5fr 1.5fr 1fr auto; gap: 12px; align-items: end; }
+.sgrid { display: grid; grid-template-columns: 2fr 1.5fr 1.5fr 1fr 1.3fr auto; gap: 12px; align-items: end; }
 .sgrid label { display: block; font: 600 .74rem var(--head); color: var(--navy); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
 input, select, textarea { width: 100%; padding: 12px 14px; border: 1px solid #d6d6d6; border-radius: var(--radius); font: 15px var(--body); background: #fff; color: var(--ink); }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(227, 30, 36, .12); }
