@@ -711,6 +711,77 @@ TM_FEATURE = {"Word": "Verbală", "Figurative": "Figurativă", "Combined": "Comb
               "Other": "Alt tip"}
 
 
+# Starea curentă din TMview a cererilor în curs — BOPI nu publică opozițiile și contestațiile.
+status_job: Dict = {"running": False, "done": 0, "found": 0, "last": None, "codes": {}}
+
+
+def tm_status_ro(code: str) -> str:
+    """Starea TMview tradusă — doar stările pe care BOPI nu le dă (opoziție, contestație…)."""
+    c = (code or "").lower()
+    if "oppos" in c:
+        return "În opoziție"
+    if "appeal" in c:
+        return "În contestație"
+    if "withdraw" in c:
+        return "Retrasă"
+    if "refus" in c or "reject" in c:
+        return "Respinsă"
+    if "examin" in c:
+        return "În examinare"
+    return ""
+
+
+def enrich_status(limit: int = 200) -> None:
+    """Pentru cererile publicate / admise: starea din fișa TMview, reverificată săptămânal."""
+    import time as _t
+    if status_job["running"] or _tmview_paused():
+        return
+    status_job.update(running=True, done=0, found=0)
+    try:
+        week = (date.today() - timedelta(days=7)).isoformat()
+        db = SessionLocal()
+        try:
+            todo = [m.app_number for m in db.query(Mark).filter(
+                Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.app_number.like("M%"),
+                Mark.tm_status_checked.is_(None) | (Mark.tm_status_checked < week)).order_by(
+                Mark.tm_status_checked.asc().nullsfirst(), Mark.publication_date.asc()).limit(limit)]
+        finally:
+            db.close()
+        fails = 0
+        for app in todo:
+            d = None
+            try:
+                r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": "RO50000" + app}, timeout=120)
+                d = r.json() if r.status_code == 200 else None
+            except Exception as e:
+                print(f"[STATUS] {app}: {type(e).__name__}")
+            if not isinstance(d, dict) or "error" in d or not d:
+                fails += 1
+                if fails >= 10:
+                    print("[STATUS] TMview nu răspunde — pauză")
+                    _tmview_backoff()
+                    break
+                _t.sleep(3)
+                continue
+            fails = 0
+            code = d.get("markCurrentStatusCode") or ""
+            status_job["codes"][code] = status_job["codes"].get(code, 0) + 1
+            db = SessionLocal()
+            try:
+                m = db.get(Mark, app)
+                if m is not None:
+                    m.tm_status, m.tm_status_date = code, (d.get("markCurrentStatusDate") or "")[:10]
+                    m.tm_status_checked = date.today().isoformat()
+                    db.commit()
+                    status_job["found"] += bool(tm_status_ro(code))
+            finally:
+                db.close()
+            status_job["done"] += 1
+            _t.sleep(1)
+    finally:
+        status_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")
+
+
 def enrich_goods(limit: int = 400) -> None:
     """Produsele și serviciile (511) mărcilor reînnoite vechi — listele de reînnoiri din BOPI dau
     doar clasele. Le luăm din fișa TMview (în română), prin aplicația de monitorizare."""

@@ -108,6 +108,7 @@ table.tbl { width: 100%; border-collapse: collapse; background: var(--card); }
 .st { font: 600 .76rem var(--head); padding: 3px 8px; border-radius: var(--radius); white-space: nowrap; }
 .st.ok { background: #e7f6ec; color: var(--ok); } .st.pub { background: #fff5e0; color: var(--warn); }
 .st.adm { background: #eeeeee; color: var(--navy); } .st.bad { background: #fdecea; color: var(--bad); }
+.st.warn { background: #fde8d4; color: #a8461a; }
 .pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .tbl td a { white-space: nowrap; }
 

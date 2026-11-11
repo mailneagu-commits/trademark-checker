@@ -45,6 +45,9 @@ def _startup():
     # Produsele și serviciile mărcilor reînnoite vechi, din fișa TMview.
     sched.add_job(ingest.enrich_goods, "interval", minutes=10, id="tmview_goods",
                   misfire_grace_time=900, coalesce=True)
+    # Starea cererilor în curs (opoziție, contestație…) din TMview.
+    sched.add_job(ingest.enrich_status, "interval", minutes=30, id="tmview_status",
+                  misfire_grace_time=1800, coalesce=True)
     sched.start()
     if os.environ.get("AUTO_INGEST", "1") == "1":
         ingest.start_background()
@@ -64,6 +67,9 @@ async def _cache_headers(request: Request, call_next):
 def _status(m: Mark) -> str:
     if m.status == "Înregistrată" and m.expiry_date and m.expiry_date < date.today().isoformat():
         return "Expirată"
+    # Cereri în curs: opoziția / contestația / retragerea apar doar în TMview, nu în BOPI.
+    if m.status in ("Cerere publicată", "Admisă la înregistrare") and ingest.tm_status_ro(m.tm_status or ""):
+        return ingest.tm_status_ro(m.tm_status)
     return m.status
 
 
@@ -124,7 +130,7 @@ def _detail(m: Mark) -> dict:
     d = _row(m)
     d.update(holder_address=m.holder_address, representative_address=m.representative_address,
              goods=m.goods or {}, vienna=m.vienna, colors=m.colors, disclaimer=m.disclaimer, events=m.events or [],
-             status_date=m.status_date)
+             status_date=m.status_date, tm_status=m.tm_status or "", tm_status_date=m.tm_status_date or "")
     return d
 
 
@@ -192,6 +198,13 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
         q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date != "", Mark.expiry_date < today)
     elif status == "Înregistrată":
         q = q.filter(Mark.status == "Înregistrată", or_(Mark.expiry_date == "", Mark.expiry_date >= today))
+    elif status in ("În opoziție", "În contestație", "În examinare"):
+        kw = {"În opoziție": "%ppos%", "În contestație": "%ppeal%", "În examinare": "%xamin%"}[status]
+        q = q.filter(Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.tm_status.ilike(kw))
+    elif status in ("Retrasă", "Respinsă"):
+        kw = "%ithdraw%" if status == "Retrasă" else "%efus%"
+        q = q.filter(or_(Mark.status == status, Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"])
+                         & Mark.tm_status.ilike(kw)))
     elif status:
         q = q.filter(Mark.status == status)
     order.append(Mark.filing_date.desc())
@@ -277,7 +290,7 @@ def public_status(db: Session = Depends(get_db)):
             "first_bulletin": db.query(func.min(SourceFile.bulletin_date)).filter(SourceFile.status == "ok").scalar(),
             "publications": [db.query(func.min(Mark.publication_date)).filter(Mark.publication_date != "").scalar(),
                              db.query(func.max(Mark.publication_date)).scalar()],
-            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
+            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
             "errors": [{"bopi": e.label, "error": (e.error or "")[:160]} for e in
                        db.query(SourceFile).filter(SourceFile.status == "error").limit(10)],
             "changes_applied": dict(db.query(MarkChange.kind, func.count(MarkChange.id))

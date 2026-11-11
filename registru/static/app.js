@@ -15,7 +15,7 @@ async function api(path, opts) {
 
 function statusBadge(s) {
   const cls = { "Înregistrată": "ok", "Cerere publicată": "pub", "Admisă la înregistrare": "adm", "Respinsă": "bad",
-                "Radiată": "bad", "Retrasă": "bad", "Expirată": "bad" }[s] || "pub";
+                "Radiată": "bad", "Retrasă": "bad", "Expirată": "bad", "În opoziție": "warn", "În contestație": "warn" }[s] || "pub";
   return s ? `<span class="st ${cls}">${esc(s)}</span>` : "";
 }
 const chips = cl => `<div class="chips">${(cl || []).map(c => `<span class="chip">${c}</span>`).join("")}</div>`;
@@ -171,7 +171,8 @@ function searchForm() {
       <div><label for="f-cls">Clase Nisa</label><input id="f-cls" name="classes" value="${v("classes")}" placeholder="ex. 9, 35" inputmode="numeric"></div>
       <div><label for="f-status">Stare</label><select id="f-status" name="status">
         ${[["", "toate"], ["Valabile", "valabile (înregistrate, neexpirate)"], ["Înregistrată", "înregistrate"], ["Expirată", "expirate"],
-           ["Cerere publicată", "cereri publicate"], ["Admisă la înregistrare", "admise la înregistrare"], ["Respinsă", "respinse"],
+           ["Cerere publicată", "cereri publicate"], ["Admisă la înregistrare", "admise la înregistrare"], ["În examinare", "în examinare"], ["În opoziție", "în opoziție"],
+           ["În contestație", "în contestație"], ["Respinsă", "respinse"],
            ["Radiată", "radiate"], ["Retrasă", "retrase"]].map(([v, t]) =>
           `<option value="${v}" ${qs.get("status") === v ? "selected" : ""}>${t}</option>`).join("")}</select></div>
       <div class="go"><button class="btn alt" style="width:100%;">Caută</button></div>
