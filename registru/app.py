@@ -384,6 +384,25 @@ def mail_status():
             "to": mailer.LEAD_EMAIL, "last": mailer.last}
 
 
+_BAD_CHARS = re.compile(r"[A-Za-z][|Õõ¹º³þÞãÃ][a-z]|\bÕi\b")
+
+
+@app.get("/api/quality-chars")
+def quality_chars(limit: int = 4000, db: Session = Depends(get_db)):
+    """Contextele caracterelor stricate (pentru tabelul de corespondență a diacriticelor)."""
+    from collections import Counter
+    ctx = Counter()
+    n = 0
+    for m in db.query(Mark).yield_per(2000):
+        text = " ".join((m.goods or {}).values()) + " " + (m.name or "") + " " + (m.holder or "")
+        for x in re.finditer(r"\w*[^\x00-\x7FăâîșşțţĂÂÎȘŞȚŢéèäöüßáíóúçñ ,.;:()'\"/&\-–\n\r\t]\w*|\w+\|\w+", text):
+            ctx[x.group(0)[:30]] += 1
+        n += 1
+        if len(ctx) > limit:
+            break
+    return {"scanned": n, "top": ctx.most_common(300)}
+
+
 @app.get("/api/quality")
 def quality(db: Session = Depends(get_db)):
     """Raport de calitate a datelor citite din BOPI (doar date publice): câte mărci au câmpuri
@@ -407,6 +426,8 @@ def quality(db: Session = Depends(get_db)):
         "figurativa_fara_logo": lambda m: m.mark_type in ("Figurativă", "Combinată") and not m.has_image,
         "fara_stare": lambda m: not m.status,
         "fara_nr_depozit": lambda m: not _deposit(m),
+        # Diacritice stricate din fonturile vechi ale PDF-urilor BOPI („Õi”, „b|uturi”).
+        "diacritice_stricate": lambda m: bool(_BAD_CHARS.search(" ".join((m.goods or {}).values()) + " " + (m.name or "") + " " + (m.holder or ""))),
     }
     # Aceleași verificări doar pe mărcile cu fișă BOPI (fără mărcile reînnoite vechi „R<nr.>”, care
     # n-au prin natura lor data depozitului, adresa titularului sau produsele) — „<verificare>_M”.
