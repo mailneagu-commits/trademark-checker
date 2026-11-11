@@ -1034,6 +1034,17 @@ def enrich_goods(limit: int = 1500) -> None:
                         if not m.classes or not app.startswith("R"):
                             m.classes = sorted(int(c) for c in gs)
                         goods_job["found"] += 1
+                    elif gs and m.goods:
+                        # BOPI a tipărit uneori doar titlul clasei („Publicitate; conducerea… lucrări de birou.”),
+                        # iar fișa OSIM / TMview are lista completă care îl continuă — o preferăm (M 2016 01750).
+                        g = dict(m.goods)
+                        for c, t in gs.items():
+                            old = (g.get(c) or "").strip().rstrip(".")
+                            if old and len(t) > len(old) + 20 and norm(t).startswith(norm(old)[:60]):
+                                g[c] = t
+                        if g != m.goods:
+                            m.goods = g
+                            goods_job["found"] += 1
                     a = (d.get("applicants_detail") or [{}])[0]
                     if a.get("address") and (not m.holder_address or m.holder_address == m.holder):
                         m.holder_address = ", ".join(p for p in [m.holder or a.get("name"), a["address"].replace("\n", ", "),
