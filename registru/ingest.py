@@ -804,12 +804,13 @@ tmview_pause = {"until": datetime.utcnow()}
 
 
 def _tmview_paused() -> bool:
-    # Fereastra monitorizării zilnice ProMonitor (după 15:00 ora României, zile lucrătoare): TMview
-    # rămâne liber pentru ea — completările ProWatch stau pe loc între 12:30 și 15:30 UTC.
-    now = datetime.utcnow()
-    if now.weekday() < 5 and (12, 30) <= (now.hour, now.minute) < (15, 30):
+    # Fereastra monitorizării zilnice ProMonitor (zile lucrătoare, 15:00–15:30 ora României): TMview
+    # rămâne liber pentru ea — completările ProWatch stau pe loc.
+    from zoneinfo import ZoneInfo
+    ro = datetime.now(ZoneInfo("Europe/Bucharest"))
+    if ro.weekday() < 5 and (15, 0) <= (ro.hour, ro.minute) < (15, 30):
         return True
-    return now < tmview_pause["until"]
+    return datetime.utcnow() < tmview_pause["until"]
 
 
 def _tmview_backoff(hours: float = 0.25) -> None:
