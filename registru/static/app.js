@@ -16,7 +16,7 @@ async function api(path, opts) {
 function statusBadge(s) {
   const cls = { "Înregistrată": "ok", "Cerere publicată": "pub", "Admisă la înregistrare": "adm", "Respinsă": "bad",
                 "Radiată": "bad", "Retrasă": "bad", "Expirată": "bad", "În opoziție": "warn", "În contestație": "warn", "Anulată": "bad", "Decăzută": "bad",
-                "Renunțare": "bad", "Încetată": "bad", "În termen de grație": "warn", "În curs de reînnoire": "warn" }[s] || "pub";
+                "Renunțare": "bad", "Încetată": "bad", "În termen de grație": "warn", "În curs de reînnoire": "warn", "Posibil în curs de reînnoire": "warn" }[s] || "pub";
   return s ? `<span class="st ${cls}">${esc(s)}</span>` : "";
 }
 const chips = cl => `<div class="chips">${(cl || []).map(c => `<span class="chip">${c}</span>`).join("")}</div>`;
@@ -171,7 +171,7 @@ function searchForm() {
       <div><label for="f-rep">Reprezentant</label><input id="f-rep" name="representative" value="${v("representative")}" placeholder="consilier / agenție" autocomplete="off"></div>
       <div><label for="f-cls">Clase Nisa</label><input id="f-cls" name="classes" value="${v("classes")}" placeholder="ex. 9, 35" inputmode="numeric"></div>
       <div><label for="f-status">Stare</label><select id="f-status" name="status">
-        ${[["", "toate"], ["Valabile", "valabile (înregistrate, neexpirate)"], ["Înregistrată", "înregistrate"], ["Expirată", "expirate"], ["În termen de grație", "în termen de grație (6 luni după expirare)"],
+        ${[["", "toate"], ["Valabile", "valabile (înregistrate, neexpirate)"], ["Înregistrată", "înregistrate"], ["Expirată", "expirate"], ["În termen de grație", "în termen de grație (6 luni după expirare)"], ["Posibil în curs de reînnoire", "posibil în curs de reînnoire"],
            ["Cerere publicată", "cereri publicate"], ["Admisă la înregistrare", "admise la înregistrare"], ["În examinare", "în examinare"], ["În opoziție", "în opoziție"],
            ["În contestație", "în contestație"], ["Respinsă", "respinse"],
            ["Radiată", "radiate"], ["Încetată", "anulate / decăzute / încetate (TMview)"], ["Retrasă", "retrase"]].map(([v, t]) =>
