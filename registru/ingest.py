@@ -842,6 +842,54 @@ def tm_status_ro(code: str) -> str:
     return ""
 
 
+# Mărci înregistrate pe care TMview le dă încetate (anulare, decădere, renunțare…) fără ca BOPI să fi
+# publicat radierea — de ex. M 2008 10256: „Registration cancelled” la 28.12.2022.
+TM_ENDED = (("cancel", "Anulată"), ("invalid", "Anulată"), ("revo", "Decăzută"), ("surrender", "Renunțare"),
+            ("expired", "Expirată"), ("ended", "Încetată"))
+
+
+def tm_ended_ro(code: str) -> str:
+    c = (code or "").lower()
+    return next((ro for k, ro in TM_ENDED if k in c), "")
+
+
+def _set_tm_status(m: Mark, d: Dict) -> None:
+    m.tm_status = d.get("markCurrentStatusCode") or ""
+    m.tm_status_date = (d.get("markCurrentStatusDate") or "")[:10]
+    m.tm_status_checked = date.today().isoformat()
+
+
+def refresh_status(app: str) -> None:
+    """La deschiderea unei mărci: starea TMview se reverifică în fundal (o dată pe săptămână)."""
+    if _tmview_paused():
+        return
+    with _hq_lock:
+        key = "st:" + app
+        if key in _hq_pending or len(_hq_pending) > 20:
+            return
+        _hq_pending.add(key)
+
+    def run():
+        try:
+            r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": "RO50000" + app}, timeout=60)
+            d = r.json() if r.status_code == 200 else None
+            if isinstance(d, dict) and d and "error" not in d:
+                db = SessionLocal()
+                try:
+                    m = db.get(Mark, app)
+                    if m is not None:
+                        _set_tm_status(m, d)
+                        db.commit()
+                finally:
+                    db.close()
+        except Exception as e:
+            print(f"[STATUS] {app}: {type(e).__name__}: {e}")
+        finally:
+            with _hq_lock:
+                _hq_pending.discard("st:" + app)
+    threading.Thread(target=run, daemon=True).start()
+
+
 def enrich_status(limit: int = 600) -> None:
     """Pentru cererile publicate / admise: starea din fișa TMview, reverificată săptămânal."""
     import time as _t
@@ -856,6 +904,13 @@ def enrich_status(limit: int = 600) -> None:
                 Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.app_number.like("M%"),
                 Mark.tm_status_checked.is_(None) | (Mark.tm_status_checked < week)).order_by(
                 Mark.tm_status_checked.asc().nullsfirst(), Mark.publication_date.asc()).limit(limit)]
+            if len(todo) < limit:
+                # Apoi mărcile înregistrate (anulări / decăderi nepublicate în BOPI) — reverificate lunar.
+                month = (date.today() - timedelta(days=30)).isoformat()
+                todo += [m.app_number for m in db.query(Mark).filter(
+                    Mark.status == "Înregistrată", Mark.app_number.like("M%"),
+                    Mark.tm_status_checked.is_(None) | (Mark.tm_status_checked < month)).order_by(
+                    Mark.tm_status_checked.asc().nullsfirst()).limit(limit - len(todo))]
         finally:
             db.close()
         fails = 0
@@ -881,8 +936,7 @@ def enrich_status(limit: int = 600) -> None:
             try:
                 m = db.get(Mark, app)
                 if m is not None:
-                    m.tm_status, m.tm_status_date = code, (d.get("markCurrentStatusDate") or "")[:10]
-                    m.tm_status_checked = date.today().isoformat()
+                    _set_tm_status(m, d)
                     db.commit()
                     status_job["found"] += bool(tm_status_ro(code))
             finally:
@@ -1005,6 +1059,8 @@ def enrich_goods(limit: int = 1500) -> None:
                         m.representative = r0["fullName"].strip()
                         m.rep_norm = norm(m.representative)
                         m.representative_address = ", ".join(p for p in [m.representative, (r0.get("fullAddress") or "").replace("\n", ", ")] if p)
+                    if d.get("markCurrentStatusCode") and not app.startswith("R"):
+                        _set_tm_status(m, d)                  # aceeași fișă — starea fără cerere în plus
                     tc = tc.replace("|gs2", "")
                     m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
                     goods_job["done"] += 1

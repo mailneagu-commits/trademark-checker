@@ -73,6 +73,10 @@ def _status(m: Mark) -> str:
     # Cereri în curs: opoziția / contestația / retragerea apar doar în TMview, nu în BOPI.
     if m.status in ("Cerere publicată", "Admisă la înregistrare") and ingest.tm_status_ro(m.tm_status or ""):
         return ingest.tm_status_ro(m.tm_status)
+    # Mărci înregistrate anulate / decăzute / la care s-a renunțat — după TMview, dacă e mai nou decât BOPI.
+    if m.status == "Înregistrată" and ingest.tm_ended_ro(m.tm_status or "") and \
+            (m.tm_status_date or "9999") >= (m.status_date or ""):
+        return ingest.tm_ended_ro(m.tm_status)
     return m.status
 
 
@@ -195,12 +199,17 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
         q = q.filter(Mark.rep_norm.contains(r))
     wanted = [int(c) for c in classes.replace(";", ",").replace(" ", ",").split(",") if c.strip().isdigit()]
     today = date.today().isoformat()
+    # Încetate după TMview (anulare, decădere, renunțare) — nu mai sunt valabile.
+    ended = or_(*[Mark.tm_status.ilike(f"%{k}%") for k, _ in ingest.TM_ENDED])
+    alive = or_(Mark.tm_status.is_(None), ~ended)
     if status == "Valabile":
-        q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date >= today)
+        q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date >= today, alive)
     elif status == "Expirată":
         q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date != "", Mark.expiry_date < today)
     elif status == "Înregistrată":
-        q = q.filter(Mark.status == "Înregistrată", or_(Mark.expiry_date == "", Mark.expiry_date >= today))
+        q = q.filter(Mark.status == "Înregistrată", or_(Mark.expiry_date == "", Mark.expiry_date >= today), alive)
+    elif status == "Încetată":
+        q = q.filter(Mark.status == "Înregistrată", ended)
     elif status in ("În opoziție", "În contestație", "În examinare"):
         kw = {"În opoziție": "%ppos%", "În contestație": "%ppeal%", "În examinare": "%xamin%"}[status]
         q = q.filter(Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.tm_status.ilike(kw))
@@ -228,6 +237,9 @@ def mark(app_number: str, db: Session = Depends(get_db)):
     m = db.get(Mark, app_number.replace(" ", "").upper())
     if not m:
         raise HTTPException(404, "Marca nu există în registru.")
+    week = (date.today() - timedelta(days=7)).isoformat()
+    if m.app_number.startswith("M") and (m.tm_status_checked or "") < week:
+        ingest.refresh_status(m.app_number)        # starea din TMview, reverificată în fundal
     return _detail(m)
 
 
