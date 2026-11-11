@@ -656,6 +656,111 @@ def _fetch_logo(db, m: Mark, st13: str) -> bool:
     return True
 
 
+# ── Logo-uri originale (TMview) ───────────────────────────────────────────────────
+# Siglele decupate din PDF-urile BOPI au peste ele modelul de fundal al paginii. Originalul îl luăm din
+# TMview, într-un tabel separat: (1) la cerere, când cineva deschide marca; (2) treptat, pentru toate,
+# doar după ce încărcarea buletinelor s-a terminat — ca să nu încetinim citirea și să nu încărcăm TMview.
+hq_job: Dict = {"running": False, "done": 0, "found": 0, "last": None}
+_hq_pending: set = set()
+_hq_lock = threading.Lock()
+
+
+def _st13_of(m: Mark) -> str:
+    if re.fullmatch(r"M\d{8,10}", m.app_number or ""):
+        return "RO50000" + m.app_number
+    return _stub_st13(m)
+
+
+def fetch_logo_hq(app: str) -> str:
+    """Logo-ul original al unei mărci în mark_images_hq; întoarce starea (ok / none / fail)."""
+    from db import MarkImageHQ
+    db = SessionLocal()
+    try:
+        m = db.get(Mark, app)
+        st13 = _st13_of(m) if m else ""
+        if not st13:
+            st, data, ct = "none", None, ""
+        else:
+            try:
+                r = requests.get(f"{MONITOR_API}/api/tm-image", params={"st13": st13}, timeout=60)
+            except Exception:
+                r = None
+            if r is None or r.status_code >= 500:
+                st, data, ct = "fail", None, ""
+            elif r.status_code != 200 or not r.headers.get("content-type", "").startswith("image") or len(r.content) <= 1600:
+                st, data, ct = "none", None, ""             # 1458 octeți = substitutul TMview „fără logo”
+            else:
+                st, data, ct = "ok", r.content, r.headers["content-type"]
+                try:
+                    import io
+                    from PIL import Image
+                    pil = Image.open(io.BytesIO(r.content))
+                    pil = pil.convert("RGBA" if pil.mode in ("RGBA", "LA", "P") else "RGB")
+                    pil.thumbnail((800, 800))
+                    buf = io.BytesIO()
+                    pil.save(buf, "WEBP", quality=88)
+                    data, ct = buf.getvalue(), "image/webp"
+                except Exception:
+                    pass
+        db.merge(MarkImageHQ(app_number=app, data=data, content_type=ct or "image/webp", status=st,
+                             fetched_at=datetime.utcnow()))
+        db.commit()
+        return st
+    finally:
+        db.close()
+
+
+def request_logo_hq(app: str) -> None:
+    """La deschiderea unei mărci: logo-ul original se aduce în fundal (o singură cerere odată)."""
+    if _tmview_paused():
+        return
+    with _hq_lock:
+        if app in _hq_pending or len(_hq_pending) > 20:
+            return
+        _hq_pending.add(app)
+
+    def run():
+        try:
+            fetch_logo_hq(app)
+        except Exception as e:
+            print(f"[LOGO-HQ] {app}: {type(e).__name__}: {e}")
+        finally:
+            with _hq_lock:
+                _hq_pending.discard(app)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def enrich_logos_hq(limit: int = 150) -> None:
+    """Treptat, toate siglele — doar după terminarea încărcării buletinelor."""
+    import time as _t
+    from db import MarkImageHQ
+    if hq_job["running"] or job["running"] or _tmview_paused():
+        return
+    hq_job.update(running=True, done=0, found=0)
+    try:
+        retry = datetime.utcnow() - timedelta(days=30)
+        db = SessionLocal()
+        try:
+            done = db.query(MarkImageHQ.app_number).filter(
+                (MarkImageHQ.status != "fail") | (MarkImageHQ.fetched_at > retry))
+            todo = [a for (a,) in db.query(Mark.app_number).filter(
+                Mark.has_image == True, ~Mark.app_number.in_(done)).limit(limit)]  # noqa: E712
+        finally:
+            db.close()
+        fails = 0
+        for app in todo:
+            st = fetch_logo_hq(app)
+            hq_job["done"] += 1
+            hq_job["found"] += st == "ok"
+            fails = fails + 1 if st == "fail" else 0
+            if fails >= 10:
+                _tmview_backoff()
+                break
+            _t.sleep(2)
+    finally:
+        hq_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")
+
+
 def enrich_logos(limit: int = 300) -> int:
     """Logo-urile mărcilor deja completate din TMview înainte să aducem și imaginile."""
     db = SessionLocal()

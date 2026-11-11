@@ -79,6 +79,18 @@ class MarkImage(Base):
     data         = Column(LargeBinary, nullable=False)
 
 
+class MarkImageHQ(Base):
+    """Logo-ul original din TMview (fără fundalul / modelele din paginile BOPI). Tabel separat: încărcarea
+    din buletine nu-l atinge; /api/image îl preferă când există."""
+    __tablename__ = "mark_images_hq"
+
+    app_number   = Column(String, primary_key=True)
+    content_type = Column(String, default="image/webp")
+    data         = Column(LargeBinary, nullable=True)       # None = TMview nu are logo / încercare eșuată
+    status       = Column(String, default="")               # ok / none / fail
+    fetched_at   = Column(DateTime, default=datetime.utcnow)
+
+
 class SourceFile(Base):
     """Un PDF BOPI procesat (zilnic / lunar / cereri admise) — ca reluarea să nu-l repete."""
     __tablename__ = "source_files"

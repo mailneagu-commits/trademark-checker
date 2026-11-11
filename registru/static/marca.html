@@ -128,7 +128,7 @@ function repLater(m) {
     const goods = Object.entries(m.goods || {}).sort((a, b) => +a[0] - +b[0]);
     root.innerHTML = `
       <div class="card mhead">
-        <div class="logo-box">${m.image ? `<img src="${esc(m.image)}" alt="${esc(m.name)}">` : `<span class="muted" style="font-size:1.4rem;font-weight:800;text-align:center;">${esc(m.name)}</span>`}</div>
+        <div class="logo-box">${m.image ? `<img src="${esc(m.image)}?hq=1" alt="${esc(m.name)}">` : `<span class="muted" style="font-size:1.4rem;font-weight:800;text-align:center;">${esc(m.name)}</span>`}</div>
         <div>
           <h1>${esc(m.name || (m.placeholder ? m.app : "(marcă figurativă)"))}</h1>
           ${m.placeholder && !m.name ? `<p class="muted small" style="margin:-4px 0 10px;">Marcă reînnoită, înregistrată înainte de 2001 — denumirea nu apare în listele de reînnoiri publicate în BOPI; se completează automat din TMview.</p>` : ""}

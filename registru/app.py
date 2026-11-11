@@ -48,6 +48,9 @@ def _startup():
     # Starea cererilor în curs (opoziție, contestație…) din TMview.
     sched.add_job(ingest.enrich_status, "interval", minutes=30, id="tmview_status",
                   misfire_grace_time=1800, coalesce=True)
+    # Siglele originale din TMview, pentru toate mărcile — pornește singur după terminarea încărcării.
+    sched.add_job(ingest.enrich_logos_hq, "interval", minutes=15, id="tmview_logos_hq",
+                  misfire_grace_time=1800, coalesce=True)
     sched.start()
     if os.environ.get("AUTO_INGEST", "1") == "1":
         ingest.start_background()
@@ -229,12 +232,20 @@ def mark(app_number: str, db: Session = Depends(get_db)):
 
 
 @app.get("/api/image/{app_number}")
-def image(app_number: str, db: Session = Depends(get_db)):
+def image(app_number: str, hq: int = 0, db: Session = Depends(get_db)):
+    # Logo-ul original din TMview, când îl avem; altfel cel decupat din BOPI.
+    from db import MarkImageHQ
+    h = db.get(MarkImageHQ, app_number)
+    if h is not None and h.status == "ok" and h.data:
+        return Response(h.data, media_type=h.content_type, headers={"Cache-Control": "public, max-age=604800"})
     img = db.get(MarkImage, app_number)
     if not img:
         raise HTTPException(404)
+    if hq and h is None:
+        ingest.request_logo_hq(app_number)       # fișa mărcii: originalul se aduce în fundal
+    # Până vine originalul, imaginea din BOPI nu se păstrează mult în cache-ul browserului.
     return Response(img.data, media_type=img.content_type,
-                    headers={"Cache-Control": "public, max-age=604800"})
+                    headers={"Cache-Control": "public, max-age=" + ("604800" if h is not None else "3600")})
 
 
 @app.get("/api/recent")
@@ -290,7 +301,7 @@ def public_status(db: Session = Depends(get_db)):
             "first_bulletin": db.query(func.min(SourceFile.bulletin_date)).filter(SourceFile.status == "ok").scalar(),
             "publications": [db.query(func.min(Mark.publication_date)).filter(Mark.publication_date != "").scalar(),
                              db.query(func.max(Mark.publication_date)).scalar()],
-            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
+            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "logos_hq": ingest.hq_job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
             "errors": [{"bopi": e.label, "error": (e.error or "")[:160]} for e in
                        db.query(SourceFile).filter(SourceFile.status == "error").limit(10)],
             "changes_applied": dict(db.query(MarkChange.kind, func.count(MarkChange.id))
