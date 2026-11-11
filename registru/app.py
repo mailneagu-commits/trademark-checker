@@ -77,9 +77,25 @@ async def _cache_headers(request: Request, call_next):
 
 # ── Serializare ─────────────────────────────────────────────────────────────────
 
+GRACE = "În termen de grație"
+
+
+def _grace_start() -> str:
+    """Reînnoirea se mai poate cere 6 luni după expirare (cu taxă suplimentară) — OSIM o arată
+    „în curs de reînnoire”; până apare reînnoirea în BOPI, marca nu e încă expirată definitiv."""
+    t = date.today()
+    y, mo = (t.year, t.month - 6) if t.month > 6 else (t.year - 1, t.month + 6)
+    return date(y, mo, min(t.day, 28)).isoformat()
+
+
 def _status(m: Mark) -> str:
-    if m.status == "Înregistrată" and m.expiry_date and m.expiry_date < date.today().isoformat():
-        return "Expirată"
+    today = date.today().isoformat()
+    if m.status == "Înregistrată" and m.expiry_date and m.expiry_date < today:
+        if "renew" in (m.tm_status or "").lower():
+            return "În curs de reînnoire"
+        return GRACE if m.expiry_date >= _grace_start() else "Expirată"
+    if m.status == "Înregistrată" and "renew" in (m.tm_status or "").lower():
+        return "În curs de reînnoire"
     # Cereri în curs: opoziția / contestația / retragerea apar doar în TMview, nu în BOPI.
     if m.status in ("Cerere publicată", "Admisă la înregistrare") and ingest.tm_status_ro(m.tm_status or ""):
         return ingest.tm_status_ro(m.tm_status)
@@ -231,7 +247,9 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
     if status == "Valabile":
         q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date >= today, alive)
     elif status == "Expirată":
-        q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date != "", Mark.expiry_date < today)
+        q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date != "", Mark.expiry_date < _grace_start())
+    elif status == GRACE:
+        q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date >= _grace_start(), Mark.expiry_date < today)
     elif status == "Înregistrată":
         q = q.filter(Mark.status == "Înregistrată", or_(Mark.expiry_date == "", Mark.expiry_date >= today), alive)
     elif status == "Încetată":
