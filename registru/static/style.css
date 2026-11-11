@@ -185,3 +185,7 @@ html.embed footer { display: none; }
 
 
 .bopi450 { margin: 0; padding-left: 0; list-style: none; line-height: 1.7; }
+
+.case { padding: 12px 0; border-top: 1px solid #eee; }
+.case:first-of-type { border-top: 0; }
+.case-h { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
+import courts
 import ingest
 from bopi_parser import display_app
 from db import IS_PG, Lead, Mark, MarkChange, MarkImage, SourceFile, get_db, init_db, norm
@@ -48,6 +49,10 @@ def _startup():
     # Starea cererilor în curs (opoziție, contestație…) din TMview.
     sched.add_job(ingest.enrich_status, "interval", minutes=15, id="tmview_status",
                   misfire_grace_time=1800, coalesce=True)
+    # Dosarele cu obiect „marcă” din Portalul instanțelor — săptămânal (duminică noaptea).
+    sched.add_job(courts.sync, "cron", day_of_week="sun", hour=2, id="courts_sync",
+                  misfire_grace_time=7200, coalesce=True)
+    courts.start_backfill_if_empty()
     # Siglele originale din TMview, pentru toate mărcile — pornește singur după terminarea încărcării.
     sched.add_job(ingest.enrich_logos_hq, "interval", minutes=15, id="tmview_logos_hq",
                   misfire_grace_time=1800, coalesce=True)
@@ -133,8 +138,24 @@ def _row(m: Mark) -> dict:
     }
 
 
-def _detail(m: Mark) -> dict:
+def _cases(db, app: str) -> list:
+    from db import CourtCase, CourtLink
+    out = []
+    for link in db.query(CourtLink).filter(CourtLink.app_number == app):
+        c = db.get(CourtCase, link.case_id)
+        if c is None:
+            continue
+        out.append({"numar": c.numar, "instanta": courts.INSTITUTIONS.get(c.institutie, c.institutie),
+                    "data": c.data, "stadiu": c.stadiu, "obiect": c.obiect, "departament": c.departament,
+                    "parti": c.parti or [], "sedinte": (c.sedinte or [])[:6], "cai_atac": c.cai_atac or [],
+                    "potrivire": link.kind})
+    return sorted(out, key=lambda c: (c["potrivire"] != "nr", c["data"]), reverse=False)
+
+
+def _detail(m: Mark, db=None) -> dict:
     d = _row(m)
+    if db is not None:
+        d["cases"] = _cases(db, m.app_number)
     d.update(holder_address=m.holder_address, representative_address=m.representative_address,
              goods=m.goods or {}, vienna=m.vienna, colors=m.colors, disclaimer=m.disclaimer, events=m.events or [],
              status_date=m.status_date, tm_status=m.tm_status or "", tm_status_date=m.tm_status_date or "")
@@ -240,7 +261,7 @@ def mark(app_number: str, db: Session = Depends(get_db)):
     week = (date.today() - timedelta(days=7)).isoformat()
     if m.app_number.startswith("M") and (m.tm_status_checked or "") < week:
         ingest.refresh_status(m.app_number)        # starea din TMview, reverificată în fundal
-    return _detail(m)
+    return _detail(m, db)
 
 
 @app.get("/api/image/{app_number}")
@@ -313,7 +334,7 @@ def public_status(db: Session = Depends(get_db)):
             "first_bulletin": db.query(func.min(SourceFile.bulletin_date)).filter(SourceFile.status == "ok").scalar(),
             "publications": [db.query(func.min(Mark.publication_date)).filter(Mark.publication_date != "").scalar(),
                              db.query(func.max(Mark.publication_date)).scalar()],
-            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "logos_hq": ingest.hq_job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
+            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "logos_hq": ingest.hq_job, "courts": courts.job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
             "errors": [{"bopi": e.label, "error": (e.error or "")[:160]} for e in
                        db.query(SourceFile).filter(SourceFile.status == "error").limit(10)],
             "changes_applied": dict(db.query(MarkChange.kind, func.count(MarkChange.id))

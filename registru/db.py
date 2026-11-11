@@ -91,6 +91,34 @@ class MarkImageHQ(Base):
     fetched_at   = Column(DateTime, default=datetime.utcnow)
 
 
+class CourtCase(Base):
+    """Un dosar din Portalul instanțelor (portal.just.ro) cu obiect „marcă” — vezi courts.py."""
+    __tablename__ = "court_cases"
+
+    id          = Column(String, primary_key=True)         # „TribunalulBUCURESTI|1350/3/2022”
+    numar       = Column(String, default="")
+    institutie  = Column(String, default="")
+    data        = Column(String, default="")
+    departament = Column(String, default="")
+    stadiu      = Column(String, default="")
+    obiect      = Column(Text, default="")
+    modificat   = Column(String, default="")
+    parti       = Column(JSON, default=list)
+    sedinte     = Column(JSON, default=list)
+    cai_atac    = Column(JSON, default=list)
+    mark_regs   = Column(JSON, default=list)               # nr. de marcă din obiect
+    mark_apps   = Column(JSON, default=list)               # nr. de depozit din obiect
+    updated_at  = Column(DateTime, default=datetime.utcnow)
+
+
+class CourtLink(Base):
+    __tablename__ = "court_links"
+
+    case_id    = Column(String, primary_key=True)
+    app_number = Column(String, primary_key=True, index=True)
+    kind       = Column(String, default="")                # „nr” (sigur) / „titular” (de verificat)
+
+
 class SourceFile(Base):
     """Un PDF BOPI procesat (zilnic / lunar / cereri admise) — ca reluarea să nu-l repete."""
     __tablename__ = "source_files"

@@ -36,6 +36,23 @@ function bopi450(events) {
     }).join("");
   return rows ? `<section class="card"><h2>Apariții BOPI (450)</h2><ul class="bopi450">${rows}</ul></section>` : "";
 }
+// Dosarele din Portalul instanțelor (portal.just.ro) legate de marcă — vezi courts.py.
+function casesHtml(cases) {
+  if (!cases || !cases.length) return "";
+  const rows = cases.map(c => {
+    const last = (c.sedinte || [])[0];
+    const parti = (c.parti || []).map(p => `${esc(p.nume)}${p.calitate ? ` <span class="muted">(${esc(p.calitate)})</span>` : ""}`).join("<br>");
+    return `<div class="case">
+      <div class="case-h"><strong>Dosar ${esc(c.numar)}</strong> · ${esc(c.instanta)} · ${esc(c.stadiu)}
+        ${c.potrivire === "nr" ? '<span class="st bad">marca e menționată în dosar</span>' : '<span class="st pub">după titular — de verificat</span>'}</div>
+      <div class="muted small">Obiect: ${esc(c.obiect)} · înregistrat ${dmy(c.data)}</div>
+      <div class="small" style="margin-top:6px;">${parti}</div>
+      ${last ? `<div class="small" style="margin-top:6px;"><b>${dmy(last.data)}: ${esc(last.solutie)}</b>${last.sumar ? ` — ${esc(last.sumar.slice(0, 400))}${last.sumar.length > 400 ? "…" : ""}` : ""}</div>` : ""}
+    </div>`;
+  }).join("");
+  return `<section class="card"><h2>Litigii · ${cases.length}</h2>
+    <p class="muted small" style="margin:-6px 0 12px;">Dosare cu obiect „marcă” de la Tribunalul București și Curtea de Apel București, din Portalul instanțelor de judecată (portal.just.ro), actualizate săptămânal.</p>${rows}</section>`;
+}
 // Reconstituie, eveniment cu eveniment, ce s-a schimbat față de documentul anterior.
 function historyHtml(events) {
   const evs = [...events].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
@@ -155,6 +172,7 @@ function repLater(m) {
       ${m.disclaimer ? `<section class="card"><h2>Mențiuni</h2><p style="margin:0;">${esc(m.disclaimer)}</p></section>` : ""}
       <section class="card goods"><h2>Produse și servicii (511) · ${goods.length} ${goods.length === 1 ? "clasă" : "clase"}</h2>
         ${goods.map(([c, t]) => `<div class="row"><div class="cls">${c}</div><div>${esc(t)}</div></div>`).join("") || '<p class="muted">—</p>'}</section>
+      ${casesHtml(m.cases)}
       ${bopi450(m.events || [])}
       <section class="card"><h2>Istoricul mărcii</h2>
         <p class="muted small" style="margin:-6px 0 14px;">Toate aparițiile mărcii în Buletinul Oficial de Proprietate Industrială, în ordine cronologică, cu ce s-a schimbat la fiecare.</p>
