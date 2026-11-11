@@ -18,6 +18,9 @@ from sqlalchemy.orm import Session
 
 import courts
 import ingest
+
+# Litigiile din Portalul instanțelor (courts.py) — puse pe pauză; datele rămân în baza de date.
+COURTS_ENABLED = os.environ.get("COURTS_ENABLED", "0") == "1"
 from bopi_parser import display_app
 from db import IS_PG, Lead, Mark, MarkChange, MarkImage, SourceFile, get_db, init_db, norm
 
@@ -50,9 +53,11 @@ def _startup():
     sched.add_job(ingest.enrich_status, "interval", minutes=15, id="tmview_status",
                   misfire_grace_time=1800, coalesce=True)
     # Dosarele cu obiect „marcă” din Portalul instanțelor — săptămânal (duminică noaptea).
-    sched.add_job(courts.sync, "cron", day_of_week="sun", hour=2, id="courts_sync",
-                  misfire_grace_time=7200, coalesce=True)
-    courts.start_backfill_if_empty()
+    # Oprit deocamdată, la cererea utilizatorului (reluăm după finalizarea bazei de mărci).
+    if COURTS_ENABLED:
+        sched.add_job(courts.sync, "cron", day_of_week="sun", hour=2, id="courts_sync",
+                      misfire_grace_time=7200, coalesce=True)
+        courts.start_backfill_if_empty()
     # Siglele originale din TMview, pentru toate mărcile — pornește singur după terminarea încărcării.
     sched.add_job(ingest.enrich_logos_hq, "interval", minutes=15, id="tmview_logos_hq",
                   misfire_grace_time=1800, coalesce=True)
@@ -154,7 +159,7 @@ def _cases(db, app: str) -> list:
 
 def _detail(m: Mark, db=None) -> dict:
     d = _row(m)
-    if db is not None:
+    if db is not None and COURTS_ENABLED:
         d["cases"] = _cases(db, m.app_number)
     d.update(holder_address=m.holder_address, representative_address=m.representative_address,
              goods=m.goods or {}, vienna=m.vienna, colors=m.colors, disclaimer=m.disclaimer, events=m.events or [],
