@@ -255,7 +255,8 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
         stub = _by_deposit(db, num) if num.startswith("M") else None
         if stub is not None:
             byno = or_(byno, Mark.app_number == stub.app_number)
-        if num.isdigit() and not db.query(Mark.app_number).filter(byno).first() and not ingest._tmview_paused():
+        if not num.startswith("R") and "R" not in num[:2] and not db.query(Mark.app_number).filter(byno).first() \
+                and not ingest._tmview_paused():
             ingest.fetch_old(num)          # marcă veche, încetată înainte de arhiva BOPI online
         q = q.filter(or_(byno, Mark.name_norm.contains(n)))
         order.append(case((byno, 0), else_=1))
@@ -329,6 +330,9 @@ def mark(app_number: str, db: Session = Depends(get_db)):
     m = db.get(Mark, key)
     if not m and re.fullmatch(r"M\d{8,10}", key):
         m = _by_deposit(db, key)          # marcă reînnoită veche, păstrată ca „R…” (ex. M 2000 02551 → 2R42921)
+        if not m and not ingest._tmview_paused():
+            got = ingest.fetch_old(key)       # M 2000 / M 2001 încetată înainte de arhiva BOPI online
+            m = db.get(Mark, got) if got else None
     if not m and key.isdigit():
         # Marcă veche (depozit dinainte de 2001), încetată înainte de arhiva BOPI online — din TMview.
         key = key.zfill(6)

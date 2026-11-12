@@ -1295,6 +1295,23 @@ def enrich_renewed(limit: int = 600) -> None:
 # — prima arhivă BOPI publicată online — nu apar în niciun buletin disponibil (ex. 032709 GAZETA
 # MATEMATICA, înregistrată 1999, expirată 2004). Le preluăm din TMview: la cerere și treptat, în fundal.
 OLD_MAX = 57000
+# Apoi seria „M 2000 …” și „M 2001 …” (TMview: „M 2000 02551”), până la ~12000 pe an; cele publicate
+# după 11/2001 sunt deja în bază din arhivă și se sar fără căutare.
+OLD_M_YEARS = (2000, 2001)
+OLD_M_MAX = 12000
+OLD_END = OLD_MAX + len(OLD_M_YEARS) * OLD_M_MAX
+
+
+def _old_key(i: int) -> str:
+    """Poziția cursorului → nr. de depozit: 1..OLD_MAX = „032709”, apoi „M200002551”."""
+    if i <= OLD_MAX:
+        return str(i).zfill(6)
+    j = i - OLD_MAX - 1
+    return f"M{OLD_M_YEARS[j // OLD_M_MAX]}{j % OLD_M_MAX + 1:05d}"
+
+
+def _tm_app(key: str) -> str:
+    return f"M {key[1:5]} {key[5:]}" if key.startswith("M") else key
 OLD_CURSOR = "cursor:old-marks"
 old_job: Dict = {"running": False, "done": 0, "found": 0, "next": 0, "last": None}
 
@@ -1322,7 +1339,7 @@ def _old_status(code: str) -> str:
 
 def _create_old(db, num: str, t: Dict, d: Dict) -> Optional[Mark]:
     """O marcă veche din căutarea TMview (denumire, nr. înregistrare) + fișa ei (restul câmpurilor)."""
-    key = num.zfill(6)
+    key = num if num.startswith("M") else num.zfill(6)
     st13 = t.get("ST13") or "RO50000" + key.zfill(10)
     reg = (t.get("registrationNumber") or "").lstrip("0")
     stub = db.get(Mark, "R" + reg) if reg else None
@@ -1358,27 +1375,45 @@ def _create_old(db, num: str, t: Dict, d: Dict) -> Optional[Mark]:
     return m
 
 
+def _old_known(hit: Dict) -> bool:
+    """Marca e deja în bază ca reînnoită veche („R…”) cu acest depozit — fără fișa TMview în plus."""
+    reg = (hit.get("registrationNumber") or "").lstrip("0")
+    if not reg:
+        return False
+    db = SessionLocal()
+    try:
+        stub = db.get(Mark, "R" + reg)
+        return stub is not None and _stub_st13(stub) in ("", hit.get("ST13") or "")
+    finally:
+        db.close()
+
+
 def _old_lookup(numbers: List[str]) -> Dict[str, Optional[Dict]]:
     """Nr. vechi → rezultatul TMview exact (sau None dacă nu există); cheile lipsă = lot neverificat."""
-    data = _regsearch(numbers, "applicationNumber")
+    data = _regsearch([_tm_app(n) for n in numbers], "applicationNumber")
     out: Dict[str, Optional[Dict]] = {}
     if data is None:
         return out
     for n in numbers:
-        res = data.get(n)
+        res = data.get(_tm_app(n))
         if not isinstance(res, dict) or res.get("status") != 200:
             continue
         hit = next((x for x in (res.get("hits") or []) + (res.get("first") or [])
-                    if (x.get("applicationNumber") or "").zfill(6) == n), None)
+                    if re.sub(r"\s+", "", x.get("applicationNumber") or "").zfill(6) == n), None)
         out[n] = hit
     return out
 
 
 def fetch_old(num: str) -> Optional[str]:
     """La cerere (căutare / deschidere după nr.): o marcă veche lipsă adusă imediat din TMview."""
-    num = num.strip().lstrip("0").zfill(6)
-    if not num.isdigit() or int(num) > OLD_MAX:
-        return None
+    num = re.sub(r"\s+", "", num).upper()
+    if re.fullmatch(r"M\d{9}", num):
+        if int(num[1:5]) not in OLD_M_YEARS:
+            return None
+    else:
+        num = num.lstrip("0").zfill(6)
+        if not num.isdigit() or int(num) > OLD_MAX:
+            return None
     hit = _old_lookup([num]).get(num)
     if not hit:
         # Poate fi nr. de marcă (înregistrare) vechi, nu de depozit (ex. 008472).
@@ -1429,9 +1464,11 @@ def enrich_old(batches: int = 8) -> None:
         old_job["next"] = start
         fails = 0
         for _ in range(batches):
-            if start > OLD_MAX or _tmview_paused():
+            if start > OLD_END or _tmview_paused():
                 break
-            nums = [str(i).zfill(6) for i in range(start, min(start + 25, OLD_MAX + 1))]
+            stop = min(start + 25, (OLD_MAX if start <= OLD_MAX else OLD_END) + 1)
+            idx = list(range(start, stop))
+            nums = [_old_key(i) for i in idx]
             db = SessionLocal()
             try:
                 have = {a for (a,) in db.query(Mark.app_number).filter(Mark.app_number.in_(nums))}
@@ -1453,7 +1490,7 @@ def enrich_old(batches: int = 8) -> None:
                     ok = False                    # rezultat lipsă — lotul se reia
                     continue
                 hit = found[n]
-                if not hit:
+                if not hit or _old_known(hit):
                     continue
                 d = None
                 for _i in range(3):
@@ -1483,7 +1520,7 @@ def enrich_old(batches: int = 8) -> None:
                 _t.sleep(1)
             if not ok:
                 break                             # cursorul rămâne pe lot; se reia la rularea următoare
-            start = int(nums[-1]) + 1
+            start = idx[-1] + 1
             db = SessionLocal()
             try:
                 db.merge(SourceFile(url=OLD_CURSOR, kind="cursor", label=str(start), status="cursor"))
