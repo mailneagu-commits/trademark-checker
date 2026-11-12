@@ -151,7 +151,7 @@ function resultsTable(rows) {
     ${rows.map(r => `<tr>
       <td><input type="checkbox" class="pick" data-app="${esc(r.app)}" ${picked.has(r.app) ? "checked" : ""} onchange="togglePick('${esc(r.app)}', this.checked)" aria-label="Selectează ${esc(r.name)}"></td>
       <td class="img"><a href="${markLink(r)}">${thumb(r)}</a></td>
-      <td><a class="mname" href="${markLink(r)}">${esc(r.name || (r.placeholder ? `(${r.placeholder})` : "(figurativă)"))}</a><div class="muted small">${esc(r.mark_type)}</div></td>
+      <td><a class="mname" href="${markLink(r)}" title="${esc(r.name || "")}">${esc(r.name || (r.placeholder ? `(${r.placeholder})` : "(figurativă)"))}</a><div class="muted small">${esc(r.mark_type)}</div></td>
       <td style="white-space:nowrap;">${esc(r.deposit || "—")}${r.reg_display || r.reg_number ? `<div class="muted small">nr. înreg. ${esc(r.reg_display || r.reg_number)}</div>` : ""}</td>
       <td>${esc(r.holder)}</td>
       <td>${chips(r.classes)}</td>

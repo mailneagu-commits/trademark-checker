@@ -189,3 +189,8 @@ html.embed footer { display: none; }
 .case { padding: 12px 0; border-top: 1px solid #eee; }
 .case:first-of-type { border-top: 0; }
 .case-h { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* Denumirile lungi din tabele: pe cel mult două rânduri echilibrate (text-wrap: balance), restul cu „…”;
+   denumirea întreagă rămâne în fișa mărcii și în titlul linkului. */
+.tbl td a.mname { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; max-width: 380px; min-width: 160px; text-wrap: balance; line-height: 1.3; word-break: break-word; }
