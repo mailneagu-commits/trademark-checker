@@ -430,7 +430,9 @@ def quality(db: Session = Depends(get_db)):
         "inregistrata_fara_nr": lambda m: m.status == "Înregistrată" and not m.reg_number,
         "clase_fara_produse": lambda m: any(not (m.goods or {}).get(str(c)) for c in (m.classes or [])),
         "fara_tip": lambda m: not m.mark_type,
-        "fara_data_publicare": lambda m: not m.publication_date,
+        # Doar unde data publicării cererii e disponibilă (buletinele zilnice, din 2022) — la mărcile din
+        # arhivă s-a renunțat (12.11.2026).
+        "fara_data_publicare": lambda m: not m.publication_date and (m.filing_date or "") >= "2021-12-01",
         "inregistrata_fara_data_inregistrare": lambda m: m.status == "Înregistrată" and not m.reg_date,
         "inregistrata_fara_expirare": lambda m: m.status == "Înregistrată" and not m.expiry_date,
         "figurativa_fara_logo": lambda m: m.mark_type in ("Figurativă", "Combinată") and not m.has_image,

@@ -439,6 +439,33 @@ def _fix_legacy_diacritics():
         db.close()
 
 
+def _archive_needfix():
+    """O singură dată (12.11.2026): utilizatorul renunță la data publicării cererii la mărcile din arhivă.
+    Din coada TMview rămân doar mărcile cu alte câmpuri lipsă („|needfix”)."""
+    marker = "migration:archive-needfix-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for m in db.query(Mark).filter(~Mark.app_number.like("R%")).yield_per(5000):
+            tc = (m.tmview_checked or "").replace("|pubneed", "")
+            if "|gs3" not in tc and (
+                    any(not (m.goods or {}).get(str(c)) for c in (m.classes or [])) or
+                    not m.holder_address or m.holder_address == m.holder or not m.mark_type or
+                    (m.status == "Înregistrată" and not m.reg_date)):
+                if "|needfix" not in tc:
+                    tc += "|needfix"
+                n += 1
+            if tc != (m.tmview_checked or ""):
+                m.tmview_checked = tc
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="arhivă: doar câmpuri lipsă v1"))
+        db.commit()
+        print(f"[DB] Mărci din arhivă cu câmpuri de completat din TMview: {n}")
+    finally:
+        db.close()
+
+
 def _reprocess_changes_for_renewal_no():
     """O singură dată: tabelele de modificări se recitesc, ca reînnoirile să rețină numărul tipărit
     de OSIM („008649(5R)”) — prefixul R / 2R / 5R al mărcii nu se mai deduce din date."""
@@ -647,7 +674,7 @@ def init_db():
     _flag_archive_publication()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
-    threading.Thread(target=_fix_legacy_diacritics, daemon=True).start()
+    threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix()), daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
     _drop_part_duplicates()

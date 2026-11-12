@@ -744,7 +744,7 @@ def enrich_logos_hq(limit: int = 150) -> None:
     try:
         from sqlalchemy import or_
         pending = db.query(Mark.app_number).filter(
-            or_(Mark.app_number.like("R%"), Mark.tmview_checked.like("%|gsneed%"), Mark.tmview_checked.like("%|pubneed%")),
+            or_(Mark.app_number.like("R%"), Mark.tmview_checked.like("%|gsneed%"), Mark.tmview_checked.like("%|needfix%")),
             or_(Mark.tmview_checked.is_(None), ~Mark.tmview_checked.like("%|gs3%")),
             or_(Mark.tmview_checked.is_(None), ~Mark.tmview_checked.like("%|gsf|gsf|gsf%"))).first()
     finally:
@@ -955,7 +955,11 @@ def enrich_status(limit: int = 600) -> None:
             try:
                 m = db.get(Mark, app)
                 if m is not None:
+                    tc = m.tmview_checked or ""
+                    _apply_detail(m, d, app, tc)          # aceeași fișă: produse complete, data exactă a înregistrării
                     _set_tm_status(m, d)
+                    if "|gs3" not in tc:
+                        m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
                     db.commit()
                     status_job["found"] += bool(tm_status_ro(code))
             finally:
@@ -1037,9 +1041,10 @@ def enrich_goods(limit: int = 1500) -> None:
             cand = [(m.app_number, _stub_st13(m)) for m in db.query(Mark).filter(
                 # „|gs2” = fișa TMview citită; „|gsf” = TMview a dat fișa goală (se reîncearcă de 3 ori).
                 # + mărcile „|gsneed”: clase fără produse după o limitare recitită peste fișa înregistrată.
-                # + „|pubneed”: mărci publicate înainte de 2022 (fără data publicării) — doar câmpurile goale.
+                # + „|needfix”: mărci din arhivă cu câmpuri lipsă (produse, adresă, dată, tip). Data publicării
+                # cererii la mărcile din arhivă nu se mai caută (decizia utilizatorului, 12.11.2026).
                 or_(Mark.app_number.like("R%"), Mark.tmview_checked.like("%|gsneed%"),
-                    Mark.tmview_checked.like("%|pubneed%")),
+                    Mark.tmview_checked.like("%|needfix%")),
                 ~Mark.tmview_checked.like("%|gs3%"),
                 ~Mark.tmview_checked.like("%|gsf|gsf|gsf%")).order_by(
                 # întâi cele fără produse deloc, apoi necitite, apoi cele cu fișa veche „|gs2” (câmpuri noi)
