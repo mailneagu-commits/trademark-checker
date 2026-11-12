@@ -486,6 +486,28 @@ def _retry_renewed_logos():
         db.close()
 
 
+def _recompute_reps():
+    """O singură dată: reprezentantul actual al fiecărei mărci, din cel mai recent document BOPI
+    (reînnoirile pierdeau mandatarul la unirea cu fișa din arhivă — ex. Beauty Mania)."""
+    marker = "migration:current-rep-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from ingest import _current_rep
+        n = 0
+        for m in db.query(Mark).yield_per(2000):
+            before = m.representative
+            _current_rep(m)
+            if m.representative != before:
+                n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="reprezentant actual v1"))
+        db.commit()
+        print(f"[DB] Mărci cu reprezentantul actualizat: {n}")
+    finally:
+        db.close()
+
+
 def _reprocess_changes_for_renewal_no():
     """O singură dată: tabelele de modificări se recitesc, ca reînnoirile să rețină numărul tipărit
     de OSIM („008649(5R)”) — prefixul R / 2R / 5R al mărcii nu se mai deduce din date."""
@@ -694,7 +716,8 @@ def init_db():
     _flag_archive_publication()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
-    threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos()),
+    threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
+                                     _recompute_reps()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()

@@ -180,6 +180,7 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
     m.name_norm = norm(m.name)
     m.holder_norm = norm(m.holder)
     m.rep_norm = norm(m.representative)
+    _current_rep(m)
     if chapter == "published" and not m.publication_date:
         m.publication_date = bdate
     if chapter == "registered":
@@ -385,6 +386,7 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
     ev.update(holder_ev)
     _add_event(m, ev)
     _recompute_holder(m)
+    _current_rep(m)
     m.expiry_date = expiry_of(m)
     m.updated_at = datetime.utcnow()
     c.applied = True
@@ -445,6 +447,26 @@ def _stub_filing_date(m: Mark) -> None:
             m.filing_date = date(y, int(m.expiry_date[5:7]), 28).isoformat()
 
 
+_DATE_LIKE = re.compile(r"^\s*\d{1,2}[./]\d{1,2}[./]\d{2,4}\s*$")
+
+
+def _current_rep(m: Mark) -> None:
+    """Reprezentantul actual = cel din cel mai recent document BOPI care numește unul (cerere,
+    înregistrare, reînnoire). Ex. Beauty Mania: fără reprezentant la înregistrare (2012), reînnoită
+    în 2021 prin Cabinetul Cătălin Neagu."""
+    evs = [e for e in (m.events or []) if (e.get("representative") or "").strip()
+           and not _DATE_LIKE.match(e["representative"]) and (e.get("bopi") or "").startswith(("BOPI", "Cereri"))]
+    if not evs:
+        return
+    last = max(evs, key=lambda e: e.get("date") or "")
+    cur = norm(m.representative)
+    cur_date = max((e.get("date") or "" for e in evs if norm(e["representative"]) == cur), default="")
+    if not cur or ((last.get("date") or "") > cur_date and norm(last["representative"]) != cur):
+        m.representative = last["representative"].strip()
+        m.rep_norm = norm(m.representative)
+        m.representative_address = m.representative
+
+
 def _merge_stub(db, m: Mark) -> None:
     """Marca originală a apărut (arhivă) — preia reînnoirile păstrate pe nr. de marcă."""
     if not m.reg_number:
@@ -468,6 +490,7 @@ def _merge_stub(db, m: Mark) -> None:
         db.delete(img)
     m.mark_type = ("Combinată" if m.has_image and m.name else
                    "Figurativă" if m.has_image else "Verbală")
+    _current_rep(m)                      # reprezentantul de la reînnoire (pe marca reînnoită)
     db.delete(stub)
 
 
