@@ -1299,6 +1299,16 @@ OLD_CURSOR = "cursor:old-marks"
 old_job: Dict = {"running": False, "done": 0, "found": 0, "next": 0, "last": None}
 
 
+def old_filing(exp: str, before: str) -> str:
+    """Data depozitului dedusă din expirare (protecție 10 ani de la depozit, fiecare reînnoire +10):
+    cu cât reînnoiri e nevoie ca depozitul să fie înaintea înregistrării (ISPH 008472: înreg. 1991,
+    expiră 2018 → depus 1988)."""
+    y = int(exp[:4]) - 10
+    while before[:4].isdigit() and f"{y:04d}{exp[4:]}" > before and y > 1900:
+        y -= 10
+    return f"{y:04d}{exp[4:]}"
+
+
 def _old_status(code: str) -> str:
     c = (code or "").lower()
     if "refus" in c or "reject" in c:
@@ -1325,7 +1335,7 @@ def _create_old(db, num: str, t: Dict, d: Dict) -> Optional[Mark]:
     exp = (d.get("expiryDate") or "")[:10]
     filing = (d.get("applicationDate") or "")[:10]
     if not filing and exp[:4].isdigit():
-        filing = f"{int(exp[:4]) - 10:04d}{exp[4:]}"     # legea veche: protecție 10 ani de la depozit
+        filing = old_filing(exp, (d.get("registrationDate") or d.get("publicationDate") or "")[:10])
     holder = ((d.get("applicants_detail") or [{}])[0].get("name") or "").strip()
     name = (t.get("tmName") or "").strip()
     m = Mark(app_number=key, name=name, name_norm=norm(name), status=status,

@@ -508,6 +508,23 @@ def _recompute_reps():
         db.close()
 
 
+def _fix_old_filing():
+    """Mărcile vechi importate din TMview: data depozitului dedusă fără reînnoiri (008472 ISPH)."""
+    import ingest
+    marker = "migration:old-filing-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        for m in db.query(Mark).filter(Mark.tmview_checked.like("%|old%")):
+            if m.expiry_date and m.reg_date:
+                m.filing_date = ingest.old_filing(m.expiry_date, m.reg_date)
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="depozit mărci vechi v1"))
+        db.commit()
+    finally:
+        db.close()
+
+
 def _fix_read_errors():
     """O singură dată: erori de citire rămase în denumiri (coduri INID lipite: „( 531) Clasificare Viena…”,
     capitolul „Produse și/sau servicii…” luat drept denumire) și mărci înregistrate fără dată de expirare
@@ -759,7 +776,7 @@ def init_db():
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
-                                     _recompute_reps(), _fix_read_errors()),
+                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
