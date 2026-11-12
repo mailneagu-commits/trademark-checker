@@ -252,6 +252,9 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
         digits = re.sub(r"^\d?R", "", num)
         keys = {num, digits.zfill(6), "R" + digits.lstrip("0")}
         byno = or_(Mark.app_number.in_(keys), Mark.reg_number == digits.lstrip("0"))
+        stub = _by_deposit(db, num) if num.startswith("M") else None
+        if stub is not None:
+            byno = or_(byno, Mark.app_number == stub.app_number)
         if num.isdigit() and not db.query(Mark.app_number).filter(byno).first() and not ingest._tmview_paused():
             ingest.fetch_old(num)          # marcă veche, încetată înainte de arhiva BOPI online
         q = q.filter(or_(byno, Mark.name_norm.contains(n)))
@@ -312,10 +315,20 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
     return {"total": total, "page": page, "size": size, "results": [_row(m) for m in rows]}
 
 
+def _by_deposit(db, key: str):
+    """Marca reînnoită veche („R…”) care are acest nr. de depozit în istoricul ei (tabelele BOPI / TMview)."""
+    from sqlalchemy import Text, cast
+    pat = cast(Mark.events, Text)
+    return db.query(Mark).filter(Mark.app_number.like("R%"), or_(
+        pat.like(f'%"app": "{key}"%'), pat.like(f'%"app":"{key}"%'), pat.like(f'%RO50000{key}"%'))).first()
+
+
 @app.get("/api/mark/{app_number}")
 def mark(app_number: str, db: Session = Depends(get_db)):
     key = app_number.replace(" ", "").upper()
     m = db.get(Mark, key)
+    if not m and re.fullmatch(r"M\d{8,10}", key):
+        m = _by_deposit(db, key)          # marcă reînnoită veche, păstrată ca „R…” (ex. M 2000 02551 → 2R42921)
     if not m and key.isdigit():
         # Marcă veche (depozit dinainte de 2001), încetată înainte de arhiva BOPI online — din TMview.
         key = key.zfill(6)
