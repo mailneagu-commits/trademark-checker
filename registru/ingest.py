@@ -695,6 +695,8 @@ _hq_lock = threading.Lock()
 def _st13_of(m: Mark) -> str:
     if re.fullmatch(r"M\d{8,10}", m.app_number or ""):
         return "RO50000" + m.app_number
+    if (m.app_number or "").isdigit():                 # marcă veche, depozit dinainte de 2001
+        return "RO50000" + m.app_number.zfill(10)
     return _stub_st13(m)
 
 
@@ -842,6 +844,8 @@ def _stub_st13(m: Mark) -> str:
     preluat din tabelele BOPI (RO50000 + M201307749)."""
     if re.fullmatch(r"M\d{8,10}", m.app_number or ""):
         return "RO50000" + m.app_number
+    if (m.app_number or "").isdigit():                 # marcă veche, depozit dinainte de 2001
+        return "RO50000" + m.app_number.zfill(10)
     for e in reversed(m.events or []):
         if e.get("st13"):
             return e["st13"]
@@ -925,7 +929,7 @@ def refresh_status(app: str) -> None:
 
     def run():
         try:
-            st13 = "RO50000" + app
+            st13 = "RO50000" + (app.zfill(10) if app.isdigit() else app)
             if app.startswith("R"):
                 db0 = SessionLocal()
                 try:
@@ -1285,3 +1289,187 @@ def enrich_renewed(limit: int = 600) -> None:
                 db.close()
     finally:
         enrich_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")
+
+
+# Mărcile vechi (depozit 000001–~056xxx, până la numerotarea „M 2001 …”) încetate înainte de 11/2001
+# — prima arhivă BOPI publicată online — nu apar în niciun buletin disponibil (ex. 032709 GAZETA
+# MATEMATICA, înregistrată 1999, expirată 2004). Le preluăm din TMview: la cerere și treptat, în fundal.
+OLD_MAX = 57000
+OLD_CURSOR = "cursor:old-marks"
+old_job: Dict = {"running": False, "done": 0, "found": 0, "next": 0, "last": None}
+
+
+def _old_status(code: str) -> str:
+    c = (code or "").lower()
+    if "refus" in c or "reject" in c:
+        return "Respinsă"
+    if "withdraw" in c:
+        return "Retrasă"
+    if "filed" in c or "publish" in c or "examin" in c or "oppos" in c or "appeal" in c:
+        return "Cerere publicată"
+    return "Înregistrată"
+
+
+def _create_old(db, num: str, t: Dict, d: Dict) -> Optional[Mark]:
+    """O marcă veche din căutarea TMview (denumire, nr. înregistrare) + fișa ei (restul câmpurilor)."""
+    key = num.zfill(6)
+    st13 = t.get("ST13") or "RO50000" + key.zfill(10)
+    reg = (t.get("registrationNumber") or "").lstrip("0")
+    stub = db.get(Mark, "R" + reg) if reg else None
+    if stub is not None and _stub_st13(stub) in ("", st13):
+        return None                        # marca reînnoită e deja în bază (R…), cu acest depozit
+    if db.get(Mark, key) is not None:
+        return None
+    code = d.get("markCurrentStatusCode") or ""
+    status = _old_status(code)
+    exp = (d.get("expiryDate") or "")[:10]
+    filing = (d.get("applicationDate") or "")[:10]
+    if not filing and exp[:4].isdigit():
+        filing = f"{int(exp[:4]) - 10:04d}{exp[4:]}"     # legea veche: protecție 10 ani de la depozit
+    holder = ((d.get("applicants_detail") or [{}])[0].get("name") or "").strip()
+    name = (t.get("tmName") or "").strip()
+    m = Mark(app_number=key, name=name, name_norm=norm(name), status=status,
+             status_date=(d.get("registrationDate") or d.get("publicationDate") or "")[:10],
+             filing_date=filing, reg_number=reg if status == "Înregistrată" else "",
+             holder=holder, holder_norm=norm(holder), classes=[], goods={},
+             tmview_checked=date.today().isoformat() + "|old|gs3",
+             events=[{"date": (d.get("markCurrentStatusDate") or date.today().isoformat())[:10], "bopi": "TMview",
+                      "chapter": "Marcă veche (înainte de BOPI online) preluată din TMview",
+                      "detail": f"nr. depozit {key}" + (f" · nr. marcă {reg}" if reg else ""), "st13": st13}])
+    db.add(m)
+    db.flush()
+    _apply_detail(m, d, key, "", db)
+    _set_tm_status(m, d)
+    if not m.expiry_date and exp[:4].isdigit():
+        m.expiry_date = exp
+    if not m.mark_type:
+        m.mark_type = "Combinată" if m.has_image else "Verbală"
+    m.tmview_checked += "|img"
+    return m
+
+
+def _old_lookup(numbers: List[str]) -> Dict[str, Optional[Dict]]:
+    """Nr. vechi → rezultatul TMview exact (sau None dacă nu există); cheile lipsă = lot neverificat."""
+    data = _regsearch(numbers, "applicationNumber")
+    out: Dict[str, Optional[Dict]] = {}
+    if data is None:
+        return out
+    for n in numbers:
+        res = data.get(n)
+        if not isinstance(res, dict) or res.get("status") != 200:
+            continue
+        hit = next((x for x in (res.get("hits") or []) + (res.get("first") or [])
+                    if (x.get("applicationNumber") or "").zfill(6) == n), None)
+        out[n] = hit
+    return out
+
+
+def fetch_old(num: str) -> Optional[str]:
+    """La cerere (căutare / deschidere după nr.): o marcă veche lipsă adusă imediat din TMview."""
+    num = num.strip().lstrip("0").zfill(6)
+    if not num.isdigit() or int(num) > OLD_MAX:
+        return None
+    hit = _old_lookup([num]).get(num)
+    if not hit:
+        return None
+    try:
+        r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": hit.get("ST13")}, timeout=60)
+        d = r.json() if r.status_code == 200 else None
+    except Exception as e:
+        print(f"[OLD] {num}: {type(e).__name__}: {e}")
+        return None
+    if not isinstance(d, dict) or not d.get("applicationNumber"):
+        return None
+    db = SessionLocal()
+    try:
+        m = _create_old(db, num, hit, d)
+        db.commit()
+        if m is None:
+            stub = db.get(Mark, num)
+            return stub.app_number if stub else None
+        return m.app_number
+    finally:
+        db.close()
+
+
+def enrich_old(batches: int = 8) -> None:
+    """Treptat, toate numerele vechi de depozit (loturi de 25 în căutarea TMview, apoi fișa fiecărei
+    mărci găsite). Cursorul se păstrează în baza de date — reluarea continuă de unde a rămas."""
+    import time as _t
+    if old_job["running"] or job["running"] or _tmview_paused():
+        return
+    old_job.update(running=True, done=0, found=0)
+    try:
+        db = SessionLocal()
+        try:
+            cur = db.get(SourceFile, OLD_CURSOR)
+            start = int(cur.label) if cur and (cur.label or "").isdigit() else 1
+        finally:
+            db.close()
+        old_job["next"] = start
+        fails = 0
+        for _ in range(batches):
+            if start > OLD_MAX or _tmview_paused():
+                break
+            nums = [str(i).zfill(6) for i in range(start, min(start + 25, OLD_MAX + 1))]
+            db = SessionLocal()
+            try:
+                have = {a for (a,) in db.query(Mark.app_number).filter(Mark.app_number.in_(nums))}
+            finally:
+                db.close()
+            look = [n for n in nums if n not in have]
+            found = _old_lookup(look) if look else {}
+            if look and not found:
+                fails += 1
+                if fails >= 3:
+                    print("[OLD] TMview nu răspunde — pauză")
+                    _tmview_backoff()
+                    break
+                continue
+            fails = 0
+            ok = True
+            for n in look:
+                if n not in found:
+                    ok = False                    # rezultat lipsă — lotul se reia
+                    continue
+                hit = found[n]
+                if not hit:
+                    continue
+                d = None
+                for _i in range(3):
+                    try:
+                        r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": hit.get("ST13")}, timeout=120)
+                        d = r.json() if r.status_code == 200 else None
+                    except Exception as e:
+                        print(f"[OLD] {n}: {type(e).__name__}")
+                    if isinstance(d, dict) and d.get("applicationNumber"):
+                        break
+                    d = None
+                    _t.sleep(5)
+                if d is None:
+                    ok = False
+                    continue
+                db = SessionLocal()
+                try:
+                    if _create_old(db, n, hit, d) is not None:
+                        old_job["found"] += 1
+                    db.commit()
+                except Exception as e:
+                    db.rollback()
+                    print(f"[OLD] {n}: {type(e).__name__}: {e}")
+                finally:
+                    db.close()
+                old_job["done"] += 1
+                _t.sleep(1)
+            if not ok:
+                break                             # cursorul rămâne pe lot; se reia la rularea următoare
+            start = int(nums[-1]) + 1
+            db = SessionLocal()
+            try:
+                db.merge(SourceFile(url=OLD_CURSOR, kind="cursor", label=str(start), status="cursor"))
+                db.commit()
+            finally:
+                db.close()
+            old_job["next"] = start
+    finally:
+        old_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")

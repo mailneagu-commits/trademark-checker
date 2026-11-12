@@ -62,6 +62,9 @@ def _startup():
     # Siglele originale din TMview, pentru toate mărcile — pornește singur după terminarea încărcării.
     sched.add_job(ingest.enrich_logos_hq, "interval", minutes=15, id="tmview_logos_hq",
                   misfire_grace_time=1800, coalesce=True)
+    # Mărcile vechi (depozit până în 2001) încetate înainte de arhiva BOPI online — din TMview, treptat.
+    sched.add_job(ingest.enrich_old, "interval", minutes=10, id="tmview_old",
+                  misfire_grace_time=1800, coalesce=True)
     sched.start()
     if os.environ.get("AUTO_INGEST", "1") == "1":
         ingest.start_background()
@@ -243,6 +246,17 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
     if not (n or h or r or classes.strip() or status):
         raise HTTPException(400, "Introduceți o denumire, un titular, un reprezentant, o clasă sau alegeți o stare.")
     order = []
+    num = re.sub(r"[\s/.-]", "", name).upper()
+    if n and re.fullmatch(r"(M\d{8,10}|\d{1,7}|\d?R\d{1,7})", num):
+        # Căutare după nr. de depozit / de marcă (032709, M 2016 01750, 3R29570) — sau denumire cu cifre.
+        digits = re.sub(r"^\d?R", "", num)
+        keys = {num, digits.zfill(6), "R" + digits.lstrip("0")}
+        byno = or_(Mark.app_number.in_(keys), Mark.reg_number == digits.lstrip("0"))
+        if num.isdigit() and not db.query(Mark.app_number).filter(byno).first() and not ingest._tmview_paused():
+            ingest.fetch_old(num)          # marcă veche, încetată înainte de arhiva BOPI online
+        q = q.filter(or_(byno, Mark.name_norm.contains(n)))
+        order.append(case((byno, 0), else_=1))
+        n = ""
     if n:
         if mode == "similar" and IS_PG:
             sim = func.similarity(Mark.name_norm, n)
@@ -300,7 +314,15 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
 
 @app.get("/api/mark/{app_number}")
 def mark(app_number: str, db: Session = Depends(get_db)):
-    m = db.get(Mark, app_number.replace(" ", "").upper())
+    key = app_number.replace(" ", "").upper()
+    m = db.get(Mark, key)
+    if not m and key.isdigit():
+        # Marcă veche (depozit dinainte de 2001), încetată înainte de arhiva BOPI online — din TMview.
+        key = key.zfill(6)
+        m = db.get(Mark, key)
+        if not m and not ingest._tmview_paused():
+            got = ingest.fetch_old(key)
+            m = db.get(Mark, got) if got else None
     if not m:
         raise HTTPException(404, "Marca nu există în registru.")
     week = (date.today() - timedelta(days=7)).isoformat()
@@ -379,7 +401,7 @@ def public_status(db: Session = Depends(get_db)):
             "first_bulletin": db.query(func.min(SourceFile.bulletin_date)).filter(SourceFile.status == "ok").scalar(),
             "publications": [db.query(func.min(Mark.publication_date)).filter(Mark.publication_date != "").scalar(),
                              db.query(func.max(Mark.publication_date)).scalar()],
-            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "logos_hq": ingest.hq_job, "courts": courts.job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
+            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "logos_hq": ingest.hq_job, "old_marks": ingest.old_job, "courts": courts.job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
             "errors": [{"bopi": e.label, "error": (e.error or "")[:160]} for e in
                        db.query(SourceFile).filter(SourceFile.status == "error").limit(10)],
             "changes_applied": dict(db.query(MarkChange.kind, func.count(MarkChange.id))
