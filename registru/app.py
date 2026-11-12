@@ -223,6 +223,14 @@ def stats(db: Session = Depends(get_db)):
             "last_bulletin": last, "week": week}
 
 
+# Același reprezentant, scris în BOPI în multe feluri (și preluat între timp de altă formă juridică):
+# o căutare după oricare variantă le dă pe toate. PROTECTMARK SRL a preluat mărcile Cabinetului individual
+# Cătălin Neagu; schimbarea de reprezentant nu apare întotdeauna în BOPI (ex. OPERA share management).
+REP_GROUPS = [
+    ("protectmark", "protect mark", "catalin neagu", "neagu c catalin", "neagu catalin"),
+]
+
+
 @app.get("/api/search")
 def search(name: str = "", holder: str = "", representative: str = "", classes: str = "",
            status: str = "", mode: str = "contains", page: int = 1, size: int = 20,
@@ -246,7 +254,8 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
     if h:
         q = q.filter(Mark.holder_norm.contains(h))
     if r:
-        q = q.filter(Mark.rep_norm.contains(r))
+        group = next((g for g in REP_GROUPS if any(a in r or r in a for a in g)), None)
+        q = q.filter(or_(*[Mark.rep_norm.contains(a) for a in group]) if group else Mark.rep_norm.contains(r))
     wanted = [int(c) for c in classes.replace(";", ",").replace(" ", ",").split(",") if c.strip().isdigit()]
     today = date.today().isoformat()
     # Încetate după TMview (anulare, decădere, renunțare) — nu mai sunt valabile.
