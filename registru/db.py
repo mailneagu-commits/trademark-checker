@@ -466,6 +466,26 @@ def _archive_needfix():
         db.close()
 
 
+def _retry_renewed_logos():
+    """O singură dată: mărcile reînnoite vechi fără logo, încercate în timpul blocajelor TMview, se
+    reîncearcă (ELECTRA 3R29570 avea logo în TMview, dar apărea „Verbală”, fără imagine)."""
+    marker = "migration:retry-renewed-logos-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for m in db.query(Mark).filter(Mark.app_number.like("R%"), Mark.has_image == False,  # noqa: E712
+                                       Mark.tmview_checked.like("%|img%")).all():
+            m.tmview_checked = m.tmview_checked.replace("|img", "")
+            n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="logo mărci reînnoite v1"))
+        db.commit()
+        print(f"[DB] Mărci reînnoite fără logo, de reîncercat în TMview: {n}")
+    finally:
+        db.close()
+
+
 def _reprocess_changes_for_renewal_no():
     """O singură dată: tabelele de modificări se recitesc, ca reînnoirile să rețină numărul tipărit
     de OSIM („008649(5R)”) — prefixul R / 2R / 5R al mărcii nu se mai deduce din date."""
@@ -674,7 +694,8 @@ def init_db():
     _flag_archive_publication()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
-    threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix()), daemon=True).start()
+    threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos()),
+                     daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
     _drop_part_duplicates()

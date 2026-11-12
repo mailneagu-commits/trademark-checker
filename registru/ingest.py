@@ -632,14 +632,17 @@ def start_background(limit: Optional[int] = None) -> bool:
 
 # ── Denumirile mărcilor reînnoite înregistrate înainte de arhivă (TMview) ─────────
 
-def _fetch_logo(db, m: Mark, st13: str) -> bool:
-    """Logo-ul din TMview, prin aplicația de monitorizare (TMview blochează cererile directe)."""
+def _fetch_logo(db, m: Mark, st13: str) -> Optional[bool]:
+    """Logo-ul din TMview, prin aplicația de monitorizare (TMview blochează cererile directe).
+    True = salvat; False = TMview spune clar că marca n-are logo; None = nu s-a putut afla (blocaj)."""
     try:
         r = requests.get(f"{MONITOR_API}/api/tm-image", params={"st13": st13}, timeout=90)
     except Exception:
-        return False
+        return None
+    if r.status_code != 200 or not r.headers.get("content-type", "").startswith("image"):
+        return None
     # 1458 octeți = imaginea-substitut TMview pentru mărcile fără logo.
-    if r.status_code != 200 or not r.headers.get("content-type", "").startswith("image") or len(r.content) <= 1600:
+    if len(r.content) <= 1600:
         return False
     try:
         import io
@@ -777,22 +780,35 @@ def enrich_logos_hq(limit: int = 150) -> None:
 
 
 def enrich_logos(limit: int = 300) -> int:
-    """Logo-urile mărcilor deja completate din TMview înainte să aducem și imaginile."""
+    """Logo-urile mărcilor reînnoite vechi („R…”): BOPI nu le are, iar fără logo tipul era dedus
+    greșit „Verbală” (ELECTRA 3R29570). „|img” se pune doar după un răspuns clar de la TMview."""
+    import time as _t
+    if _tmview_paused():
+        return 0
     db = SessionLocal()
-    n = 0
+    n = unknown = 0
     try:
         q = db.query(Mark).filter(Mark.app_number.like("R%"), Mark.has_image == False,  # noqa: E712
-                                  Mark.tmview_checked != "", ~Mark.tmview_checked.like("%img")).limit(limit)
-        for m in q:
+                                  Mark.tmview_checked.isnot(None), Mark.tmview_checked != "",
+                                  ~Mark.tmview_checked.like("%|img%")).limit(limit)
+        for m in q.all():
             ev = next((e for e in (m.events or []) if e.get("bopi") == "TMview"), None)
-            st13 = (ev or {}).get("st13") or ""
+            st13 = (ev or {}).get("st13") or _stub_st13(m)
             if not st13 and ev:
                 dep = re.sub(r"\D", "", ev.get("detail", ""))
                 st13 = f"RO50000000{dep.zfill(7)}" if dep else ""
-            if st13 and _fetch_logo(db, m, st13):
-                n += 1
+            res = _fetch_logo(db, m, st13) if st13 else False
+            if res is None:
+                unknown += 1
+                if unknown >= 10:
+                    _tmview_backoff()
+                    break
+                continue
+            unknown = 0
+            n += bool(res)
             m.tmview_checked = (m.tmview_checked or "") + "|img"
             db.commit()
+            _t.sleep(1)
     finally:
         db.close()
     return n

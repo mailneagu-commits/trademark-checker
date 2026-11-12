@@ -44,7 +44,7 @@ def _startup():
     # trezește cu întârziere, iar fără toleranță (implicit 1 s) rulările se pierd.
     sched.add_job(ingest.enrich_renewed, "interval", minutes=20, id="tmview_enrich",
                   misfire_grace_time=900, coalesce=True)
-    sched.add_job(ingest.enrich_logos, "interval", hours=1, minutes=30, id="tmview_logos",
+    sched.add_job(ingest.enrich_logos, "interval", minutes=20, id="tmview_logos",
                   misfire_grace_time=1800, coalesce=True)
     # Produsele și serviciile mărcilor reînnoite vechi, din fișa TMview.
     sched.add_job(ingest.enrich_goods, "interval", minutes=5, id="tmview_goods",
