@@ -875,7 +875,7 @@ def _set_tm_status(m: Mark, d: Dict) -> None:
 
 
 def refresh_status(app: str) -> None:
-    """La deschiderea unei mărci: starea TMview se reverifică în fundal (o dată pe săptămână)."""
+    """La deschiderea unei mărci: fișa TMview (stare, produse, date) se reaplică în fundal."""
     if _tmview_paused():
         return
     with _hq_lock:
@@ -893,7 +893,11 @@ def refresh_status(app: str) -> None:
                 try:
                     m = db.get(Mark, app)
                     if m is not None:
+                        tc = m.tmview_checked or ""
+                        _apply_detail(m, d, app, tc)          # toată fișa, nu doar starea
                         _set_tm_status(m, d)
+                        if "|gs3" not in tc:
+                            m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
                         db.commit()
                 finally:
                     db.close()
@@ -960,6 +964,63 @@ def enrich_status(limit: int = 600) -> None:
             _t.sleep(1)
     finally:
         status_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")
+
+
+def _apply_detail(m: Mark, d: Dict, app: str, tc: str) -> bool:
+    """Fișa TMview aplicată unei mărci: produse (unde lipsesc / BOPI dă doar titlul clasei), adresă,
+    date, tip, Viena, reprezentant, stare. Întoarce True dacă s-au completat produse."""
+    found = False
+    gs = {}
+    for g in d.get("goodAndServices") or []:
+        c = str(g.get("niceClass") or "").lstrip("0")
+        if c.isdigit() and (g.get("goodsAndServices") or "").strip():
+            gs[c] = (gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip()
+    if gs and (app.startswith("R") or "|gsneed" in tc or not m.goods):
+        keep = {str(c) for c in (m.classes or [])} if app.startswith("R") else set()
+        # Doar clasele reînnoite (o reînnoire poate fi parțială); fără clase cunoscute — toate.
+        m.goods = {c: t for c, t in gs.items() if not keep or c in keep} or m.goods
+        if not m.classes or not app.startswith("R"):
+            m.classes = sorted(int(c) for c in gs)
+        found = True
+    elif gs and m.goods:
+        # BOPI a tipărit uneori doar titlul clasei („Publicitate; conducerea… lucrări de birou.”),
+        # iar fișa OSIM / TMview are lista completă care îl continuă — o preferăm (M 2016 01750).
+        g = dict(m.goods)
+        for c, t in gs.items():
+            old = (g.get(c) or "").strip().rstrip(".")
+            if old and len(t) > len(old) + 20 and norm(t).startswith(norm(old)[:60]):
+                g[c] = t
+        if g != m.goods:
+            m.goods = g
+            found = True
+    a = (d.get("applicants_detail") or [{}])[0]
+    if a.get("address") and (not m.holder_address or m.holder_address == m.holder):
+        m.holder_address = ", ".join(p for p in [m.holder or a.get("name"), a["address"].replace("\n", ", "),
+                                                 a.get("country") or ""] if p)
+    if not m.filing_date and d.get("applicationDate"):
+        m.filing_date = d["applicationDate"][:10]
+    # Restul câmpurilor fișei, doar unde lipsesc (BOPI rămâne sursa de referință).
+    rd = (d.get("registrationDate") or "")[:10]
+    # Mărcile din arhivă au ca dată a înregistrării data buletinului lunar care a publicat
+    # înregistrarea; TMview are data exactă (decizia) — o preferăm.
+    from_monthly = any(e.get("chapter") == "Mărci înregistrate" and e.get("date") == m.reg_date
+                       and "/" in (e.get("bopi") or "") for e in (m.events or []))
+    if rd[:4].isdigit() and (not m.reg_date or (from_monthly and not app.startswith("R"))):
+        m.reg_date = rd
+    if not m.publication_date and (d.get("publicationDate") or "")[:4].isdigit():
+        m.publication_date = d["publicationDate"][:10]
+    if not m.mark_type and TM_FEATURE.get(d.get("markFeature") or ""):
+        m.mark_type = TM_FEATURE[d["markFeature"]]
+    if not m.vienna and d.get("viennaCodes"):
+        m.vienna = ", ".join(str(v) for v in d["viennaCodes"])
+    r0 = (d.get("representatives") or [{}])[0]
+    if not m.representative and r0.get("fullName"):
+        m.representative = r0["fullName"].strip()
+        m.rep_norm = norm(m.representative)
+        m.representative_address = ", ".join(p for p in [m.representative, (r0.get("fullAddress") or "").replace("\n", ", ")] if p)
+    if d.get("markCurrentStatusCode") and not app.startswith("R"):
+        _set_tm_status(m, d)                  # aceeași fișă — starea fără cerere în plus
+    return found
 
 
 def enrich_goods(limit: int = 1500) -> None:
@@ -1037,56 +1098,8 @@ def enrich_goods(limit: int = 1500) -> None:
                         m.tmview_checked = tc[:-4] + "|gsf|img" if tc.endswith("|img") else tc + "|gsf"
                         db.commit()
                         continue
-                    gs = {}
-                    for g in d.get("goodAndServices") or []:
-                        c = str(g.get("niceClass") or "").lstrip("0")
-                        if c.isdigit() and (g.get("goodsAndServices") or "").strip():
-                            gs[c] = (gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip()
-                    if gs and (app.startswith("R") or "|gsneed" in tc or not m.goods):
-                        keep = {str(c) for c in (m.classes or [])} if app.startswith("R") else set()
-                        # Doar clasele reînnoite (o reînnoire poate fi parțială); fără clase cunoscute — toate.
-                        m.goods = {c: t for c, t in gs.items() if not keep or c in keep} or m.goods
-                        if not m.classes or not app.startswith("R"):
-                            m.classes = sorted(int(c) for c in gs)
+                    if _apply_detail(m, d, app, tc):
                         goods_job["found"] += 1
-                    elif gs and m.goods:
-                        # BOPI a tipărit uneori doar titlul clasei („Publicitate; conducerea… lucrări de birou.”),
-                        # iar fișa OSIM / TMview are lista completă care îl continuă — o preferăm (M 2016 01750).
-                        g = dict(m.goods)
-                        for c, t in gs.items():
-                            old = (g.get(c) or "").strip().rstrip(".")
-                            if old and len(t) > len(old) + 20 and norm(t).startswith(norm(old)[:60]):
-                                g[c] = t
-                        if g != m.goods:
-                            m.goods = g
-                            goods_job["found"] += 1
-                    a = (d.get("applicants_detail") or [{}])[0]
-                    if a.get("address") and (not m.holder_address or m.holder_address == m.holder):
-                        m.holder_address = ", ".join(p for p in [m.holder or a.get("name"), a["address"].replace("\n", ", "),
-                                                                 a.get("country") or ""] if p)
-                    if not m.filing_date and d.get("applicationDate"):
-                        m.filing_date = d["applicationDate"][:10]
-                    # Restul câmpurilor fișei, doar unde lipsesc (BOPI rămâne sursa de referință).
-                    rd = (d.get("registrationDate") or "")[:10]
-                    # Mărcile din arhivă au ca dată a înregistrării data buletinului lunar care a publicat
-                    # înregistrarea; TMview are data exactă (decizia) — o preferăm.
-                    from_monthly = any(e.get("chapter") == "Mărci înregistrate" and e.get("date") == m.reg_date
-                                       and "/" in (e.get("bopi") or "") for e in (m.events or []))
-                    if rd[:4].isdigit() and (not m.reg_date or (from_monthly and not app.startswith("R"))):
-                        m.reg_date = rd
-                    if not m.publication_date and (d.get("publicationDate") or "")[:4].isdigit():
-                        m.publication_date = d["publicationDate"][:10]
-                    if not m.mark_type and TM_FEATURE.get(d.get("markFeature") or ""):
-                        m.mark_type = TM_FEATURE[d["markFeature"]]
-                    if not m.vienna and d.get("viennaCodes"):
-                        m.vienna = ", ".join(str(v) for v in d["viennaCodes"])
-                    r0 = (d.get("representatives") or [{}])[0]
-                    if not m.representative and r0.get("fullName"):
-                        m.representative = r0["fullName"].strip()
-                        m.rep_norm = norm(m.representative)
-                        m.representative_address = ", ".join(p for p in [m.representative, (r0.get("fullAddress") or "").replace("\n", ", ")] if p)
-                    if d.get("markCurrentStatusCode") and not app.startswith("R"):
-                        _set_tm_status(m, d)                  # aceeași fișă — starea fără cerere în plus
                     tc = tc.replace("|gs2", "")
                     m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
                     goods_job["done"] += 1

@@ -294,7 +294,7 @@ def mark(app_number: str, db: Session = Depends(get_db)):
     if not m:
         raise HTTPException(404, "Marca nu există în registru.")
     week = (date.today() - timedelta(days=7)).isoformat()
-    if m.app_number.startswith("M") and (m.tm_status_checked or "") < week:
+    if m.app_number.startswith("M") and ((m.tm_status_checked or "") < week or "|gs3" not in (m.tmview_checked or "")):
         ingest.refresh_status(m.app_number)        # starea din TMview, reverificată în fundal
     return _detail(m, db)
 
