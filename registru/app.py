@@ -462,6 +462,18 @@ def quality_chars(limit: int = 4000, ch: str = "", db: Session = Depends(get_db)
     return {"scanned": n, "top": ctx.most_common(300)}
 
 
+@app.get("/api/coverage")
+def coverage(year: int = 0, db: Session = Depends(get_db)):
+    """Acoperirea bazei: mărci pe an de depozit (după nr. „M an …”) și ce a dat fiecare buletin citit."""
+    if year:
+        rows = db.query(SourceFile).filter(SourceFile.bulletin_date.like(f"{year}-%")).order_by(SourceFile.bulletin_date).all()
+        return {"year": year, "sources": [{"label": r.label, "kind": r.kind, "date": r.bulletin_date, "status": r.status,
+                                           "marks": r.marks, "error": (r.error or "")[:200]} for r in rows]}
+    yr = func.substr(Mark.app_number, 2, 4)
+    by = dict(db.query(yr, func.count(Mark.app_number)).filter(Mark.app_number.like("M%")).group_by(yr).all())
+    return {"marks_by_deposit_year": dict(sorted(by.items()))}
+
+
 @app.get("/api/quality")
 def quality(db: Session = Depends(get_db)):
     """Raport de calitate a datelor citite din BOPI (doar date publice): câte mărci au câmpuri
