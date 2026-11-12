@@ -254,7 +254,7 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
     if h:
         q = q.filter(Mark.holder_norm.contains(h))
     if r:
-        group = next((g for g in REP_GROUPS if any(a in r or r in a for a in g)), None)
+        group = next((g for g in REP_GROUPS if any(a in r for a in g)), None)
         q = q.filter(or_(*[Mark.rep_norm.contains(a) for a in group]) if group else Mark.rep_norm.contains(r))
     wanted = [int(c) for c in classes.replace(";", ",").replace(" ", ",").split(",") if c.strip().isdigit()]
     today = date.today().isoformat()
