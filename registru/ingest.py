@@ -1051,6 +1051,9 @@ def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
             m.goods = g
             found = True
     a = (d.get("applicants_detail") or [{}])[0]
+    if not m.holder and (a.get("name") or "").strip():
+        m.holder = a["name"].strip()             # titular necitit din BOPI (ex. M 2019 00680)
+        m.holder_norm = norm(m.holder)
     if a.get("address") and (not m.holder_address or m.holder_address == m.holder):
         m.holder_address = ", ".join(p for p in [m.holder or a.get("name"), a["address"].replace("\n", ", "),
                                                  a.get("country") or ""] if p)
@@ -1447,6 +1450,44 @@ def fetch_old(num: str) -> Optional[str]:
         db.close()
 
 
+def _fill_names(limit: int = 100) -> None:
+    """Mărci fără denumire și fără logo (BOPI n-a putut fi citit, iar fișa TMview nu are denumirea):
+    denumirea din căutarea TMview după nr. de depozit; fără denumire acolo → marcă figurativă, logo."""
+    from sqlalchemy import or_
+    from db import IS_PG
+    db = SessionLocal()
+    try:
+        todo = [a for (a,) in db.query(Mark.app_number).filter(
+            Mark.app_number.op("~")(r"^M\d{9}$") if IS_PG else Mark.app_number.like("M%"),
+            Mark.name == "", Mark.has_image == False,  # noqa: E712
+            or_(Mark.tmview_checked.is_(None), ~Mark.tmview_checked.like("%|nm%"))).limit(limit)]
+    finally:
+        db.close()
+    for i in range(0, len(todo), 25):
+        batch = todo[i:i + 25]
+        found = _old_lookup(batch)
+        if not found:
+            return
+        db = SessionLocal()
+        try:
+            for a in batch:
+                if a not in found:
+                    continue
+                m = db.get(Mark, a)
+                hit = found[a] or {}
+                name = (hit.get("tmName") or "").strip()
+                if name:
+                    m.name, m.name_norm = name, norm(name)
+                    m.mark_type = m.mark_type or "Verbală"
+                elif hit.get("ST13"):
+                    _fetch_logo(db, m, hit["ST13"])
+                m.tmview_checked = (m.tmview_checked or "") + "|nm"
+                old_job["names"] = old_job.get("names", 0) + bool(name)
+            db.commit()
+        finally:
+            db.close()
+
+
 def enrich_old(batches: int = 8) -> None:
     """Treptat, toate numerele vechi de depozit (loturi de 25 în căutarea TMview, apoi fișa fiecărei
     mărci găsite). Cursorul se păstrează în baza de date — reluarea continuă de unde a rămas."""
@@ -1462,6 +1503,7 @@ def enrich_old(batches: int = 8) -> None:
         finally:
             db.close()
         old_job["next"] = start
+        _fill_names()
         fails = 0
         for _ in range(batches):
             if start > OLD_END or _tmview_paused():

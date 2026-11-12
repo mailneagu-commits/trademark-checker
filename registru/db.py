@@ -525,6 +525,35 @@ def _fix_old_filing():
         db.close()
 
 
+def _fix_read_errors_v2():
+    """A doua trecere: coduri INID cu spațiu („SOBYC (511 )Produse…”) și mărci fără titular / fără clase,
+    trimise la completarea din TMview (fișa are titularul și produsele)."""
+    marker = "migration:read-errors-v2"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        import re as _re
+        from sqlalchemy import Text, cast, or_
+        tail = _re.compile(r"\s*\(\s*5[0-9]{2}\s*\)\s*(Clasificare|Produse|Culori|Mențiuni|Men).*$", _re.S)
+        n = 0
+        for m in db.query(Mark).filter(Mark.name.op("~")(r"\(\s*5[0-9]{2}\s*\)") if IS_PG else Mark.name.like("%5%)%")):
+            fixed = tail.sub("", m.name or "").strip()
+            if fixed and fixed != m.name:
+                m.name, m.name_norm = fixed, norm(fixed)
+                n += 1
+        for m in db.query(Mark).filter(Mark.app_number.like("M%"), or_(
+                Mark.holder == "", Mark.holder.is_(None), Mark.classes.is_(None),
+                cast(Mark.classes, Text).in_(["[]", "null"]))):
+            if "|needfix" not in (m.tmview_checked or ""):
+                m.tmview_checked = (m.tmview_checked or "").replace("|gs3", "") + "|needfix"
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="erori de citire v2"))
+        db.commit()
+        print(f"[DB] Denumiri curățate (v2): {n}")
+    finally:
+        db.close()
+
+
 def _fix_read_errors():
     """O singură dată: erori de citire rămase în denumiri (coduri INID lipite: „( 531) Clasificare Viena…”,
     capitolul „Produse și/sau servicii…” luat drept denumire) și mărci înregistrate fără dată de expirare
@@ -776,7 +805,7 @@ def init_db():
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
-                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing()),
+                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
