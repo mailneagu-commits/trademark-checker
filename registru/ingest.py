@@ -1052,6 +1052,8 @@ def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
                                                  a.get("country") or ""] if p)
     if not m.filing_date and d.get("applicationDate"):
         m.filing_date = d["applicationDate"][:10]
+    if not m.expiry_date and (d.get("expiryDate") or "")[:4].isdigit():
+        m.expiry_date = d["expiryDate"][:10]
     # Restul câmpurilor fișei, doar unde lipsesc (BOPI rămâne sursa de referință).
     rd = (d.get("registrationDate") or "")[:10]
     # Mărcile din arhivă au ca dată a înregistrării data buletinului lunar care a publicat

@@ -508,6 +508,48 @@ def _recompute_reps():
         db.close()
 
 
+def _fix_read_errors():
+    """O singură dată: erori de citire rămase în denumiri (coduri INID lipite: „( 531) Clasificare Viena…”,
+    capitolul „Produse și/sau servicii…” luat drept denumire) și mărci înregistrate fără dată de expirare
+    / de depozit (de completat din TMview)."""
+    marker = "migration:read-errors-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        import re as _re
+        from ingest import expiry_of
+        bad = _re.compile(r"^\s*Produse (și|şi|si)/sau servicii|\(\s*5[0-9]{2}\)|\b5[0-9]{2}\)\s*(Clasificare|Produse|Culori)")
+        tail = _re.compile(r"\s*\(?\s*(531|511|591|526)\s*\)\s*(Clasificare Viena|Produse|Culori|Mențiuni|Men).*$", _re.S)
+        n_name = n_exp = 0
+        for m in db.query(Mark).yield_per(2000):
+            name = m.name or ""
+            if name and bad.search(name):
+                fixed = tail.sub("", name).strip()
+                if not fixed or bad.search(fixed):
+                    # Denumirea dintr-un alt document al mărcii (alt buletin), dacă e curată.
+                    alt = [e.get("name") for e in sorted(m.events or [], key=lambda e: e.get("date") or "")
+                           if e.get("name") and not bad.search(e["name"])]
+                    fixed = alt[-1] if alt else ""
+                if fixed != name:
+                    m.name, m.name_norm = fixed, norm(fixed)
+                    n_name += 1
+                    if not fixed and "|needfix" not in (m.tmview_checked or ""):
+                        m.tmview_checked = (m.tmview_checked or "").replace("|gs3", "") + "|needfix"
+            if m.status == "Înregistrată" and (not m.expiry_date or not m.filing_date):
+                exp = expiry_of(m)
+                if exp and exp != m.expiry_date:
+                    m.expiry_date = exp
+                    n_exp += 1
+                elif "|needfix" not in (m.tmview_checked or ""):
+                    m.tmview_checked = (m.tmview_checked or "").replace("|gs3", "") + "|needfix"
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="erori de citire v1"))
+        db.commit()
+        print(f"[DB] Denumiri curățate: {n_name}; expirări completate: {n_exp}")
+    finally:
+        db.close()
+
+
 def _reprocess_changes_for_renewal_no():
     """O singură dată: tabelele de modificări se recitesc, ca reînnoirile să rețină numărul tipărit
     de OSIM („008649(5R)”) — prefixul R / 2R / 5R al mărcii nu se mai deduce din date."""
@@ -717,7 +759,7 @@ def init_db():
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
-                                     _recompute_reps()),
+                                     _recompute_reps(), _fix_read_errors()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
