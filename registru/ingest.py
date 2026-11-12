@@ -1371,7 +1371,17 @@ def fetch_old(num: str) -> Optional[str]:
         return None
     hit = _old_lookup([num]).get(num)
     if not hit:
-        return None
+        # Poate fi nr. de marcă (înregistrare) vechi, nu de depozit (ex. 008472).
+        data = _regsearch([num], "registrationNumber") or {}
+        res = data.get(num) if isinstance(data.get(num), dict) else {}
+        hit = next((x for x in (res.get("hits") or []) + (res.get("first") or [])
+                    if (x.get("registrationNumber") or "").zfill(6) == num
+                    and (x.get("applicationNumber") or "").isdigit()), None)
+        if not hit:
+            return None
+        num = hit["applicationNumber"].zfill(6)
+        if int(num) > OLD_MAX:
+            return None
     try:
         r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": hit.get("ST13")}, timeout=60)
         d = r.json() if r.status_code == 200 else None
