@@ -886,7 +886,17 @@ def refresh_status(app: str) -> None:
 
     def run():
         try:
-            r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": "RO50000" + app}, timeout=60)
+            st13 = "RO50000" + app
+            if app.startswith("R"):
+                db0 = SessionLocal()
+                try:
+                    m0 = db0.get(Mark, app)
+                    st13 = _stub_st13(m0) if m0 else ""
+                finally:
+                    db0.close()
+                if not st13:
+                    return
+            r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": st13}, timeout=60)
             d = r.json() if r.status_code == 200 else None
             if isinstance(d, dict) and d and "error" not in d:
                 db = SessionLocal()
@@ -894,7 +904,7 @@ def refresh_status(app: str) -> None:
                     m = db.get(Mark, app)
                     if m is not None:
                         tc = m.tmview_checked or ""
-                        _apply_detail(m, d, app, tc)          # toată fișa, nu doar starea
+                        _apply_detail(m, d, app, tc, db)      # toată fișa, nu doar starea
                         _set_tm_status(m, d)
                         if "|gs3" not in tc:
                             m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
@@ -956,7 +966,7 @@ def enrich_status(limit: int = 600) -> None:
                 m = db.get(Mark, app)
                 if m is not None:
                     tc = m.tmview_checked or ""
-                    _apply_detail(m, d, app, tc)          # aceeași fișă: produse complete, data exactă a înregistrării
+                    _apply_detail(m, d, app, tc, db)      # aceeași fișă: produse complete, data exactă a înregistrării
                     _set_tm_status(m, d)
                     if "|gs3" not in tc:
                         m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
@@ -970,7 +980,7 @@ def enrich_status(limit: int = 600) -> None:
         status_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")
 
 
-def _apply_detail(m: Mark, d: Dict, app: str, tc: str) -> bool:
+def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
     """Fișa TMview aplicată unei mărci: produse (unde lipsesc / BOPI dă doar titlul clasei), adresă,
     date, tip, Viena, reprezentant, stare. Întoarce True dacă s-au completat produse."""
     found = False
@@ -1013,8 +1023,15 @@ def _apply_detail(m: Mark, d: Dict, app: str, tc: str) -> bool:
         m.reg_date = rd
     if not m.publication_date and (d.get("publicationDate") or "")[:4].isdigit():
         m.publication_date = d["publicationDate"][:10]
-    if not m.mark_type and TM_FEATURE.get(d.get("markFeature") or ""):
+    # Tipul: din TMview unde lipsește; la mărcile reînnoite vechi („R…”) tipul era doar dedus (fără logo →
+    # „Verbală”), deci fișa TMview are prioritate (ELECTRA 3R29570: „Combined”, logo alb-negru).
+    if TM_FEATURE.get(d.get("markFeature") or "") and (not m.mark_type or app.startswith("R")):
         m.mark_type = TM_FEATURE[d["markFeature"]]
+    if db is not None and d.get("markImageURI") and not m.has_image:
+        st13 = re.search(r"/(RO[0-9A-Z]+)$", d["markImageURI"])
+        if st13:
+            _fetch_logo(db, m, st13.group(1))
+            m.mark_type = TM_FEATURE.get(d.get("markFeature") or "") or m.mark_type
     if not m.vienna and d.get("viennaCodes"):
         m.vienna = ", ".join(str(v) for v in d["viennaCodes"])
     r0 = (d.get("representatives") or [{}])[0]
@@ -1103,7 +1120,7 @@ def enrich_goods(limit: int = 1500) -> None:
                         m.tmview_checked = tc[:-4] + "|gsf|img" if tc.endswith("|img") else tc + "|gsf"
                         db.commit()
                         continue
-                    if _apply_detail(m, d, app, tc):
+                    if _apply_detail(m, d, app, tc, db):
                         goods_job["found"] += 1
                     tc = tc.replace("|gs2", "")
                     m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
