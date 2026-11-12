@@ -34,8 +34,9 @@ def _startup():
     init_db()
     from apscheduler.schedulers.background import BackgroundScheduler
     sched = BackgroundScheduler(timezone="Europe/Bucharest")
-    # Buletinul zilnic apare după-amiaza; reîncercăm seara dacă întârzie.
-    sched.add_job(ingest.start_background, "cron", day_of_week="mon-fri", hour="16,19", minute=30,
+    # Buletinul zilnic apare după-amiaza (monitorizarea ProMonitor îl citește după 15:00): îl citim și noi
+    # la 15:30, ca mărcile noi să apară în ProWatch odată cu monitorizarea; reîncercăm la 16:30 și 19:30.
+    sched.add_job(ingest.start_background, "cron", day_of_week="mon-fri", hour="15,16,19", minute=30,
                   id="bopi_ingest", misfire_grace_time=1800, coalesce=True)
     import mailer
     sched.add_job(mailer.keepalive, "cron", day_of_week="mon", hour=9, id="brevo_keepalive")
