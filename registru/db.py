@@ -554,6 +554,29 @@ def _fix_read_errors_v2():
         db.close()
 
 
+def _fix_garbled_names():
+    """Denumiri tipărite cu font cu codificare proprie („!"#$%&’"#()*…”, ex. M 2001 04258): se golesc și
+    se completează din TMview."""
+    marker = "migration:garbled-names-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from bopi_parser import garbled_name
+        n = 0
+        for m in db.query(Mark).filter(Mark.name.op("~")(r'^[!"#$%&]') if IS_PG else Mark.name.like("!%")):
+            if garbled_name(m.name):
+                m.name, m.name_norm = "", ""
+                m.tmview_checked = (m.tmview_checked or "").replace("|nm", "") + "|gname"
+                m.events = [dict(e, name="") if garbled_name(e.get("name") or "") else e for e in (m.events or [])]
+                n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="denumiri cu font codificat v1"))
+        db.commit()
+        print(f"[DB] Denumiri cu font codificat golite (se iau din TMview): {n}")
+    finally:
+        db.close()
+
+
 def _fix_read_errors():
     """O singură dată: erori de citire rămase în denumiri (coduri INID lipite: „( 531) Clasificare Viena…”,
     capitolul „Produse și/sau servicii…” luat drept denumire) și mărci înregistrate fără dată de expirare
@@ -805,7 +828,7 @@ def init_db():
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
-                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2()),
+                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()

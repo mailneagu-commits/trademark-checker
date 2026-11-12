@@ -103,11 +103,26 @@ def fix_record(x, legacy: Optional[bool] = None):
     if isinstance(x, str):
         return fix_legacy_diacritics(x) if legacy else re.sub(r"\s*˜{3,}\s*", " ", x).strip() if "˜" in x else x
     if isinstance(x, dict):
-        return {k: (fix_goods(v) if k == "goods" and isinstance(v, dict) else fix_record(v, legacy))
-                for k, v in x.items()}
+        out = {k: (fix_goods(v) if k == "goods" and isinstance(v, dict) else fix_record(v, legacy))
+               for k, v in x.items()}
+        if isinstance(out.get("name"), str) and garbled_name(out["name"]):
+            out["name"] = ""                   # completată apoi din TMview (ingest._fill_names)
+        return out
     if isinstance(x, list):
         return [fix_record(v, legacy) for v in x]
     return x
+
+
+_GLYPHS = set('!"#$%&\'’()*+,-./:;<=>?@[\\]^_`{|}~')
+
+
+def garbled_name(name: str) -> bool:
+    """Denumire tipărită cu un font cu codificare proprie (BOPI 2002–2003): textul extras e o înșiruire
+    de semne „!"#$%&’"#()*&+…” — nu se poate decoda; denumirea se ia din TMview."""
+    t = (name or "").replace(" ", "")
+    if len(t) < 4:
+        return False
+    return sum(c in _GLYPHS for c in t) / len(t) >= 0.6 and t[0] in '!"#$%&'
 
 
 def fix_goods(goods: dict) -> dict:

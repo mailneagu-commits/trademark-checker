@@ -1451,7 +1451,7 @@ def fetch_old(num: str) -> Optional[str]:
 
 
 def _fill_names(limit: int = 100) -> None:
-    """Mărci fără denumire și fără logo (BOPI n-a putut fi citit, iar fișa TMview nu are denumirea):
+    """Mărci fără denumire (BOPI n-a putut fi citit / font cu codificare proprie; fișa TMview nu are denumirea):
     denumirea din căutarea TMview după nr. de depozit; fără denumire acolo → marcă figurativă, logo."""
     from sqlalchemy import or_
     from db import IS_PG
@@ -1459,8 +1459,9 @@ def _fill_names(limit: int = 100) -> None:
     try:
         todo = [a for (a,) in db.query(Mark.app_number).filter(
             Mark.app_number.op("~")(r"^M\d{9}$") if IS_PG else Mark.app_number.like("M%"),
-            Mark.name == "", Mark.has_image == False,  # noqa: E712
-            or_(Mark.tmview_checked.is_(None), ~Mark.tmview_checked.like("%|nm%"))).limit(limit)]
+            Mark.name == "",
+            or_(Mark.tmview_checked.is_(None), ~Mark.tmview_checked.like("%|nm%"))).order_by(
+            Mark.has_image.asc(), Mark.tmview_checked.like("%|gname%").desc()).limit(limit)]
     finally:
         db.close()
     for i in range(0, len(todo), 25):
