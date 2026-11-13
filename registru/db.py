@@ -593,32 +593,34 @@ def _fix_party_names():
             pn = party_name(full)
             return pn if short and pn != short and pn.startswith(short + ",") else ""
         n = 0
-        q = db.query(Mark).filter(or_(Mark.holder_address.like("%,%,%"), Mark.representative_address.like("%,%,%")))
-        for i, m in enumerate(q.yield_per(2000)):
-            evs, changed = [], False
-            rep = longer(m.representative, m.representative_address)
-            for e in m.events or []:
-                e2 = dict(e)
-                h = longer(e.get("holder") or "", e.get("holder_address") or "")
+        # Cheile întâi, apoi pe bucăți — commit-ul în timpul unui cursor de pe server l-ar închide.
+        keys = [k for (k,) in db.query(Mark.app_number).filter(
+            or_(Mark.holder_address.like("%,%,%"), Mark.representative_address.like("%,%,%")))]
+        for i in range(0, len(keys), 2000):
+            for m in db.query(Mark).filter(Mark.app_number.in_(keys[i:i + 2000])):
+                evs, changed = [], False
+                rep = longer(m.representative, m.representative_address)
+                for e in m.events or []:
+                    e2 = dict(e)
+                    h = longer(e.get("holder") or "", e.get("holder_address") or "")
+                    if h:
+                        e2["holder"] = h
+                    if rep and e.get("representative") == m.representative:
+                        e2["representative"] = rep
+                    changed |= e2 != e
+                    evs.append(e2)
+                if changed:
+                    m.events = evs
+                if rep:
+                    m.representative, m.rep_norm = rep, norm(rep)
+                h = longer(m.holder, m.holder_address)
                 if h:
-                    e2["holder"] = h
-                if rep and e.get("representative") == m.representative:
-                    e2["representative"] = rep
-                changed |= e2 != e
-                evs.append(e2)
-            if changed:
-                m.events = evs
-            if rep:
-                m.representative, m.rep_norm = rep, norm(rep)
-            h = longer(m.holder, m.holder_address)
-            if h:
-                m.holder, m.holder_norm = h, norm(h)
-            if changed:
-                _recompute_holder(m)
-            if changed or rep or h:
-                n += 1
-            if i % 5000 == 4999:
-                db.commit()
+                    m.holder, m.holder_norm = h, norm(h)
+                if changed:
+                    _recompute_holder(m)
+                if changed or rep or h:
+                    n += 1
+            db.commit()
         db.add(SourceFile(url=marker, kind="migration", status="ok", label="nume titular/mandatar cu virgulă v1"))
         db.commit()
         print(f"[DB] Titulari / mandatari refăcuți (nume cu virgulă): {n}")
