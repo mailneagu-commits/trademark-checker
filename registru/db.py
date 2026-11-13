@@ -628,6 +628,46 @@ def _fix_party_names():
         db.close()
 
 
+def _fix_date_reps():
+    """Liste de reînnoiri cu coloane decalate: data reînnoirii citită drept mandatar („17/01/2022”,
+    REFLEKTOR TV) — se scoate, iar expirarea se prelungește cu 10 ani când data = vechea expirare."""
+    marker = "migration:date-reps-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from ingest import _DATE_LIKE, _renewal_from, _current_rep, expiry_of
+        keys = [k for (k,) in db.query(Mark.app_number).filter(Mark.status == "Înregistrată")]
+        n = 0
+        for i in range(0, len(keys), 2000):
+            for m in db.query(Mark).filter(Mark.app_number.in_(keys[i:i + 2000])):
+                bad = [e for e in (m.events or []) if _DATE_LIKE.match(e.get("representative") or "")]
+                if not bad and not _DATE_LIKE.match(m.representative or ""):
+                    continue
+                evs = []
+                for e in m.events or []:
+                    if _DATE_LIKE.match(e.get("representative") or ""):
+                        e = dict(e)
+                        iso = _renewal_from(e["representative"], m.expiry_date)
+                        if iso and e.get("chapter") == "Reînnoire" and not e.get("expiry"):
+                            e["expiry"] = iso
+                            e["detail"] = f"valabilă până la {iso[8:10]}.{iso[5:7]}.{iso[:4]}"
+                        e.pop("representative")
+                    evs.append(e)
+                m.events = evs
+                if _DATE_LIKE.match(m.representative or ""):
+                    m.representative = m.rep_norm = m.representative_address = ""
+                _current_rep(m)
+                m.expiry_date = expiry_of(m)
+                n += 1
+            db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="mandatar = dată v1"))
+        db.commit()
+        print(f"[DB] Mandatari citiți ca dată, corectați: {n}")
+    finally:
+        db.close()
+
+
 def _retry_failed_sources():
     """Buletine marcate „citite” deși descărcarea a eșuat (eroare de conexiune la osim.ro, 0 mărci):
     se recitesc la următoarea rulare."""
@@ -917,7 +957,7 @@ def init_db():
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
                                      _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources(),
-                                     _fix_party_names()),
+                                     _fix_party_names(), _fix_date_reps()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()

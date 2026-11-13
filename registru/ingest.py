@@ -357,6 +357,14 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
         if norm(c.new_value) != norm(m.name):
             m.name, m.name_norm = c.new_value, norm(c.new_value)
     elif c.kind == "renewal":
+        dl = _DATE_LIKE.match(c.representative or "")
+        if dl:
+            # Coloane decalate în lista de reînnoiri (REFLEKTOR TV): în locul mandatarului e data de la
+            # care curge reînnoirea = vechea expirare → noua expirare e cu 10 ani mai târziu.
+            iso = _renewal_from(c.representative, m.expiry_date)
+            if iso and not c.expiry:
+                c.expiry = iso
+            c.representative = ""
         detail = f"valabilă până la {c.expiry[8:10]}.{c.expiry[5:7]}.{c.expiry[:4]}" if c.expiry else ""
         if c.new_value:      # titularul la data reînnoirii (doar numele)
             holder_ev = {"holder": c.new_value.strip(), "holder_address": "", "prio": 0}
@@ -448,6 +456,15 @@ def _stub_filing_date(m: Mark) -> None:
 
 
 _DATE_LIKE = re.compile(r"^\s*\d{1,2}[./]\d{1,2}[./]\d{2,4}\s*$")
+
+
+def _renewal_from(d: str, expiry: str) -> str:
+    """„17/01/2022” cu expirarea curentă 2022-01-17 → 2032-01-17 (altfel „”)."""
+    p = re.findall(r"\d+", d or "")
+    if len(p) != 3 or len(p[2]) != 4:
+        return ""
+    iso = f"{p[2]}-{int(p[1]):02d}-{int(p[0]):02d}"
+    return f"{int(p[2]) + 10}{iso[4:]}" if iso == (expiry or "")[:10] else ""
 
 
 def _current_rep(m: Mark) -> None:

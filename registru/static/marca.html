@@ -111,6 +111,10 @@ function repAxis(m) {
     if (last && same(last.rep, e.representative || "")) continue;
     segs.push({ rep: e.representative || "", ev: e });
   }
+  // Mandatarul actual din TMview / registru, când documentele BOPI citite nu îl numesc (ex. Lektor L).
+  const lastSeg = segs[segs.length - 1];
+  if (segs.length && m.representative && !same(lastSeg.rep, m.representative))
+    segs.push({ rep: m.representative, ev: { date: m.tm_status_date || "", chapter: "Reprezentant actual", bopi: "registrul OSIM (TMview)" } });
   if (!segs.length) return "";
   const nm = r => r ? r : "fără reprezentant";
   // Același format ca „Istoricul mărcii”: data pe axă, documentul BOPI, schimbarea veche → nouă.
