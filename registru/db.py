@@ -709,6 +709,25 @@ def _reread_cid_changes():
         db.close()
 
 
+def _reread_empty_changes():
+    """Tabelele de modificări 2002–2009 (titlul capitolului urmat de text pe aceeași pagină, reînnoiri
+    „2R013986”) citite cu 0 rânduri: se recitesc cu parserul corectat."""
+    marker = "migration:reread-empty-changes-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for s in db.query(SourceFile).filter(SourceFile.kind == "changes", SourceFile.status == "ok"):
+            if not s.marks:
+                s.status, n = "error", n + 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="recitire modificări goale v1"))
+        db.commit()
+        print(f"[DB] Tabele de modificări goale, de recitit: {n}")
+    finally:
+        db.close()
+
+
 def _retry_failed_sources():
     """Buletine marcate „citite” deși descărcarea a eșuat (eroare de conexiune la osim.ro, 0 mărci):
     se recitesc la următoarea rulare."""
@@ -996,6 +1015,7 @@ def init_db():
     _flag_archive_publication()
     _reread_cid_sources()
     _reread_cid_changes()
+    _reread_empty_changes()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),

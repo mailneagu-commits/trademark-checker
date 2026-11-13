@@ -219,9 +219,31 @@ def _chapter_of(page_text: str) -> Optional[Tuple[str, bool]]:
     """Pagina de titlu a unui capitol / tabel: câteva rânduri, fără blocuri INID.
     Întoarce (capitol, e_tabel) sau None."""
     lines = [l.strip() for l in _clean_lines(page_text).split("\n") if l.strip()]
-    if not lines or len(lines) > 8 or RE_APP.search(page_text):
+    if not lines or RE_APP.search(page_text):
+        return None
+    if len(lines) > 8:
+        # Formatul 2002–2009: titlul numerotat al capitolului urmat de text explicativ pe aceeași pagină
+        # („3. MODIFICĂRI ŞI TRANSMITERI DE DREPTURI / CONFORM ART. 34…”, „4. LISTA MĂRCILOR REÎNNOITE / Se
+        # publică…”). Doar titlul (rândurile cu majuscule de după număr) decide capitolul.
+        k = next((i for i, l in enumerate(lines[:4]) if re.match(r"^\d{1,2}\s*\.\s*[A-ZĂÂÎŞŢȘȚ]{3}", l)
+                  and l == l.upper() and len(l) >= 12), None)
+        if k is None:
+            return None
+        title = []
+        for l in lines[k:k + 4]:
+            if title and l != l.upper():
+                break
+            title.append(l)
+        head = " ".join(title).upper()
+        if "EXPIR" in head or "URMEAZ" in head:
+            return "other", True          # tabelul mărcilor care urmează să expire — nu sunt reînnoiri
+        for key, words in CHAPTERS:
+            if any(w in head for w in words):
+                return key, ("TABEL" in head)
         return None
     head = " ".join(lines).upper()
+    if "URMEAZ" in head and "EXPIR" in head:
+        return "other", True
     for key, words in CHAPTERS:
         if any(w in head for w in words):
             return key, ("TABEL" in head)
@@ -679,6 +701,11 @@ def parse_changes(path: str) -> Iterator[Dict]:
                         # „008649(5R)” — a câta reînnoire, tipărită de OSIM (fără sufix = prima).
                         nr = re.search(r"\((\d*)\s*R\)", cells[0])
                         rec["renewal_no"] = int(nr.group(1) or 1) if nr else 0
+                        # Formatul 2002–2009: „2R013986” / „R025278” (a câta reînnoire + R + nr. marcă).
+                        pr = re.match(r"^\s*(\d?)R\s*(\d{3,7})\b", cells[0])
+                        if pr:
+                            rec["reg_number"] = pr.group(2).lstrip("0")
+                            rec["renewal_no"] = int(pr.group(1) or 1)
                         rec["expiry"] = _iso(cells[1] if len(cells) > 1 else "")
                         rec["new"] = cells[3] if len(cells) > 3 else ""
                         rec["rep"] = cells[4] if len(cells) > 4 else ""      # (740) mandatarul la reînnoire
