@@ -623,6 +623,7 @@ def parse_changes(path: str) -> Iterator[Dict]:
     lim_text: List[str] = []
     lim_rows: List[List[str]] = []
     with pdfplumber.open(path) as pdf:
+        _prepare_fonts(pdf)
         for page in pdf.pages:
             clean = page.filter(lambda o: WATERMARK not in (o.get("fontname") or ""))
             full = clean.extract_text() or ""
@@ -718,6 +719,7 @@ TABLE_CODES = ("(210)", "(151)", "(111)", "(732)", "(540)", "(511)")
 
 def parse_old_tables(path: str) -> Iterator[Tuple[str, Dict]]:
     with pdfplumber.open(path) as pdf:
+        _prepare_fonts(pdf)
         for page in pdf.pages:
             words = page.extract_words(keep_blank_chars=False, use_text_flow=False)
             codes = {w["text"]: w for w in words if w["text"] in TABLE_CODES}

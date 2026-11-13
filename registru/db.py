@@ -688,6 +688,27 @@ def _reread_cid_sources():
         db.close()
 
 
+def _reread_cid_changes():
+    """Tabelele de modificări (reînnoiri, cesiuni, schimbări de titular…) din BOPI 10/2017–04/2019:
+    același font fără tabel de caractere, citite cu 0 rânduri — se recitesc cu recunoașterea literelor."""
+    marker = "migration:reread-cid-changes-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for s in db.query(SourceFile).filter(SourceFile.kind == "changes", SourceFile.status == "ok",
+                                             SourceFile.bulletin_date >= "2017-10-01",
+                                             SourceFile.bulletin_date <= "2019-04-30"):
+            if not s.marks:
+                s.status, n = "error", n + 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="recitire modificări cid v1"))
+        db.commit()
+        print(f"[DB] Tabele de modificări de recitit cu recunoașterea literelor: {n}")
+    finally:
+        db.close()
+
+
 def _retry_failed_sources():
     """Buletine marcate „citite” deși descărcarea a eșuat (eroare de conexiune la osim.ro, 0 mărci):
     se recitesc la următoarea rulare."""
@@ -974,6 +995,7 @@ def init_db():
     _link_known_deposits()
     _flag_archive_publication()
     _reread_cid_sources()
+    _reread_cid_changes()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
