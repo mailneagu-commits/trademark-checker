@@ -105,14 +105,19 @@ def fix_record(x, legacy: Optional[bool] = None):
     if isinstance(x, dict):
         out = {k: (fix_goods(v) if k == "goods" and isinstance(v, dict) else fix_record(v, legacy))
                for k, v in x.items()}
-        if isinstance(out.get("name"), str) and garbled_name(out["name"]):
-            out["name"] = ""                   # completată apoi din TMview (ingest._fill_names)
+        if isinstance(out.get("name"), str):
+            # Coduri INID lipite de denumire („JIDVEI … 531) Clasificare Viena…”, „SOBYC (511 )Produse…”).
+            out["name"] = _INID_TAIL.sub("", out["name"]).strip()
+            if garbled_name(out["name"]) or _PRODUCTS_AS_NAME.match(out["name"]):
+                out["name"] = ""               # completată apoi din TMview (ingest._fill_names)
         return out
     if isinstance(x, list):
         return [fix_record(v, legacy) for v in x]
     return x
 
 
+_INID_TAIL = re.compile(r"\s*\(?\s*5[0-9]{2}\s*\)\s*(Clasificare|Produse|Culori|Mențiuni|Men).*$", re.S)
+_PRODUCTS_AS_NAME = re.compile(r"^\s*Produse (și|şi|si)/sau servicii")
 _GLYPHS = set('!"#$%&\'’()*+,-./:;<=>?@[\\]^_`{|}~')
 
 

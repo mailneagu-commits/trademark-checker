@@ -598,6 +598,22 @@ def _retry_failed_sources():
         db.close()
 
 
+def _flag_unreadable_sources():
+    """Buletinele lunare „citite” cu 0 mărci (fonturi fără tabel de caractere) — marcate necitibile."""
+    marker = "migration:unreadable-sources-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        for s in db.query(SourceFile).filter(SourceFile.status == "ok", SourceFile.marks == 0,
+                                             SourceFile.kind.in_(["monthly", "daily", "admise"])):
+            s.status = "unreadable"
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="buletine necitibile v1"))
+        db.commit()
+    finally:
+        db.close()
+
+
 def _fix_read_errors():
     """O singură dată: erori de citire rămase în denumiri (coduri INID lipite: „( 531) Clasificare Viena…”,
     capitolul „Produse și/sau servicii…” luat drept denumire) și mărci înregistrate fără dată de expirare
@@ -849,7 +865,7 @@ def init_db():
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
-                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources()),
+                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()

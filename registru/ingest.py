@@ -591,8 +591,13 @@ def process_source(src: Dict) -> int:
                 n += 1
                 if n % 200 == 0:
                     db.commit()
+        # Un buletin de mărci din care nu s-a citit nimic (fonturi fără tabel de caractere — „(cid:2)…”,
+        # ca BOPI 10/2017–04/2019) nu e „citit”: rămâne vizibil în /api/coverage, iar mărcile vin din TMview.
+        status = "unreadable" if n == 0 and src["kind"] in ("monthly", "daily", "admise") else "ok"
+        if status == "unreadable":
+            print(f"[INGEST] {src['label']}: 0 mărci citite — buletin necitibil")
         db.merge(SourceFile(url=src["url"], kind=src["kind"], label=src["label"],
-                            bulletin_date=src["date"].isoformat(), status="ok", marks=n,
+                            bulletin_date=src["date"].isoformat(), status=status, marks=n, error="",
                             processed_at=datetime.utcnow()))
         db.commit()
         return n
@@ -611,7 +616,7 @@ def run_ingest(limit: Optional[int] = None) -> None:
                    finished_at=None)
         db = SessionLocal()
         try:
-            done = {u for (u,) in db.query(SourceFile.url).filter(SourceFile.status.in_(("ok", "missing")))}
+            done = {u for (u,) in db.query(SourceFile.url).filter(SourceFile.status.in_(("ok", "missing", "unreadable")))}
         finally:
             db.close()
         todo = [s for s in list_sources() if s["url"] not in done]
