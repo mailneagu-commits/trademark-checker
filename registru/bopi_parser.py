@@ -135,6 +135,27 @@ def fix_goods(goods: dict) -> dict:
     return {c: fix_cp1252_goods(fix_record(t, legacy)) for c, t in goods.items()}
 
 
+# Numele titularului / mandatarului se termină la prima virgulă — afară de forma juridică sau de
+# denumirea firmei care continuă după virgulă: „APPLE, INC.”, „BRASOVEANU, CERNAT SI ASOCIATII”,
+# „SZATMARI-FILIP, ROȘU - SOCIETATE CIVILĂ DE AVOCAȚI”, „X CO., LTD.”.
+_FIRM_PART = re.compile(
+    r"^(?:INC|LTD|LLC|LLP|L\.?P|CO|CORP|CORPORATION|COMPANY|LIMITED|PLC|GMBH|AG|KG|SE|N\.?V|B\.?V|S\.?A|"
+    r"S\.?P\.?A|S\.?L|S\.?A\.?S|S\.?R\.?L|S\.?C\.?A|S\.?P\.?R\.?L|S\.?C\.?P\.?I|SARL|SAS|PTY|"
+    r"PTE|OY|AB|AS|A/S|ApS|K\.?K|S\.?C|IFN|SPA)\.?(?:\s*(?:LTD|LIMITED|INC|LLC)\.?)?$"
+    r"|\b(?:ASOCIA[TȚŢ]II|ASOCIA[TȚŢ]ILOR|AVOCA[TȚŢ]I|SOCIETATE|SOCIET[AĂ][TȚŢ]II|CABINET|PARTENERII|PARTNERS|"
+    r"ASSOCIATES|& ?CO)\b", re.I)
+
+
+def party_name(full: str) -> str:
+    parts = [p.strip() for p in (full or "").split(",")]
+    name = parts[0]
+    for p in parts[1:]:
+        if not p or re.search(r"\d", p) or not _FIRM_PART.search(p):
+            break
+        name += ", " + p
+    return name
+
+
 def compact_app(raw: str) -> str:
     return re.sub(r"\s+", "", raw or "").upper()
 
@@ -302,7 +323,7 @@ def parse_block(block: str) -> Optional[Dict]:
     for key in ("holder", "representative"):
         full = rec.get(key + "_address", "")
         if full:
-            rec[key] = full.split(",")[0].strip()
+            rec[key] = party_name(full)
     return rec
 
 

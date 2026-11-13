@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 
 import requests
 
-from bopi_parser import display_app, fix_record, parse_changes, parse_pdf
+from bopi_parser import display_app, fix_record, parse_changes, parse_pdf, party_name
 from db import Mark, MarkChange, MarkImage, SessionLocal, SourceFile, norm
 
 OSIM = "https://www.osim.ro"
@@ -344,12 +344,12 @@ def _apply_change(db, m: Mark, c: MarkChange) -> None:
     detail = ""
     holder_ev = {}
     if c.kind in ("Cesiune", "Fuziune", "Modificare titular", "Modificare adresă titular") and c.new_value:
-        new_holder = c.new_value.split(",")[0].strip()
+        new_holder = party_name(c.new_value)
         holder_ev = {"holder": new_holder, "holder_address": c.new_value, "prio": 2,
                      "holder_before": (c.old_value or "").strip()}
-        detail = f"titular nou: {new_holder}" + (f" (anterior: {c.old_value.split(',')[0].strip()})" if c.old_value else "")
+        detail = f"titular nou: {new_holder}" + (f" (anterior: {party_name(c.old_value)})" if c.old_value else "")
     elif c.kind == "Cesiune parțială" and c.new_value:
-        detail = f"cesiune parțială către {c.new_value.split(',')[0].strip()}"
+        detail = f"cesiune parțială către {party_name(c.new_value)}"
     elif c.kind == "representation" and c.new_value:
         detail = f"„{c.old_value}” → „{c.new_value}”"
         holder_ev["name"] = c.new_value

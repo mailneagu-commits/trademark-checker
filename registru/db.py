@@ -577,6 +577,55 @@ def _fix_garbled_names():
         db.close()
 
 
+def _fix_party_names():
+    """Titular / mandatar tăiat la prima virgulă („BRASOVEANU” în loc de „BRASOVEANU, CERNAT SI
+    ASOCIATII”, „APPLE” în loc de „APPLE, INC.”): se refac din adresa completă."""
+    marker = "migration:party-names-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from sqlalchemy import or_
+        from bopi_parser import party_name
+        from ingest import _recompute_holder
+
+        def longer(short, full):
+            pn = party_name(full)
+            return pn if short and pn != short and pn.startswith(short + ",") else ""
+        n = 0
+        q = db.query(Mark).filter(or_(Mark.holder_address.like("%,%,%"), Mark.representative_address.like("%,%,%")))
+        for i, m in enumerate(q.yield_per(2000)):
+            evs, changed = [], False
+            rep = longer(m.representative, m.representative_address)
+            for e in m.events or []:
+                e2 = dict(e)
+                h = longer(e.get("holder") or "", e.get("holder_address") or "")
+                if h:
+                    e2["holder"] = h
+                if rep and e.get("representative") == m.representative:
+                    e2["representative"] = rep
+                changed |= e2 != e
+                evs.append(e2)
+            if changed:
+                m.events = evs
+            if rep:
+                m.representative, m.rep_norm = rep, norm(rep)
+            h = longer(m.holder, m.holder_address)
+            if h:
+                m.holder, m.holder_norm = h, norm(h)
+            if changed:
+                _recompute_holder(m)
+            if changed or rep or h:
+                n += 1
+            if i % 5000 == 4999:
+                db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="nume titular/mandatar cu virgulă v1"))
+        db.commit()
+        print(f"[DB] Titulari / mandatari refăcuți (nume cu virgulă): {n}")
+    finally:
+        db.close()
+
+
 def _retry_failed_sources():
     """Buletine marcate „citite” deși descărcarea a eșuat (eroare de conexiune la osim.ro, 0 mărci):
     se recitesc la următoarea rulare."""
@@ -865,7 +914,8 @@ def init_db():
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
-                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources()),
+                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources(),
+                                     _fix_party_names()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
