@@ -38,6 +38,17 @@ def _startup():
     # ProMonitor), ca mărcile noi să apară în ProWatch odată cu monitorizarea; reîncercăm la 16:00 și 19:00.
     sched.add_job(ingest.start_background, "cron", day_of_week="mon-fri", hour="15,16,19", minute=0,
                   id="bopi_ingest", misfire_grace_time=1800, coalesce=True)
+    # Buletine de recitit (eroare / regulă nouă de citire): nu așteptăm următoarea zi lucrătoare.
+    from db import SessionLocal as _S, SourceFile as _SF
+    _s = _S()
+    try:
+        if _s.query(_SF).filter(_SF.status == "error").first() is not None:
+            from datetime import datetime as _dt, timedelta as _td
+            from zoneinfo import ZoneInfo as _Z
+            sched.add_job(ingest.start_background, "date", id="bopi_reread",
+                          run_date=_dt.now(_Z("Europe/Bucharest")) + _td(minutes=3))
+    finally:
+        _s.close()
     import mailer
     sched.add_job(mailer.keepalive, "cron", day_of_week="mon", hour=9, id="brevo_keepalive")
     # Denumirile mărcilor reînnoite vechi, din TMview — la 20 de minute, în paralel cu încărcarea.

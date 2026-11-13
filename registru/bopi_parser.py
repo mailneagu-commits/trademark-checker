@@ -364,6 +364,20 @@ def _annex_goods(text: str) -> Dict[str, Dict[str, str]]:
     return out
 
 
+def _prepare_fonts(pdf) -> None:
+    """BOPI 10/2017–04/2019: fonturi Arial fără tabel de caractere (text „(cid:N)”) — literele se
+    recunosc după formă (cidfix). Regula: marca se ia întotdeauna din buletinul OSIM; TMview doar
+    completează ce lipsește."""
+    import cidfix
+    cidfix.FIX.clear()
+    for page in pdf.pages[1:15]:
+        n = sum(1 for c in page.chars if c["text"].startswith("(cid:"))
+        page.flush_cache()
+        if n > 100:
+            print(f"[CIDFIX] fonturi refăcute: {cidfix.prepare(pdf)}")
+            return
+
+
 def parse_pdf(path: str, kind: str, want_images: bool = True,
               have_image: Optional[set] = None) -> Iterator[Tuple[str, Dict]]:
     """Generează (capitol, marcă) pentru fiecare bloc INID din PDF.
@@ -383,6 +397,7 @@ def parse_pdf(path: str, kind: str, want_images: bool = True,
     table_names: Dict[str, str] = {}
     mode, is_table = "inid", False
     with pdfplumber.open(path) as pdf:
+        _prepare_fonts(pdf)
         for page in pdf.pages:
             clean = page.filter(lambda o: WATERMARK not in (o.get("fontname") or ""))
             full = clean.extract_text() or ""

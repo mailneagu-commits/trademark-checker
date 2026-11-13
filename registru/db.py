@@ -668,6 +668,26 @@ def _fix_date_reps():
         db.close()
 
 
+def _reread_cid_sources():
+    """BOPI 10/2017–04/2019, „necitibile” (fonturi fără tabel de caractere): se recitesc acum, cu
+    recunoașterea literelor după formă (cidfix) — mărcile se iau din buletin, nu din TMview."""
+    marker = "migration:reread-cid-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for s in db.query(SourceFile).filter(SourceFile.status == "unreadable",
+                                             SourceFile.bulletin_date >= "2017-10-01",
+                                             SourceFile.bulletin_date <= "2019-04-30"):
+            s.status, n = "error", n + 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="recitire buletine cid v1"))
+        db.commit()
+        print(f"[DB] Buletine de recitit cu recunoașterea literelor: {n}")
+    finally:
+        db.close()
+
+
 def _retry_failed_sources():
     """Buletine marcate „citite” deși descărcarea a eșuat (eroare de conexiune la osim.ro, 0 mărci):
     se recitesc la următoarea rulare."""
@@ -953,6 +973,7 @@ def init_db():
     _repair_stubs_and_holders()
     _link_known_deposits()
     _flag_archive_publication()
+    _reread_cid_sources()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),

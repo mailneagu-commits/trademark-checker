@@ -1333,14 +1333,16 @@ def enrich_renewed(limit: int = 600) -> None:
 # — prima arhivă BOPI publicată online — nu apar în niciun buletin disponibil (ex. 032709 GAZETA
 # MATEMATICA, înregistrată 1999, expirată 2004). Le preluăm din TMview: la cerere și treptat, în fundal.
 OLD_MAX = 57000
-# Seriile parcurse, în ordine: întâi anii ale căror buletine lunare nu se pot citi (fonturi fără tabel de
-# caractere — textul iese „(cid:2)(cid:3)…”: BOPI 10/2017–04/2019, 01–02/2004; mărcile, în mare parte
-# valabile, se iau din TMview), apoi numerotarea veche și „M 2000 / M 2001” (TMview: „M 2000 02551”).
-# Numerele deja în bază se sar fără căutare.
+# REGULA (13.11.2026): marca se ia întotdeauna din buletinul OSIM (BOPI), cu toate datele de acolo —
+# inclusiv din BOPI 10/2017–04/2019, ale căror fonturi fără tabel de caractere se citesc acum prin
+# recunoașterea literelor (cidfix). TMview doar completează ce lipsește din buletin (stare actuală, logo,
+# mandatar nou); direct din TMview vin numai mărcile fără niciun buletin online: numerotarea veche
+# (înainte de 11/2001) și „M 2000 / M 2001” (TMview: „M 2000 02551”). Numerele deja în bază se sar.
 OLD_M_MAX = 12000
-OLD_SERIES = [("M", 2018), ("M", 2017), ("M", 2019), ("M", 2003), ("M", 2004),
-              ("old", 0), ("M", 2000), ("M", 2001)]
-OLD_M_YEARS = tuple(y for k, y in OLD_SERIES if k == "M")
+OLD_SERIES = [("old", 0), ("M", 2000), ("M", 2001)]
+# La cerere (căutare după nr.), marca lipsă se poate aduce din TMview și pentru acești ani.
+OLD_ONDEMAND_YEARS = (2000, 2001, 2003, 2004, 2017, 2018, 2019)
+OLD_M_YEARS = OLD_ONDEMAND_YEARS
 _SPANS = [OLD_MAX if k == "old" else OLD_M_MAX for k, _ in OLD_SERIES]
 OLD_END = sum(_SPANS)
 
@@ -1366,7 +1368,7 @@ def _span_end(i: int) -> int:
 
 def _tm_app(key: str) -> str:
     return f"M {key[1:5]} {key[5:]}" if key.startswith("M") else key
-OLD_CURSOR = "cursor:old-marks-v2"
+OLD_CURSOR = "cursor:old-marks-v3"
 old_job: Dict = {"running": False, "done": 0, "found": 0, "next": 0, "last": None}
 
 
