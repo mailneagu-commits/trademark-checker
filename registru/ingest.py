@@ -1061,6 +1061,13 @@ def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
         m.filing_date = d["applicationDate"][:10]
     if not m.expiry_date and (d.get("expiryDate") or "")[:4].isdigit():
         m.expiry_date = d["expiryDate"][:10]
+    elif (d.get("expiryDate") or "")[:4].isdigit() and d["expiryDate"][:10] > (m.expiry_date or "") \
+            and (d.get("markCurrentStatusCode") or "").lower().startswith("regist") and m.status == "Înregistrată":
+        # Reînnoire nepublicată / din buletin necitibil (BOPI 10/2017–04/2019): TMview are noua expirare.
+        m.events = sorted((m.events or []) + [{"date": date.today().isoformat(), "bopi": "TMview",
+                          "chapter": "Reînnoire", "detail": f"valabilă până la {d['expiryDate'][8:10]}.{d['expiryDate'][5:7]}.{d['expiryDate'][:4]} (din TMview)",
+                          "expiry": d["expiryDate"][:10]}], key=lambda e: e["date"])
+        m.expiry_date = d["expiryDate"][:10]
     # Restul câmpurilor fișei, doar unde lipsesc (BOPI rămâne sursa de referință).
     rd = (d.get("registrationDate") or "")[:10]
     # Mărcile din arhivă au ca dată a înregistrării data buletinului lunar care a publicat
@@ -1298,24 +1305,40 @@ def enrich_renewed(limit: int = 600) -> None:
 # — prima arhivă BOPI publicată online — nu apar în niciun buletin disponibil (ex. 032709 GAZETA
 # MATEMATICA, înregistrată 1999, expirată 2004). Le preluăm din TMview: la cerere și treptat, în fundal.
 OLD_MAX = 57000
-# Apoi seria „M 2000 …” și „M 2001 …” (TMview: „M 2000 02551”), până la ~12000 pe an; cele publicate
-# după 11/2001 sunt deja în bază din arhivă și se sar fără căutare.
-OLD_M_YEARS = (2000, 2001)
+# Seriile parcurse, în ordine: întâi anii ale căror buletine lunare nu se pot citi (fonturi fără tabel de
+# caractere — textul iese „(cid:2)(cid:3)…”: BOPI 10/2017–04/2019, 01–02/2004; mărcile, în mare parte
+# valabile, se iau din TMview), apoi numerotarea veche și „M 2000 / M 2001” (TMview: „M 2000 02551”).
+# Numerele deja în bază se sar fără căutare.
 OLD_M_MAX = 12000
-OLD_END = OLD_MAX + len(OLD_M_YEARS) * OLD_M_MAX
+OLD_SERIES = [("M", 2018), ("M", 2017), ("M", 2019), ("M", 2003), ("M", 2004),
+              ("old", 0), ("M", 2000), ("M", 2001)]
+OLD_M_YEARS = tuple(y for k, y in OLD_SERIES if k == "M")
+_SPANS = [OLD_MAX if k == "old" else OLD_M_MAX for k, _ in OLD_SERIES]
+OLD_END = sum(_SPANS)
 
 
 def _old_key(i: int) -> str:
-    """Poziția cursorului → nr. de depozit: 1..OLD_MAX = „032709”, apoi „M200002551”."""
-    if i <= OLD_MAX:
-        return str(i).zfill(6)
-    j = i - OLD_MAX - 1
-    return f"M{OLD_M_YEARS[j // OLD_M_MAX]}{j % OLD_M_MAX + 1:05d}"
+    """Poziția cursorului (1..OLD_END) → nr. de depozit: „M201705807”, „032709”…"""
+    for (k, y), n in zip(OLD_SERIES, _SPANS):
+        if i <= n:
+            return str(i).zfill(6) if k == "old" else f"M{y}{i:05d}"
+        i -= n
+    return ""
+
+
+def _span_end(i: int) -> int:
+    """Ultima poziție a seriei în care cade i (un lot nu trece dintr-o serie în alta)."""
+    acc = 0
+    for n in _SPANS:
+        acc += n
+        if i <= acc:
+            return acc
+    return OLD_END
 
 
 def _tm_app(key: str) -> str:
     return f"M {key[1:5]} {key[5:]}" if key.startswith("M") else key
-OLD_CURSOR = "cursor:old-marks"
+OLD_CURSOR = "cursor:old-marks-v2"
 old_job: Dict = {"running": False, "done": 0, "found": 0, "next": 0, "last": None}
 
 
@@ -1364,7 +1387,8 @@ def _create_old(db, num: str, t: Dict, d: Dict) -> Optional[Mark]:
              holder=holder, holder_norm=norm(holder), classes=[], goods={},
              tmview_checked=date.today().isoformat() + "|old|gs3",
              events=[{"date": (d.get("markCurrentStatusDate") or date.today().isoformat())[:10], "bopi": "TMview",
-                      "chapter": "Marcă veche (înainte de BOPI online) preluată din TMview",
+                      "chapter": ("Marcă preluată din TMview (buletinul BOPI nu poate fi citit)" if key.startswith("M")
+                                  and int(key[1:5]) >= 2002 else "Marcă veche (înainte de BOPI online) preluată din TMview"),
                       "detail": f"nr. depozit {key}" + (f" · nr. marcă {reg}" if reg else ""), "st13": st13}])
     db.add(m)
     db.flush()
@@ -1509,7 +1533,7 @@ def enrich_old(batches: int = 8) -> None:
         for _ in range(batches):
             if start > OLD_END or _tmview_paused():
                 break
-            stop = min(start + 25, (OLD_MAX if start <= OLD_MAX else OLD_END) + 1)
+            stop = min(start + 25, _span_end(start) + 1)
             idx = list(range(start, stop))
             nums = [_old_key(i) for i in idx]
             db = SessionLocal()

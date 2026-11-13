@@ -577,6 +577,27 @@ def _fix_garbled_names():
         db.close()
 
 
+def _retry_failed_sources():
+    """Buletine marcate „citite” deși descărcarea a eșuat (eroare de conexiune la osim.ro, 0 mărci):
+    se recitesc la următoarea rulare."""
+    marker = "migration:retry-failed-sources-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for s in db.query(SourceFile).filter(SourceFile.status == "ok", SourceFile.error != "",
+                                             SourceFile.kind.in_(["monthly", "changes", "daily", "admise"])):
+            if not s.marks:
+                s.status = "error"
+                n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="buletine eșuate v1"))
+        db.commit()
+        print(f"[DB] Buletine de recitit: {n}")
+    finally:
+        db.close()
+
+
 def _fix_read_errors():
     """O singură dată: erori de citire rămase în denumiri (coduri INID lipite: „( 531) Clasificare Viena…”,
     capitolul „Produse și/sau servicii…” luat drept denumire) și mărci înregistrate fără dată de expirare
@@ -828,7 +849,7 @@ def init_db():
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
-                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names()),
+                                     _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
