@@ -152,7 +152,8 @@ function repLater(m) {
         <div class="logo-box">${m.image ? `<img src="${esc(m.image)}?hq=1" alt="${esc(m.name)}">` : `<span class="muted" style="font-size:1.4rem;font-weight:800;text-align:center;">${esc(m.name)}</span>`}</div>
         <div>
           <h1>${esc(m.name || (m.placeholder ? m.app : "(marcă figurativă)"))}</h1>
-          ${m.placeholder && !m.name ? `<p class="muted small" style="margin:-4px 0 10px;">Marcă reînnoită, înregistrată înainte de 2001 — denumirea nu apare în listele de reînnoiri publicate în BOPI; se completează automat din TMview.</p>` : ""}
+          ${/^date de bază/.test(m.placeholder || "") ? `<p class="muted small" style="margin:-4px 0 10px;">Marcă preluată din TMview cu datele de bază (buletinul BOPI nu poate fi citit sau nu există online) — produsele complete, mandatarul și logo-ul se completează automat.</p>` : ""}
+          ${m.placeholder && !m.name && !/^date de bază/.test(m.placeholder) ? `<p class="muted small" style="margin:-4px 0 10px;">Marcă reînnoită, înregistrată înainte de 2001 — denumirea nu apare în listele de reînnoiri publicate în BOPI; se completează automat din TMview.</p>` : ""}
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">${statusBadge(m.status)}<span class="muted small">${esc(m.mark_type)} · OSIM${m.tm_status ? ` · stare TMview: ${esc(m.tm_status)}${m.tm_status_date ? ` (${dmy(m.tm_status_date)})` : ""}` : ""}</span></div>
           <div class="facts">
             ${fact("Nr. depozit (210)", esc(m.deposit || "necunoscut încă"))}

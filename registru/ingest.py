@@ -893,6 +893,12 @@ def _tmview_paused() -> bool:
     return datetime.utcnow() < tmview_pause["until"]
 
 
+def _weekend() -> bool:
+    """Sâmbăta și duminica nu rulează monitorizarea ProMonitor — ProWatch poate lua mai mult din TMview."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Europe/Bucharest")).weekday() >= 5
+
+
 def _tmview_backoff(hours: float = 0.25) -> None:
     tmview_pause["until"] = datetime.utcnow() + timedelta(hours=hours)
     print(f"[TMVIEW] pauză până la {tmview_pause['until']:%H:%M} UTC")
@@ -1424,6 +1430,107 @@ def _create_old(db, num: str, t: Dict, d: Dict) -> Optional[Mark]:
     return m
 
 
+def _listify(v) -> List:
+    return v if isinstance(v, list) else ([v] if v not in (None, "") else [])
+
+
+def _create_skel(db, num: str, t: Dict) -> Optional[Mark]:
+    """Varianta rapidă: marca intră direct din rezultatul căutării TMview (denumire, titular, clase, stare,
+    depozit, expirare) — fără fișa completă; produsele, mandatarul și logo-ul se completează ulterior
+    (_complete_skels)."""
+    key = num if num.startswith("M") else num.zfill(6)
+    st13 = t.get("ST13") or "RO50000" + key.zfill(10)
+    reg = (t.get("registrationNumber") or "").lstrip("0")
+    stub = db.get(Mark, "R" + reg) if reg else None
+    if stub is not None and _stub_st13(stub) in ("", st13):
+        return None
+    if db.get(Mark, key) is not None:
+        return None
+    code = str(t.get("tradeMarkStatus") or "")
+    status = _old_status(code) if code else ""
+    exp = str(t.get("expiryDate") or "")[:10]
+    filing = str(t.get("applicationDate") or "")[:10]
+    if not filing and exp[:4].isdigit():
+        filing = old_filing(exp, "")
+    holder = "; ".join(str(h).strip() for h in _listify(t.get("applicantName")) if str(h).strip())
+    classes = sorted({int(c) for c in re.findall(r"\d{1,2}", " ".join(map(str, _listify(t.get("niceClass")))))
+                      if 1 <= int(c) <= 45})
+    name = (t.get("tmName") or "").strip()
+    m = Mark(app_number=key, name=name, name_norm=norm(name), status=status, status_date="",
+             filing_date=filing, reg_number=reg if status == "Înregistrată" else "",
+             holder=holder, holder_norm=norm(holder), holder_address=holder, classes=classes, goods={},
+             expiry_date=exp if exp[:4].isdigit() and status == "Înregistrată" else "",
+             tm_status=code, tm_status_date=date.today().isoformat(),
+             mark_type="" if t.get("markImageURI") else ("Verbală" if name else ""),
+             tmview_checked=date.today().isoformat() + "|old|skel",
+             events=[{"date": date.today().isoformat(), "bopi": "TMview",
+                      "chapter": ("Marcă preluată din TMview (buletinul BOPI nu poate fi citit)" if key.startswith("M")
+                                  and int(key[1:5]) >= 2002 else "Marcă veche (înainte de BOPI online) preluată din TMview"),
+                      "detail": f"nr. depozit {key}" + (f" · nr. marcă {reg}" if reg else "")
+                                + " · date de bază, fișa completă urmează", "st13": st13}])
+    db.add(m)
+    db.flush()
+    return m
+
+
+def _complete_skels(limit: int = 150) -> int:
+    """Mărcile intrate cu datele de bază: fișa TMview completă (produse, mandatar, logo, date exacte)."""
+    import time as _t
+    db = SessionLocal()
+    try:
+        todo = [a for (a,) in db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|skel%")).limit(limit)]
+    finally:
+        db.close()
+    n = fails = 0
+    for a in todo:
+        if _tmview_paused():
+            break
+        db = SessionLocal()
+        try:
+            m = db.get(Mark, a)
+            st13 = next((e.get("st13") for e in (m.events or []) if e.get("st13")), "")
+            d = None
+            try:
+                r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": st13}, timeout=120)
+                d = r.json() if r.status_code == 200 else None
+            except Exception as e:
+                print(f"[OLD] fișă {a}: {type(e).__name__}")
+            if not isinstance(d, dict) or not d.get("applicationNumber"):
+                fails += 1
+                if fails >= 3:
+                    _tmview_backoff()
+                    break
+                continue
+            fails = 0
+            if not m.status:
+                m.status = _old_status(d.get("markCurrentStatusCode") or "")
+            if not m.reg_number and m.status == "Înregistrată":
+                m.reg_number = re.sub(r"\D", "", str(d.get("registrationNumber") or "")).lstrip("0")
+            m.status_date = m.status_date or (d.get("registrationDate") or d.get("publicationDate") or "")[:10]
+            exp = (d.get("expiryDate") or "")[:10]
+            if exp[:4].isdigit() and m.filing_date and not d.get("applicationDate"):
+                m.filing_date = old_filing(exp, (d.get("registrationDate") or d.get("publicationDate") or "")[:10])
+            _apply_detail(m, d, a, "", db)
+            _set_tm_status(m, d)
+            if not m.expiry_date and exp[:4].isdigit() and m.status == "Înregistrată":
+                m.expiry_date = exp
+            if not m.mark_type:
+                m.mark_type = "Combinată" if m.has_image else "Verbală"
+            m.events = [dict(e, detail=e["detail"].replace(" · date de bază, fișa completă urmează", ""))
+                        if "fișa completă urmează" in (e.get("detail") or "") else e for e in (m.events or [])]
+            m.tmview_checked = m.tmview_checked.replace("|skel", "|gs3|img")
+            db.commit()
+            n += 1
+        except Exception as e:
+            db.rollback()
+            print(f"[OLD] fișă {a}: {type(e).__name__}: {e}")
+        finally:
+            db.close()
+        _t.sleep(1)
+    old_job["completed"] = old_job.get("completed", 0) + n
+    return n
+
+
 def _old_known(hit: Dict) -> bool:
     """Marca e deja în bază ca reînnoită veche („R…”) cu acest depozit — fără fișa TMview în plus."""
     reg = (hit.get("registrationNumber") or "").lstrip("0")
@@ -1551,8 +1658,12 @@ def enrich_old(batches: int = 8) -> None:
             db.close()
         old_job["next"] = start
         _fill_names()
+        if start > OLD_END:
+            # Toate mărcile sunt în bază cu datele de bază — acum fișele complete.
+            _complete_skels(300 if _weekend() else 150)
+            return
         fails = 0
-        for _ in range(batches):
+        for _ in range(batches * (2 if _weekend() else 1)):
             if start > OLD_END or _tmview_paused():
                 break
             stop = min(start + 25, _span_end(start) + 1)
@@ -1581,32 +1692,18 @@ def enrich_old(batches: int = 8) -> None:
                 hit = found[n]
                 if not hit or _old_known(hit):
                     continue
-                d = None
-                for _i in range(3):
-                    try:
-                        r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": hit.get("ST13")}, timeout=120)
-                        d = r.json() if r.status_code == 200 else None
-                    except Exception as e:
-                        print(f"[OLD] {n}: {type(e).__name__}")
-                    if isinstance(d, dict) and d.get("applicationNumber"):
-                        break
-                    d = None
-                    _t.sleep(5)
-                if d is None:
-                    ok = False
-                    continue
                 db = SessionLocal()
                 try:
-                    if _create_old(db, n, hit, d) is not None:
+                    if _create_skel(db, n, hit) is not None:
                         old_job["found"] += 1
                     db.commit()
                 except Exception as e:
                     db.rollback()
                     print(f"[OLD] {n}: {type(e).__name__}: {e}")
+                    ok = False
                 finally:
                     db.close()
                 old_job["done"] += 1
-                _t.sleep(1)
             if not ok:
                 break                             # cursorul rămâne pe lot; se reia la rularea următoare
             start = idx[-1] + 1

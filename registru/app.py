@@ -34,9 +34,9 @@ def _startup():
     init_db()
     from apscheduler.schedulers.background import BackgroundScheduler
     sched = BackgroundScheduler(timezone="Europe/Bucharest")
-    # Buletinul zilnic apare după-amiaza (monitorizarea ProMonitor îl citește după 15:00): îl citim și noi
-    # la 15:30, ca mărcile noi să apară în ProWatch odată cu monitorizarea; reîncercăm la 16:30 și 19:30.
-    sched.add_job(ingest.start_background, "cron", day_of_week="mon-fri", hour="15,16,19", minute=30,
+    # Buletinul zilnic apare după-amiaza: îl citim la 15:00 (osim.ro, nu TMview — nu încurcă fereastra
+    # ProMonitor), ca mărcile noi să apară în ProWatch odată cu monitorizarea; reîncercăm la 16:00 și 19:00.
+    sched.add_job(ingest.start_background, "cron", day_of_week="mon-fri", hour="15,16,19", minute=0,
                   id="bopi_ingest", misfire_grace_time=1800, coalesce=True)
     import mailer
     sched.add_job(mailer.keepalive, "cron", day_of_week="mon", hour=9, id="brevo_keepalive")
@@ -95,6 +95,8 @@ def _grace_start(months: int = 6) -> str:
 
 def _status(m: Mark) -> str:
     today = date.today().isoformat()
+    if not m.status:
+        return "În curs de completare"
     if m.status == "Înregistrată" and m.expiry_date and m.expiry_date < today:
         if "renew" in (m.tm_status or "").lower():
             return "În curs de reînnoire"
@@ -167,7 +169,8 @@ def _row(m: Mark) -> dict:
         "expiry_date": m.expiry_date or ingest.expiry_of(m), "holder": m.holder, "representative": m.representative,
         "classes": m.classes or [], "image": f"/api/image/{m.app_number}" if m.has_image else "",
         # Mărci reînnoite înregistrate înainte de arhiva disponibilă: denumirea nu apare în BOPI.
-        "placeholder": "denumire necunoscută — marcă reînnoită" if m.app_number.startswith("R") and not m.name else "",
+        "placeholder": "denumire necunoscută — marcă reînnoită" if m.app_number.startswith("R") and not m.name
+                       else "date de bază din TMview — fișa completă urmează" if "|skel" in (m.tmview_checked or "") else "",
     }
 
 
@@ -418,7 +421,7 @@ def public_status(db: Session = Depends(get_db)):
             "first_bulletin": db.query(func.min(SourceFile.bulletin_date)).filter(SourceFile.status == "ok").scalar(),
             "publications": [db.query(func.min(Mark.publication_date)).filter(Mark.publication_date != "").scalar(),
                              db.query(func.max(Mark.publication_date)).scalar()],
-            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "logos_hq": ingest.hq_job, "old_marks": ingest.old_job, "courts": courts.job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
+            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "logos_hq": ingest.hq_job, "old_marks": dict(ingest.old_job, skeletons=db.query(func.count(Mark.app_number)).filter(Mark.tmview_checked.like("%|skel%")).scalar() or 0), "courts": courts.job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
             "errors": [{"bopi": e.label, "error": (e.error or "")[:160]} for e in
                        db.query(SourceFile).filter(SourceFile.status == "error").limit(10)],
             "changes_applied": dict(db.query(MarkChange.kind, func.count(MarkChange.id))

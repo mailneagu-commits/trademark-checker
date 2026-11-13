@@ -369,7 +369,9 @@ async def tm_regsearch(numbers: str, office: str = "RO", mode: str = "basic"):
                 hits = [t for t in d.get("tradeMarks", [])
                         if str(t.get("registrationNumber") or "").lstrip("0") == n.lstrip("0")]
                 out[n] = {"status": r.status_code, "total": d.get("total"), "hits": hits[:3],
-                          "first": [{k: t.get(k) for k in ("ST13", "tmName", "registrationNumber", "applicationNumber")}
+                          "first": [{k: t.get(k) for k in ("ST13", "tmName", "registrationNumber", "applicationNumber",
+                                                     "applicantName", "niceClass", "tradeMarkStatus", "expiryDate",
+                                                     "applicationDate", "markImageURI")}
                                     for t in d.get("tradeMarks", [])[:3]]}
             except Exception as e:
                 out[n] = {"error": f"{type(e).__name__}: {e}"}
