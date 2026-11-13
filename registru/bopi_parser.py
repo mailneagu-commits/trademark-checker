@@ -95,12 +95,24 @@ def _strings(x):
             yield from _strings(v)
 
 
+# Semne sigure de Windows-1250 citit ca Windows-1252 în nume / adrese („BUCUREªTI”, „AGENÞIA”,
+# „Piaþa”): ª º þ Þ lipite de litere. Doar atunci se refac și „Ã” / „ã” din același text.
+_CP1252_SURE = re.compile(r"[A-Za-zĂÂÎăâî][ªºþÞ]|[ªºþÞ][A-Za-zăâî]|\bºi\b")
+
+
+def fix_cp1252_text(text: str) -> str:
+    if not isinstance(text, str) or not _CP1252_SURE.search(text):
+        return text
+    return text.translate(_CP1252)
+
+
 def fix_record(x, legacy: Optional[bool] = None):
     """Diacriticele vechi refăcute peste tot într-o fișă (dict / listă / text), dacă fișa are semnele
     sigure; separatorul „˜˜˜” se scoate oricum."""
     if legacy is None:
         legacy = has_legacy_diacritics(*_strings(x))
     if isinstance(x, str):
+        x = fix_cp1252_text(x)
         return fix_legacy_diacritics(x) if legacy else re.sub(r"\s*˜{3,}\s*", " ", x).strip() if "˜" in x else x
     if isinstance(x, dict):
         out = {k: (fix_goods(v) if k == "goods" and isinstance(v, dict) else fix_record(v, legacy))
@@ -146,6 +158,14 @@ _FIRM_PART = re.compile(
     r"ASSOCIATES|& ?CO)\b", re.I)
 
 
+# Tabelele 2002–2021 lipesc orașul de nume, fără virgulă: „Holcim Ltd JONA, Zürcherstrasse…”,
+# „HOLCIM (ROMANIA) SA BUCUREŞTI, Calea…” — după forma juridică, orașul (majuscule) se scoate.
+_CITY_AFTER_FORM = re.compile(
+    r"^(.*\b(?:SA|S\.A|SRL|S\.R\.L|SCA|LTD|Ltd|LIMITED|Limited|INC|Inc|LLC|GMBH|GmbH|AG|KG|PLC|plc|"
+    r"BV|B\.V|NV|N\.V|SPA|S\.p\.A|SAS|SARL|CORP|Corp|CORPORATION|Corporation|CO|Co)\.?)"
+    r"\s+(?:(?:sat|com\.?|comuna|mun\.?|oraș|oraş)\s+)?(?:[A-ZĂÂÎȘȚŞŢÄÖÜÉ][A-ZĂÂÎȘȚŞŢÄÖÜÉ\-]+)(?:\s+[A-ZĂÂÎȘȚŞŢÄÖÜÉ][A-ZĂÂÎȘȚŞŢÄÖÜÉ\-]+){0,2}$")
+
+
 def party_name(full: str) -> str:
     parts = [p.strip() for p in (full or "").split(",")]
     name = parts[0]
@@ -153,7 +173,8 @@ def party_name(full: str) -> str:
         if not p or re.search(r"\d", p) or not _FIRM_PART.search(p):
             break
         name += ", " + p
-    return name
+    m = _CITY_AFTER_FORM.match(name)
+    return m.group(1) if m else name
 
 
 def compact_app(raw: str) -> str:

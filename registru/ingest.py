@@ -514,9 +514,12 @@ def _merge_stub(db, m: Mark) -> None:
 def _process_changes(db, path: str, src: Dict) -> int:
     n = 0
     bdate = src["date"].isoformat()
-    # Reprocesare fără dubluri.
-    db.query(MarkChange).filter(MarkChange.label == src["label"], MarkChange.bulletin_date == bdate)\
-        .delete(synchronize_session=False)
+    # Reprocesare fără dubluri. Două fișiere cu aceeași etichetă (BOPI 01/2004: buletinul + anexa de
+    # legislație) — se șterg rândurile vechi doar dacă fișierul acesta dăduse rânduri.
+    prev = db.get(SourceFile, src["url"])
+    if prev is not None and prev.marks:
+        db.query(MarkChange).filter(MarkChange.label == src["label"], MarkChange.bulletin_date == bdate)\
+            .delete(synchronize_session=False)
     for r in map(fix_record, parse_changes(path)):
         if r["kind"] == "limitation":
             import json as _json

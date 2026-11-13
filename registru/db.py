@@ -728,6 +728,56 @@ def _reread_empty_changes():
         db.close()
 
 
+def _reread_all_changes():
+    """Tabelele de modificări 2002–2021, recitite cu parserul corectat (titluri de capitol cu text,
+    reînnoiri „2R…”): ex. BOPI 11/2014 dăduse 58 de rânduri din 627 (cesiunea Holcim lipsea)."""
+    marker = "migration:reread-all-changes-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for s in db.query(SourceFile).filter(SourceFile.kind == "changes", SourceFile.status == "ok",
+                                             SourceFile.bulletin_date < "2022-01-01"):
+            s.status, n = "error", n + 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="recitire toate modificările v1"))
+        db.commit()
+        print(f"[DB] Tabele de modificări 2002–2021 de recitit: {n}")
+    finally:
+        db.close()
+
+
+def _fix_cp1252_parties():
+    """Titulari / mandatari / denumiri cu „ª º þ Þ” (Windows-1250 citit ca 1252): „BUCUREªTI” → „BUCUREŞTI”."""
+    marker = "migration:cp1252-parties-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from sqlalchemy import or_
+        from bopi_parser import fix_cp1252_text
+        pats = [f"%{c}%" for c in "ªºþÞ"]
+        cols = (Mark.name, Mark.holder, Mark.holder_address, Mark.representative, Mark.representative_address)
+        keys = [k for (k,) in db.query(Mark.app_number).filter(or_(*[c.like(p) for c in cols for p in pats]))]
+        n = 0
+        for i in range(0, len(keys), 2000):
+            for m in db.query(Mark).filter(Mark.app_number.in_(keys[i:i + 2000])):
+                before = (m.name, m.holder, m.holder_address, m.representative, m.representative_address)
+                m.name, m.holder, m.holder_address = map(fix_cp1252_text, (m.name, m.holder, m.holder_address))
+                m.representative, m.representative_address = map(fix_cp1252_text, (m.representative, m.representative_address))
+                if (m.name, m.holder, m.holder_address, m.representative, m.representative_address) != before:
+                    m.name_norm, m.holder_norm, m.rep_norm = norm(m.name), norm(m.holder), norm(m.representative)
+                    m.events = [{k: fix_cp1252_text(v) if isinstance(v, str) else v for k, v in e.items()}
+                                for e in (m.events or [])]
+                    n += 1
+            db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="diacritice 1252 în nume v1"))
+        db.commit()
+        print(f"[DB] Nume cu diacritice Windows-1252 corectate: {n}")
+    finally:
+        db.close()
+
+
 def _retry_failed_sources():
     """Buletine marcate „citite” deși descărcarea a eșuat (eroare de conexiune la osim.ro, 0 mărci):
     se recitesc la următoarea rulare."""
@@ -1016,11 +1066,12 @@ def init_db():
     _reread_cid_sources()
     _reread_cid_changes()
     _reread_empty_changes()
+    _reread_all_changes()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
                                      _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources(),
-                                     _fix_party_names(), _fix_date_reps()),
+                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
