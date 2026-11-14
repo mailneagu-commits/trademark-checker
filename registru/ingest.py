@@ -86,11 +86,11 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
                         "label": f"BOPI {d:%d.%m.%Y}"})
         d += timedelta(days=1)
     out += _application_archive(html)
-    # 2016: pagina OSIM a arhivei trimite la fișierele din 2017; numele fișierelor 2016 au fost găsite
-    # după tiparul celor vecine („cereri_depuseDDMMYYYY_publicateDDMMYYYY.pdf”) — cereri_2016.json.
+    # Buletine de cereri care există pe server, dar nu apar în nicio pagină a arhivei (toate cele din 2016 —
+    # pagina „2016” trimite la fișierele din 2017 —, plus februarie 2018), găsite după tiparul numelor vecine.
     import json as _json
     try:
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cereri_2016.json")) as f:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cereri_nelistate.json")) as f:
             # [data publicării, url] — o zi poate avea două fișiere; o parte se numesc „bopi DDMMYYYY.pdf”
             # după data depunerii (cu spațiu în nume), nu după tiparul „cereri_depuse…”.
             for ds, url in _json.load(f):
