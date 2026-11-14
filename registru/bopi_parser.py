@@ -130,7 +130,7 @@ def fix_record(x, legacy: Optional[bool] = None):
                for k, v in x.items()}
         if isinstance(out.get("name"), str):
             # Coduri INID lipite de denumire („JIDVEI … 531) Clasificare Viena…”, „SOBYC (511 )Produse…”).
-            out["name"] = _INID_TAIL.sub("", out["name"]).strip()
+            out["name"] = strip_garbled(_INID_TAIL.sub("", out["name"]))
             if garbled_name(out["name"]) or _PRODUCTS_AS_NAME.match(out["name"]):
                 out["name"] = ""               # completată apoi din TMview (ingest._fill_names)
         return out
@@ -142,6 +142,19 @@ def fix_record(x, legacy: Optional[bool] = None):
 _INID_TAIL = re.compile(r"\s*\(?\s*5[0-9]{2}\s*\)\s*(Clasificare|Produse|Culori|Mențiuni|Men).*$", re.S)
 _PRODUCTS_AS_NAME = re.compile(r"^\s*Produse (și|şi|si)/sau servicii")
 _GLYPHS = set('!"#$%&\'’()*+,-./:;<=>?@[\\]^_`{|}~')
+
+
+# Coada tipărită cu fontul codificat după o denumire reală (BOPI 2002–2003):
+# „GOLDEN BRAU NU TE MAI SATURI -"0%/&,#1(2(0345…”, „VOLTAJ !"#$%&’"#()*&+…”; coduri „(cid:N)” rămase.
+_GARBLED_TAIL = re.compile(r'\s*(?:!"#\$%&[’\']?"#\(|-"0%/&,#1\().*$', re.S)
+_CID = re.compile(r"\(cid:\d+\)")
+
+
+def strip_garbled(name: str) -> str:
+    n = _GARBLED_TAIL.sub("", name or "")
+    if "(cid:" in n:
+        n = "figurativă" if n.strip() == "figurativ(cid:124)" else _CID.sub("", n)
+    return n.strip()
 
 
 def garbled_name(name: str) -> bool:

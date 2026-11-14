@@ -577,6 +577,36 @@ def _fix_garbled_names():
         db.close()
 
 
+def _clean_garbled_tails():
+    """Denumiri reale urmate de coada în font codificat („VOLTAJ !"#$%&’"#()*…”, ~130, BOPI 2002–2003) și
+    coduri „(cid:N)”: se taie coada; ce rămâne gol sau e text din logo citit greșit (2014–2018) se ia din TMview."""
+    marker = "migration:garbled-tails-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from sqlalchemy import or_
+        from bopi_parser import strip_garbled
+        logo_text = ("M201804126", "M201804020", "M201400192", "M200501218")
+        n = 0
+        rows = db.query(Mark).filter(or_(Mark.name.like(r'%!"#$\%&%'), Mark.name.like(r'%-"0\%/&,#1%'),
+                                         Mark.name.like("%(cid:%"), Mark.app_number.in_(logo_text))).all()
+        for m in rows:
+            name = "" if m.app_number in logo_text else strip_garbled(m.name)
+            if name == m.name:
+                continue
+            m.name, m.name_norm = name, norm(name)
+            if not name:
+                m.tmview_checked = (m.tmview_checked or "").replace("|nm", "") + "|gname"
+            m.events = [dict(e, name=strip_garbled(e["name"])) if e.get("name") else e for e in (m.events or [])]
+            n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="cozi în font codificat v1"))
+        db.commit()
+        print(f"[DB] Denumiri cu coadă în font codificat curățate: {n}")
+    finally:
+        db.close()
+
+
 def _fix_party_names():
     """Titular / mandatar tăiat la prima virgulă („BRASOVEANU” în loc de „BRASOVEANU, CERNAT SI
     ASOCIATII”, „APPLE” în loc de „APPLE, INC.”): se refac din adresa completă."""
@@ -1266,6 +1296,7 @@ def init_db():
     _fix_disclaimer_names()
     _relabel_0907()
     _reread_0111()
+    _clean_garbled_tails()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
