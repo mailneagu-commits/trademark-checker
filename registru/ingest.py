@@ -1646,7 +1646,9 @@ def _fill_names(limit: int = 100) -> None:
                 name = (hit.get("tmName") or "").strip()
                 if name:
                     m.name, m.name_norm = name, norm(name)
-                    m.mark_type = m.mark_type or "Verbală"
+                    # „Figurativă” fusese dedus doar din lipsa denumirii: cu denumire + logo e combinată.
+                    if m.mark_type in ("", None, "Figurativă"):
+                        m.mark_type = "Combinată" if m.has_image else "Verbală"
                 elif hit.get("ST13"):
                     _fetch_logo(db, m, hit["ST13"])
                 m.tmview_checked = (m.tmview_checked or "") + "|nm"
