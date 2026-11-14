@@ -125,7 +125,10 @@ def _status(m: Mark) -> str:
     if m.status in ("Cerere publicată", "Admisă la înregistrare") and ingest.tm_status_ro(m.tm_status or ""):
         return ingest.tm_status_ro(m.tm_status)
     # Mărci înregistrate anulate / decăzute / la care s-a renunțat — după TMview, dacă e mai nou decât BOPI.
+    # „Expired” în TMview, dar expirarea din BOPI e în viitor: TMview e în urmă (DINES D, M 2011 06887 —
+    # reînnoită până în 2031, așa cum arată și registrul OSIM) — rămâne „Înregistrată”.
     if m.status == "Înregistrată" and ingest.tm_ended_ro(m.tm_status or "") and \
+            not ("expired" in (m.tm_status or "").lower() and (m.expiry_date or "") >= today) and \
             (m.tm_status_date or "9999") >= (m.status_date or ""):
         return ingest.tm_ended_ro(m.tm_status)
     return m.status
@@ -292,7 +295,9 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
     wanted = [int(c) for c in classes.replace(";", ",").replace(" ", ",").split(",") if c.strip().isdigit()]
     today = date.today().isoformat()
     # Încetate după TMview (anulare, decădere, renunțare) — nu mai sunt valabile.
-    ended = or_(*[Mark.tm_status.ilike(f"%{k}%") for k, _ in ingest.TM_ENDED])
+    # „Expired” în TMview cu expirarea BOPI în viitor nu e încetare (TMview în urmă — vezi _status).
+    ended = and_(or_(*[Mark.tm_status.ilike(f"%{k}%") for k, _ in ingest.TM_ENDED]),
+                 ~(Mark.tm_status.ilike("%expired%") & (Mark.expiry_date >= today)))
     alive = or_(Mark.tm_status.is_(None), ~ended)
     if status == "Valabile":
         q = q.filter(Mark.status == "Înregistrată", Mark.expiry_date >= today, alive)
