@@ -491,6 +491,30 @@ def quality_chars(limit: int = 4000, ch: str = "", db: Session = Depends(get_db)
     return {"scanned": n, "top": ctx.most_common(300)}
 
 
+def _odd_name(n: str) -> str:
+    """De ce pare o denumire citită greșit din PDF ("" = pare în regulă)."""
+    t = (n or "").replace(" ", "")
+    if not t:
+        return ""
+    if re.search(r"\(cid:|\ufffd|[\x00-\x08\x0b-\x1f\ue000-\uf8ff]", n):
+        return "caractere de control / cid"
+    punct = [c for c in t if not c.isalnum()]
+    if len(t) >= 5 and len(set(punct)) >= 4 and len(punct) / len(t) >= 0.3:
+        return "multe semne"
+    return ""
+
+
+@app.get("/api/quality-names")
+def quality_names(db: Session = Depends(get_db)):
+    """Toate denumirile care par citite greșit (font cu codificare proprie, coduri cid)."""
+    out = []
+    for app_no, name, ev in db.query(Mark.app_number, Mark.name, Mark.events).filter(Mark.name != "").yield_per(5000):
+        why = _odd_name(name)
+        if why:
+            out.append({"app": app_no, "name": name[:120], "why": why, "bopi": (ev or [{}])[0].get("bopi", "")})
+    return {"count": len(out), "names": out}
+
+
 @app.get("/api/coverage")
 def coverage(year: int = 0, gaps: int = 0, db: Session = Depends(get_db)):
     """Acoperirea bazei: mărci pe an de depozit (după nr. „M an …”) și ce a dat fiecare buletin citit.
