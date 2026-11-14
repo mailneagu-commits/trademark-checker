@@ -91,7 +91,9 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
     import json as _json
     try:
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cereri_2016.json")) as f:
-            for ds, url in _json.load(f).items():
+            # [data publicării, url] — o zi poate avea două fișiere; o parte se numesc „bopi DDMMYYYY.pdf”
+            # după data depunerii (cu spațiu în nume), nu după tiparul „cereri_depuse…”.
+            for ds, url in _json.load(f):
                 d = date.fromisoformat(ds)
                 out.append({"url": url, "kind": "daily", "date": d, "label": f"BOPI {d:%d.%m.%Y}"})
     except OSError:
