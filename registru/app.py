@@ -482,8 +482,25 @@ def quality_chars(limit: int = 4000, ch: str = "", db: Session = Depends(get_db)
 
 
 @app.get("/api/coverage")
-def coverage(year: int = 0, db: Session = Depends(get_db)):
-    """Acoperirea bazei: mărci pe an de depozit (după nr. „M an …”) și ce a dat fiecare buletin citit."""
+def coverage(year: int = 0, gaps: int = 0, db: Session = Depends(get_db)):
+    """Acoperirea bazei: mărci pe an de depozit (după nr. „M an …”) și ce a dat fiecare buletin citit.
+    gaps=N: numerele de înregistrare (111) lipsă de la N încoace — OSIM le dă la rând, fiecare apare în BOPI."""
+    if gaps:
+        have = {int(r) for (r,) in db.query(Mark.reg_number).filter(Mark.reg_number != "") if (r or "").isdigit()}
+        top = max(have, default=0)
+        miss = [i for i in range(gaps, top + 1) if i not in have]
+        # Data înregistrării vecinilor → buletinul în care ar trebui să apară golul.
+        near = {}
+        for k in sorted({i // 1000 for i in miss}):
+            row = db.query(Mark.reg_date).filter(Mark.reg_number.in_([str(x) for x in range(k * 1000, k * 1000 + 1000)]),
+                                                Mark.reg_date != "").order_by(Mark.reg_date).all()
+            near[k * 1000] = [row[0][0], row[-1][0]] if row else []
+        by_k = {}
+        for i in miss:
+            by_k[i // 1000 * 1000] = by_k.get(i // 1000 * 1000, 0) + 1
+        return {"from": gaps, "max": top, "missing": len(miss),
+                "by_thousand": [{"from": k, "missing": n, "reg_dates": near.get(k, [])} for k, n in sorted(by_k.items())],
+                "numbers": miss[:5000]}
     if year:
         rows = db.query(SourceFile).filter(SourceFile.bulletin_date.like(f"{year}-%")).order_by(SourceFile.bulletin_date).all()
         return {"year": year, "sources": [{"label": r.label, "kind": r.kind, "date": r.bulletin_date, "status": r.status,
