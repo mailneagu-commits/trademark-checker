@@ -86,6 +86,16 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
                         "label": f"BOPI {d:%d.%m.%Y}"})
         d += timedelta(days=1)
     out += _application_archive(html)
+    # 2016: pagina OSIM a arhivei trimite la fișierele din 2017; numele fișierelor 2016 au fost găsite
+    # după tiparul celor vecine („cereri_depuseDDMMYYYY_publicateDDMMYYYY.pdf”) — cereri_2016.json.
+    import json as _json
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cereri_2016.json")) as f:
+            for ds, url in _json.load(f).items():
+                d = date.fromisoformat(ds)
+                out.append({"url": url, "kind": "daily", "date": d, "label": f"BOPI {d:%d.%m.%Y}"})
+    except OSError:
+        pass
     # Întâi perioada curentă (2022 →), cronologic; apoi arhiva, de la nou la vechi, ca mărcile
     # valabile recente să apară primele. Aceeași zi: publicare, admitere, buletin lunar, tabele.
     order = {"daily": 0, "admise": 1, "monthly": 2, "changes": 3}

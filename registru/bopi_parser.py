@@ -457,6 +457,79 @@ def _prepare_fonts(pdf) -> None:
             return
 
 
+_FL = r"[{Ă]"         # „Ă” tipărit „{” în fontul vechi
+RE_FORM = re.compile(r"NUME DE MARC" + _FL)
+
+
+def _fl_paras(text: str):
+    return [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+
+
+def _fl_letters(s: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", s.upper())
+
+
+def parse_form_list(text: str) -> Iterator[Tuple[str, Dict]]:
+    """Listele săptămânale 2010 („Cereri de înregistrare marcă depuse în săptămâna 20/2010”): o fișă
+    de formular pe pagină (NUME DE MARCĂ / SOLICITANT / NUMĂR DEPOZIT / CLASE NISA …), produsele pe
+    pagina următoare."""
+    pages = text.split("\x0c")
+    for i, pg in enumerate(pages):
+        if not RE_FORM.search(pg):
+            continue
+        am = re.search(r"\bM (\d{4}) (\d{5})\b", pg)
+        if not am:
+            continue
+        rec: Dict = {"app_number": f"M{am.group(1)}{am.group(2)}"}
+        fd = re.search(r"DATA DEPOZIT\s+(\d{2})\.(\d{2})\.(\d{4})", pg) or \
+            re.search(r"DATA REGISTRATUR" + _FL + r"\s+(\d{2})\.(\d{2})\.(\d{4})", pg)
+        if fd:
+            rec["filing_date"] = f"{fd.group(3)}-{fd.group(2)}-{fd.group(1)}"
+        hm = re.search(r"--\d{1,2}/\d{1,2}/\d{4}\s*\n(.*)$", pg, re.S)
+        holder = re.sub(r"DATA EXPIR" + _FL + r"RII", " ", hm.group(1)) if hm else ""
+        holder = re.sub(r"\s+", " ", holder).strip(" ,")
+        if holder:
+            rec["holder_address"] = holder
+        cm = re.search(r"CLASE NISA\s*\n+([\d ]+)\n", pg)
+        classes = sorted({int(c) for c in re.findall(r"\d+", cm.group(1)) if 1 <= int(c) <= 45}) if cm else []
+        # Tipul: primele 4 bife (O = bifat) după „Indicatie geografica” — verbală, figurativă, combinată, 3D.
+        tm = re.search(r"Indicatie geografica\s*\n((?:\s*[OG]\s*\n){4})", pg)
+        if tm:
+            ticks = re.findall(r"[OG]", tm.group(1))
+            if "O" in ticks:
+                rec["mark_type"] = ("Verbală", "Figurativă", "Combinată", "Tridimensională")[ticks.index("O")]
+        # Denumirea: paragraful scurt dintre etichete care nu e solicitantul / mandatarul / o adresă.
+        head = pg.split("REPRODUCERE MARC", 1)[0]
+        hl = _fl_letters(holder)
+        name = ""
+        for p in _fl_paras(head):
+            if re.fullmatch(r"(NUME DE MARC|SOLICITANT|MANDATAR|NUM" + _FL + r"R REGISTRATUR|DATA REGISTRATUR)\S*", p) \
+                    or re.fullmatch(r"M\d{4}/\d+|\d{2}\.\d{2}\.\d{4}", p):
+                continue
+            if re.search(r"ROMANIA|\bnr\.|\bstr\.|\bsector\b|\bjud\.", p, re.I) or (hl and _fl_letters(p) in hl):
+                continue
+            name = re.sub(r"\s+", " ", p).strip()
+            break
+        rec["name"] = name
+        # Produsele: pagina(ile) următoare, până la „Listă de produse/servicii”.
+        goods: Dict[str, str] = {}
+        nxt = pages[i + 1] if i + 1 < len(pages) else ""
+        if not RE_FORM.search(nxt):
+            body = re.split(r"Observa\S+ cu privire", nxt)[0]
+            body = re.sub(r"List. de produse/servicii", " ", body)
+            # „16 Publicaţie periodică.  35 Servicii de editare…” — clasele din fișă delimitează produsele.
+            want = "|".join(str(c) for c in sorted(classes, reverse=True)) or r"\d{1,2}"
+            parts = re.split(r"(?:^|(?<=\.)\s+|\n\s*)(" + want + r")\s+(?=[^\d\s])", body.strip())
+            for k in range(1, len(parts) - 1, 2):
+                c = int(parts[k])
+                if 1 <= c <= 45:
+                    txt = re.sub(r"\s+", " ", parts[k + 1]).strip()
+                    goods[str(c)] = (goods.get(str(c), "") + " " + txt).strip()
+        rec["goods"] = goods
+        rec["classes"] = sorted(set(classes) | {int(c) for c in goods})
+        yield "published", rec
+
+
 def parse_pdf(path: str, kind: str, want_images: bool = True,
               have_image: Optional[set] = None) -> Iterator[Tuple[str, Dict]]:
     """Generează (capitol, marcă) pentru fiecare bloc INID din PDF.
@@ -467,6 +540,13 @@ def parse_pdf(path: str, kind: str, want_images: bool = True,
     pagini de titlu între ele). Paginile cu tabele și capitolele de modificări / reînnoiri /
     retrageri sunt sărite."""
     fixed = {"daily": "published", "admise": "admitted"}.get(kind)
+    if kind == "daily":
+        from pdfminer.high_level import extract_text
+        head = extract_text(path, maxpages=3)
+        if RE_FORM.search(head):
+            # Listele săptămânale 2010 (fișe-formular, fără coduri INID).
+            yield from parse_form_list(extract_text(path))
+            return
     stream: List[str] = []
     images: Dict[str, bytes] = {}
     rejected: set = set()

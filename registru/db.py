@@ -954,6 +954,23 @@ def _reread_0111():
         db.close()
 
 
+def _reread_forms_2010():
+    """Listele săptămânale de cereri din 2010 cu fișe-formular (fără coduri INID) — marcate necitibile;
+    se recitesc cu cititorul nou (parse_form_list)."""
+    marker = "migration:forms-2010-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        for s in db.query(SourceFile).filter(SourceFile.status == "unreadable", SourceFile.kind == "daily",
+                                             SourceFile.bulletin_date.like("2010-%")):
+            s.status, s.error = "error", "fișe-formular — de recitit"
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="liste 2010 fișe-formular v1"))
+        db.commit()
+    finally:
+        db.close()
+
+
 def _dedupe_0907():
     """După recitirea BOPI 09/2007: rândurile și evenimentele vechi etichetate „BOPI 09/2009” care repetă
     exact ce a dat 09/2007 se scot; datele 30.09.2009 venite de acolo devin 30.09.2007."""
@@ -1297,6 +1314,7 @@ def init_db():
     _relabel_0907()
     _reread_0111()
     _clean_garbled_tails()
+    _reread_forms_2010()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
