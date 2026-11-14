@@ -907,6 +907,23 @@ def _relabel_0907():
         db.close()
 
 
+def _reread_0111():
+    """BOPI 01/2011 tipărește nr. mărcii pe rândul depozitului, fără (111) („(210) M 2010 01736  111601”):
+    ~38 de mărci înregistrate rămăseseră cereri. Se recitește cu parserul corectat."""
+    marker = "migration:reread-0111-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        s = db.get(SourceFile, "https://osim.ro/wp-content/uploads/Publicatii-OSIM/BOPI-Marci/2011/mrc_01_11.pdf")
+        if s is not None:
+            s.status, s.error = "error", "nr. marcă pe rândul (210) — de recitit"
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="BOPI 01/2011 recitit v1"))
+        db.commit()
+    finally:
+        db.close()
+
+
 def _dedupe_0907():
     """După recitirea BOPI 09/2007: rândurile și evenimentele vechi etichetate „BOPI 09/2009” care repetă
     exact ce a dat 09/2007 se scot; datele 30.09.2009 venite de acolo devin 30.09.2007."""
@@ -1248,6 +1265,7 @@ def init_db():
     _queue_split_bulletins()
     _fix_disclaimer_names()
     _relabel_0907()
+    _reread_0111()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),

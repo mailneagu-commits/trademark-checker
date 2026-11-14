@@ -327,6 +327,12 @@ def parse_block(block: str) -> Optional[Dict]:
         n = re.search(r"\d{3,7}", seg["111"])
         # Arhiva tipărește nr. de marcă pe 6 cifre (065304); în bază e fără zerouri, ca în tabele.
         rec["reg_number"] = n.group(0).lstrip("0") if n else ""
+    else:
+        # Buletinele lunare 2011–2014 tipăresc nr. mărcii pe rândul depozitului, fără cod (111):
+        # „(210) M 2010 01736                  111601”.
+        n = re.match(r"[ \t]+(\d{6})[ \t]*(?:\n|$)", seg.get("210", "")[app_m.end():])
+        if n:
+            rec["reg_number"] = n.group(1).lstrip("0")
     if "151" in seg:
         rec["date_151"] = _iso(seg["151"])
     if "220" in seg:

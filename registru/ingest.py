@@ -1697,6 +1697,79 @@ def fetch_old(num: str) -> Optional[str]:
         db.close()
 
 
+GAP_CURSOR = "cursor:reg-gaps-v1"
+GAP_FROM = 48000
+
+
+def _reg_gaps(after: int) -> List[int]:
+    """Nr. de înregistrare lipsă din bază (OSIM le dă la rând) de la `after` până la capătul seriei."""
+    from collections import Counter
+    db = SessionLocal()
+    try:
+        have = {int(r) for (r,) in db.query(Mark.reg_number).filter(Mark.reg_number != "")
+                if (r or "").isdigit() and len(r) <= 6}
+    finally:
+        db.close()
+    # Capătul seriei = ultimul nr. dintr-o mie bine populată (un nr. citit greșit nu lungește lista).
+    per = Counter(i // 1000 for i in have)
+    top = max((i for i in have if per[i // 1000] >= 300), default=0)
+    return [i for i in range(max(after, GAP_FROM), top + 1) if i not in have]
+
+
+def fill_reg_gaps(batches: int = 4) -> None:
+    """Golurile din numerotare căutate în TMview după nr. mărcii: cererea din BOPI primește nr. de
+    înregistrare (ex. M 2010 08424 → 113255); marca lipsă cu totul intră cu datele de bază."""
+    db = SessionLocal()
+    try:
+        cur = db.get(SourceFile, GAP_CURSOR)
+        after = int(cur.label) if cur and (cur.label or "").isdigit() else GAP_FROM
+    finally:
+        db.close()
+    gaps = _reg_gaps(after)[:batches * 25]
+    today = date.today().isoformat()
+    for i in range(0, len(gaps), 25):
+        if _tmview_paused():
+            return
+        batch = [str(n).zfill(6) for n in gaps[i:i + 25]]
+        data = _regsearch(batch, "registrationNumber")
+        if data is None or any(not isinstance(data.get(n), dict) or data[n].get("status") != 200 for n in batch):
+            _tmview_backoff()
+            return                                # lotul se reia la rularea următoare
+        db = SessionLocal()
+        try:
+            for num in batch:
+                hit = next((x for x in data[num].get("hits") or []
+                            if (x.get("registrationNumber") or "").zfill(6) == num), None)
+                app = re.sub(r"\s+", "", (hit or {}).get("applicationNumber") or "").upper()
+                key = app if re.fullmatch(r"M\d{9}", app) else app.zfill(6) if app.isdigit() else ""
+                if not key:
+                    continue
+                m = db.get(Mark, key)
+                if m is None:
+                    m = _create_skel(db, key, hit)
+                    if m is None:
+                        continue
+                    old_job["gaps_new"] = old_job.get("gaps_new", 0) + 1
+                if not m.reg_number:
+                    m.reg_number = num.lstrip("0")
+                    if m.status in ("", "Cerere publicată", "Admisă la înregistrare"):
+                        m.status = "Înregistrată"
+                        m.expiry_date = m.expiry_date or expiry_of(m)
+                    m.events = (m.events or []) + [{
+                        "date": today, "bopi": "TMview", "chapter": "Nr. de înregistrare completat din TMview",
+                        "detail": f"nr. marcă {m.reg_number} (nepublicat în buletinele OSIM citite)",
+                        "st13": hit.get("ST13") or ""}]
+                    old_job["gaps_reg"] = old_job.get("gaps_reg", 0) + 1
+            db.merge(SourceFile(url=GAP_CURSOR, kind="cursor", label=str(int(batch[-1]) + 1), status="cursor"))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"[GAPS] {batch[0]}…: {type(e).__name__}: {e}")
+            return
+        finally:
+            db.close()
+
+
 def _fill_names(limit: int = 100) -> None:
     """Mărci fără denumire (BOPI n-a putut fi citit / font cu codificare proprie; fișa TMview nu are denumirea):
     denumirea din căutarea TMview după nr. de depozit; fără denumire acolo → marcă figurativă, logo."""
@@ -1763,6 +1836,7 @@ def enrich_old(batches: int = 8) -> None:
             db.close()
         old_job["next"] = start
         _fill_names()
+        fill_reg_gaps()
         if start > OLD_END:
             # Toate mărcile sunt în bază cu datele de bază — acum fișele complete.
             _complete_skels(300 if _weekend() else 150)
