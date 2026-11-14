@@ -1742,7 +1742,16 @@ def enrich_old(batches: int = 8) -> None:
     """Treptat, toate numerele vechi de depozit (loturi de 25 în căutarea TMview, apoi fișa fiecărei
     mărci găsite). Cursorul se păstrează în baza de date — reluarea continuă de unde a rămas."""
     import time as _t
-    if old_job["running"] or job["running"] or _tmview_paused():
+    if old_job["running"] or _tmview_paused():
+        return
+    if job["running"]:
+        # Citirea buletinelor poate dura ore (arhiva cererilor 2010–2021): denumirile lipsă se completează
+        # din TMview și între timp (cereri mici, 100 pe rulare); importul vechi așteaptă.
+        old_job["running"] = True
+        try:
+            _fill_names()
+        finally:
+            old_job["running"] = False
         return
     old_job.update(running=True, done=0, found=0)
     try:
