@@ -150,7 +150,13 @@ def garbled_name(name: str) -> bool:
     t = (name or "").replace(" ", "")
     if len(t) < 4:
         return False
-    return sum(c in _GLYPHS for c in t) / len(t) >= 0.6 and t[0] in '!"#$%&'
+    if sum(c in _GLYPHS for c in t) / len(t) >= 0.6 and t[0] in '!"#$%&':
+        return True
+    # Varianta cu cifre amestecate („-"0%/&,#1(2(034567839(:;<…”, M 2001 04649): mult mai multe semne
+    # diferite decât are orice denumire reală, începe cu un semn.
+    punct = [c for c in t if c in _GLYPHS]
+    return (len(t) >= 8 and t[0] in _GLYPHS and len(set(punct)) >= 6 and len(punct) / len(t) >= 0.4
+            and (len(punct) + sum(c.isdigit() for c in t)) / len(t) >= 0.6)
 
 
 def fix_goods(goods: dict) -> dict:

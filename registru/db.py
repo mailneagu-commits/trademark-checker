@@ -557,20 +557,20 @@ def _fix_read_errors_v2():
 def _fix_garbled_names():
     """Denumiri tipărite cu font cu codificare proprie („!"#$%&’"#()*…”, ex. M 2001 04258): se golesc și
     se completează din TMview."""
-    marker = "migration:garbled-names-v1"
+    marker = "migration:garbled-names-v2"
     db = SessionLocal()
     try:
         if db.get(SourceFile, marker):
             return
         from bopi_parser import garbled_name
         n = 0
-        for m in db.query(Mark).filter(Mark.name.op("~")(r'^[!"#$%&]') if IS_PG else Mark.name.like("!%")):
+        for m in db.query(Mark).filter(Mark.name.op("~")(r'^[[:punct:]]') if IS_PG else Mark.name.like("!%")):
             if garbled_name(m.name):
                 m.name, m.name_norm = "", ""
                 m.tmview_checked = (m.tmview_checked or "").replace("|nm", "") + "|gname"
                 m.events = [dict(e, name="") if garbled_name(e.get("name") or "") else e for e in (m.events or [])]
                 n += 1
-        db.add(SourceFile(url=marker, kind="migration", status="ok", label="denumiri cu font codificat v1"))
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="denumiri cu font codificat v2"))
         db.commit()
         print(f"[DB] Denumiri cu font codificat golite (se iau din TMview): {n}")
     finally:
