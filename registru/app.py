@@ -42,7 +42,13 @@ def _startup():
     from db import SessionLocal as _S, SourceFile as _SF
     _s = _S()
     try:
-        if _s.query(_SF).filter(_SF.status == "error").first() is not None:
+        # Surse noi de citit imediat (o singură dată): arhiva cererilor publicate 2010–2021, BOPI 01/2026,
+        # cererile admise cu nume de fișier neobișnuit.
+        new_src = _s.get(_SF, "migration:new-sources-v1") is None
+        if new_src:
+            _s.add(_SF(url="migration:new-sources-v1", kind="migration", status="ok", label="surse noi v1"))
+            _s.commit()
+        if new_src or _s.query(_SF).filter(_SF.status == "error").first() is not None:
             from datetime import datetime as _dt, timedelta as _td
             from zoneinfo import ZoneInfo as _Z
             sched.add_job(ingest.start_background, "date", id="bopi_reread",
@@ -124,6 +130,10 @@ def _status(m: Mark) -> str:
     # Cereri în curs: opoziția / contestația / retragerea apar doar în TMview, nu în BOPI.
     if m.status in ("Cerere publicată", "Admisă la înregistrare") and ingest.tm_status_ro(m.tm_status or ""):
         return ingest.tm_status_ro(m.tm_status)
+    # Cerere din arhiva 2010–2021, încă neverificată în TMview: nu e o cerere „în curs”.
+    if m.status == "Cerere publicată" and not m.tm_status and (m.publication_date or "9999") < \
+            (date.today() - timedelta(days=3 * 365)).isoformat():
+        return "Cerere publicată (stare de verificat)"
     # Mărci înregistrate anulate / decăzute / la care s-a renunțat — după TMview, dacă e mai nou decât BOPI.
     # „Expired” în TMview, dar expirarea din BOPI e în viitor: TMview e în urmă (DINES D, M 2011 06887 —
     # reînnoită până în 2031, așa cum arată și registrul OSIM) — rămâne „Înregistrată”.

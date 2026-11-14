@@ -58,7 +58,7 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
     for href in sorted(set(re.findall(r'href="([^"]+\.pdf)"', html))):
         url = href if href.startswith("http") else OSIM + href
         name = href.rsplit("/", 1)[-1].lower()
-        m = re.match(r"cereri_admise_(\d{2})(\d{2})(\d{4})\.pdf$", name)
+        m = re.match(r"cereri_admise_(\d{2})(\d{2})(\d{4})(?:_[a-z]*)?\.pdf$", name)   # și „…_.pdf”, „…_s.pdf”
         if m:
             d = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
             if d >= START:
@@ -85,12 +85,78 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
             out.append({"url": DAILY_URL.format(y=d.year, d=d), "kind": "daily", "date": d,
                         "label": f"BOPI {d:%d.%m.%Y}"})
         d += timedelta(days=1)
+    out += _application_archive(html)
     # Întâi perioada curentă (2022 →), cronologic; apoi arhiva, de la nou la vechi, ca mărcile
     # valabile recente să apară primele. Aceeași zi: publicare, admitere, buletin lunar, tabele.
     order = {"daily": 0, "admise": 1, "monthly": 2, "changes": 3}
     cur = sorted((x for x in out if x["date"] >= START), key=lambda s: (s["date"], order[s["kind"]], s["url"]))
     old = sorted((x for x in out if x["date"] < START), key=lambda s: (-s["date"].toordinal(), order[s["kind"]], s["url"]))
     return cur + old
+
+
+_LUNI = {"ian": 1, "feb": 2, "mar": 3, "apr": 4, "mai": 5, "iun": 6, "iul": 7, "aug": 8, "sep": 9,
+         "oct": 10, "noi": 11, "nov": 11, "dec": 12}
+
+
+def _application_date(href: str) -> Optional[date]:
+    """Data publicării unui buletin de cereri din arhivă: cereri_depuse01022013_publicate08022013.pdf,
+    BOPI-28.08.2019.pdf, bopi31052021.pdf, bopi12_sp50_9dec.pdf, bopi 8_sp32_11august2011.pdf, bopi2811.pdf."""
+    name = href.rsplit("/", 1)[-1].lower()
+    ya = re.findall(r"/(\d{4})m?/", href)
+    fy = int(ya[-1]) if ya else None
+    m = re.search(r"publicat\w*?[-_]?(\d{2})[.\-_]?(\d{2})[.\-_]?(\d{4})", name) or \
+        re.search(r"(?<!\d)(\d{2})[.\-_]?(\d{2})[.\-_]?(20\d{2})(?!\d)", name)
+    if m:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    else:
+        m = re.search(r"(?<!\d)(\d{1,2})(ian|feb|mar|apr|mai|iun|iul|aug|sep|oct|noi|nov|dec)[a-z]*(20\d{2})?", name)
+        if m:
+            d, mo, y = int(m.group(1)), _LUNI[m.group(2)], int(m.group(3) or fy or 0)
+        else:
+            # bopi2811.pdf, bopi24.12.pdf, bopi25_08.pdf, bopi101219.pdf, bopi05.12.19.pdf
+            m = re.search(r"bopi[-_ ]?(\d{2})[._]?(\d{2})(?:[._]?(\d{2}))?\.pdf$", name)
+            if m and (m.group(3) or fy) and 1 <= int(m.group(2)) <= 12:
+                d, mo, y = int(m.group(1)), int(m.group(2)), 2000 + int(m.group(3)) if m.group(3) else fy
+            else:
+                # bopi_12_51.pdf, bopi12_sp50_2011.pdf — doar luna (nr. special): ultima zi a lunii.
+                m = re.search(r"bopi[_ ]?(\d{1,2})_(?:sp)?\d{2}", name)
+                if not m or not fy or not 1 <= int(m.group(1)) <= 12:
+                    return None
+                return _month_end(fy, int(m.group(1)))
+    try:
+        return date(y, mo, d)
+    except ValueError:
+        return None
+
+
+def _application_archive(index_html: str) -> List[Dict]:
+    """Cererile de marcă publicate 2010–2021 (buletine speciale săptămânale, apoi zilnice), din arhiva
+    „Cereri de înregistrare marcă” — buletinul lunar are doar mărcile înregistrate, deci cererile
+    respinse / retrase / neînregistrate (ex. EcoWay, M 2010 08636) apar numai aici."""
+    out: List[Dict] = []
+    pages = sorted(set(h.replace("&amp;", "&") for h in re.findall(r'href="([^"]+)"', index_html)
+                       if re.search(r"cereri-de-inregistrare-marca-20(1\d|2[01])\b", h)))
+    seen = set()
+    for pg in pages:
+        try:
+            html = requests.get(pg if pg.startswith("http") else OSIM + pg, headers=UA, timeout=60).text
+        except Exception as e:
+            print(f"[INGEST] arhiva cereri {pg}: {type(e).__name__}")
+            continue
+        for href in re.findall(r'href="([^"]+\.pdf)"', html, re.I):
+            if "Publicatii" not in href or "ind_geo" in href.lower() or "172.16." in href:
+                continue
+            url = href if href.startswith("http") else OSIM + href
+            if url in seen:
+                continue
+            seen.add(url)
+            d = _application_date(url)
+            if d is None or not (date(2010, 1, 1) <= d < START):
+                if d is None:
+                    print(f"[INGEST] arhiva cereri: dată necunoscută {url}")
+                continue
+            out.append({"url": url, "kind": "daily", "date": d, "label": f"BOPI {d:%d.%m.%Y}"})
+    return out
 
 
 def _archive_month(href: str):
@@ -104,6 +170,10 @@ def _archive_month(href: str):
     m = re.match(r"mrc_(\d{1,2})[-_](?:partea-(\w+)_)?(\d{4})\.pdf$", name)
     if m:
         return int(m.group(3)), int(m.group(1)), (f" partea {m.group(2).upper()}" if m.group(2) else "")
+    # mrc_01_2026_b.pdf, mrc_07a_2022.pdf — partea marcată cu literă.
+    m = re.match(r"mrc_(\d{1,2})([a-z])?_(\d{4})(?:_([a-z]))?\.pdf$", name)
+    if m and (m.group(2) or m.group(4)) and 1 <= int(m.group(1)) <= 12:
+        return int(m.group(3)), int(m.group(1)), f" partea {(m.group(2) or m.group(4)).upper()}"
     # Buletin în două fișiere: mrc0502_1.pdf / mrc0502_2.pdf (05/2002), mrc0603i.pdf / mrc0603ii.pdf (06/2003).
     m = re.match(r"mrc_?(\d{2})(\d{2})(?:_(\d)|(i{1,3}))\.pdf$", name)
     if m and 1 <= int(m.group(1)) <= 12:
@@ -938,6 +1008,8 @@ def tm_status_ro(code: str) -> str:
         return "Respinsă"
     if "examin" in c:
         return "În examinare"
+    if any(k in c for k in ("ended", "expired", "cancel", "surrender", "lapsed")):
+        return "Cerere încetată (neînregistrată)"     # ex. EcoWay, M 2010 08636 — TMview „Ended”
     return ""
 
 
@@ -1013,9 +1085,15 @@ def enrich_status(limit: int = 600) -> None:
         week = (date.today() - timedelta(days=7)).isoformat()
         db = SessionLocal()
         try:
+            # Cererile din arhiva 2010–2021 (mai vechi de 3 ani): starea finală se verifică o dată, apoi la
+            # 6 luni — doar cererile recente, săptămânal (TMview nu se încarcă inutil).
+            old = (date.today() - timedelta(days=3 * 365)).isoformat()
+            half = (date.today() - timedelta(days=180)).isoformat()
             todo = [m.app_number for m in db.query(Mark).filter(
                 Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.app_number.like("M%"),
-                Mark.tm_status_checked.is_(None) | (Mark.tm_status_checked < week)).order_by(
+                Mark.tm_status_checked.is_(None) | (Mark.tm_status_checked < week),
+                Mark.tm_status_checked.is_(None) | (Mark.publication_date >= old) |
+                (Mark.tm_status_checked < half)).order_by(
                 Mark.tm_status_checked.asc().nullsfirst(), Mark.publication_date.asc()).limit(limit)]
             if len(todo) < limit:
                 # Apoi mărcile înregistrate (anulări / decăderi nepublicate în BOPI) — reverificate lunar.
