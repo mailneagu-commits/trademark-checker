@@ -778,6 +778,60 @@ def _fix_cp1252_parties():
         db.close()
 
 
+def _drop_expiring_renewals():
+    """„Tabel al mărcilor ce urmează să expire” fusese citit ca listă de reînnoiri: reînnoiri false în
+    istoric (BUSCOPAN, VIDAL SASSOON 05/2021), unele cu expirarea prelungită greșit din data expirării
+    (DINES D). Se scot rândurile acestui tabel și reînnoirile din istoric fără rând real în listele de
+    reînnoiri ale buletinului respectiv."""
+    marker = "migration:expiring-not-renewals-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from ingest import _current_rep, _recompute_holder, expiry_of
+        rows = db.query(MarkChange).filter(MarkChange.kind == "renewal", MarkChange.title.ilike("%expir%"),
+                                           MarkChange.title.ilike("%urmeaz%")).delete(synchronize_session=False)
+        db.commit()
+        real = set()
+        for app, reg, label in db.query(MarkChange.app_number, MarkChange.reg_number, MarkChange.label)\
+                .filter(MarkChange.kind == "renewal"):
+            if app:
+                real.add((label, app))
+            if reg:
+                real.add((label, "#" + reg.lstrip("0")))
+        lab = re.compile(r"^BOPI \d{2}/\d{4}")
+
+        def fake(m, e):
+            return (e.get("chapter") == "Reînnoire" and lab.match(e.get("bopi") or "")
+                    and (e["bopi"], m.app_number) not in real
+                    and (e["bopi"], "#" + (m.reg_number or "").lstrip("0")) not in real)
+
+        keys = [k for (k,) in db.query(Mark.app_number)]
+        found = []
+        for i in range(0, len(keys), 5000):
+            for m in db.query(Mark).filter(Mark.app_number.in_(keys[i:i + 5000])):
+                if any(fake(m, e) for e in (m.events or [])):
+                    found.append(m.app_number)
+        if len(found) > max(20000, len(real) // 4):
+            # Prea multe pentru o corectură țintită — nepotrivire de chei, nu reînnoiri false. Nu se atinge nimic.
+            print(f"[DB] Reînnoiri false: {len(found)} mărci, peste prag — oprit")
+            return
+        n = 0
+        for i in range(0, len(found), 2000):
+            for m in db.query(Mark).filter(Mark.app_number.in_(found[i:i + 2000])):
+                m.events = [e for e in (m.events or []) if not fake(m, e)]
+                _recompute_holder(m)
+                _current_rep(m)
+                m.expiry_date = expiry_of(m)
+                n += 1
+            db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="tabel expirări ≠ reînnoiri v1"))
+        db.commit()
+        print(f"[DB] Rânduri „urmează să expire” scoase: {rows}; mărci cu reînnoiri false corectate: {n}")
+    finally:
+        db.close()
+
+
 def _retry_failed_sources():
     """Buletine marcate „citite” deși descărcarea a eșuat (eroare de conexiune la osim.ro, 0 mărci):
     se recitesc la următoarea rulare."""
@@ -1071,7 +1125,7 @@ def init_db():
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
                                      _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources(),
-                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties()),
+                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _drop_expiring_renewals()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()
