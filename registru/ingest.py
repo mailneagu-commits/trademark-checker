@@ -1065,6 +1065,15 @@ def refresh_status(app: str) -> None:
                         if "|gs3" not in tc:
                             m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
                         db.commit()
+                        if not m.name and re.fullmatch(r"M\d{9}|\d{6}", app):
+                            # Fișa TMview n-are denumirea: o luăm din căutare acum, nu la rândul ei în _fill_names.
+                            name = ((_old_lookup([app]).get(app) or {}).get("tmName") or "").strip()
+                            if name:
+                                m.name, m.name_norm = name, norm(name)
+                                if m.mark_type in ("", None, "Figurativă"):
+                                    m.mark_type = "Combinată" if m.has_image else "Verbală"
+                                m.tmview_checked = (m.tmview_checked or "") + "|nm"
+                                db.commit()
                 finally:
                     db.close()
         except Exception as e:
