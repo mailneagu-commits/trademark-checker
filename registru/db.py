@@ -780,15 +780,14 @@ def _fix_cp1252_parties():
 
 def _drop_expiring_renewals():
     """„Tabel al mărcilor ce urmează să expire” fusese citit ca listă de reînnoiri: reînnoiri false în
-    istoric (BUSCOPAN, VIDAL SASSOON 05/2021), unele cu expirarea prelungită greșit din data expirării
-    (DINES D). Se scot rândurile acestui tabel și reînnoirile din istoric fără rând real în listele de
-    reînnoiri ale buletinului respectiv."""
-    marker = "migration:expiring-not-renewals-v1"
+    istoric (BUSCOPAN, VIDAL SASSOON 05/2021). Se scot rândurile acestui tabel și reînnoirile fără expirare
+    din istoric, fără rând real în listele de reînnoiri ale buletinului; expirările rămân neatinse."""
+    marker = "migration:expiring-not-renewals-v2"
     db = SessionLocal()
     try:
         if db.get(SourceFile, marker):
             return
-        from ingest import _current_rep, _recompute_holder, expiry_of
+        from ingest import _current_rep, _recompute_holder
         rows = db.query(MarkChange).filter(MarkChange.kind == "renewal", MarkChange.title.ilike("%expir%"),
                                            MarkChange.title.ilike("%urmeaz%")).delete(synchronize_session=False)
         db.commit()
@@ -802,7 +801,9 @@ def _drop_expiring_renewals():
         lab = re.compile(r"^BOPI \d{2}/\d{4}")
 
         def fake(m, e):
-            return (e.get("chapter") == "Reînnoire" and lab.match(e.get("bopi") or "")
+            # Doar evenimentele fără expirare: cele cu expirare (DINES D, 2031) corespund registrului OSIM —
+            # marca a fost reînnoită, deși lista de reînnoiri nu a fost găsită; expirarea nu se coboară.
+            return (e.get("chapter") == "Reînnoire" and lab.match(e.get("bopi") or "") and not e.get("expiry")
                     and (e["bopi"], m.app_number) not in real
                     and (e["bopi"], "#" + (m.reg_number or "").lstrip("0")) not in real)
 
@@ -822,10 +823,9 @@ def _drop_expiring_renewals():
                 m.events = [e for e in (m.events or []) if not fake(m, e)]
                 _recompute_holder(m)
                 _current_rep(m)
-                m.expiry_date = expiry_of(m)
                 n += 1
             db.commit()
-        db.add(SourceFile(url=marker, kind="migration", status="ok", label="tabel expirări ≠ reînnoiri v1"))
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="tabel expirări ≠ reînnoiri v2"))
         db.commit()
         print(f"[DB] Rânduri „urmează să expire” scoase: {rows}; mărci cu reînnoiri false corectate: {n}")
     finally:
