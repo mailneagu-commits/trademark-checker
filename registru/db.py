@@ -832,6 +832,60 @@ def _drop_expiring_renewals():
         db.close()
 
 
+def _queue_split_bulletins():
+    """Buletine cu nume de fișier nerecunoscute până acum (sărite cu totul): BOPI 05/2002 și 06/2003 în
+    două părți, nr. 13 și 14 din 2006 (ex. M 2001 04377, nr. 048600, lipsea) — se citesc la pornire."""
+    marker = "migration:split-bulletins-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        base = "https://osim.ro/wp-content/uploads/Publicatii-OSIM/BOPI-Marci/"
+        for path, label, d in (("2002/mrc0502_1.pdf", "BOPI 05/2002 partea I", "2002-05-31"),
+                               ("2002/mrc0502_2.pdf", "BOPI 05/2002 partea II", "2002-05-31"),
+                               ("2003/mrc0603i.pdf", "BOPI 06/2003 partea I", "2003-06-30"),
+                               ("2003/mrc0603ii.pdf", "BOPI 06/2003 partea II", "2003-06-30"),
+                               ("2006/mrc1306.pdf", "BOPI 13/2006", "2006-11-30"),
+                               ("2006/mrc1406.pdf", "BOPI 14/2006", "2006-12-31")):
+            for suffix, kind in (("", "monthly"), ("#changes", "changes")):
+                if db.get(SourceFile, base + path + suffix) is None:
+                    db.add(SourceFile(url=base + path + suffix, kind=kind, label=label, bulletin_date=d,
+                                      status="error", error="nume de fișier nerecunoscut — de citit"))
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="buletine în două părți v1"))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _fix_disclaimer_names():
+    """Mărci figurative 2002–2007 cu declarația de neinvocare („În conformitate cu: regula 17…”) citită
+    drept denumire (~626, ex. M 2001 04377): declarația trece la loc, denumirea vine din TMview
+    (_fill_names). Titularii cu litere spațiate („C A L U S C H I C E Z A R”) se refac din fișa TMview."""
+    marker = "migration:disclaimer-names-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        from bopi_parser import split_disclaimer
+        n = s = 0
+        for m in db.query(Mark).filter(Mark.name.like("%n conformitate%")):
+            name, disc = split_disclaimer(m.name)
+            if name or not disc:
+                continue
+            m.disclaimer = m.disclaimer or disc
+            m.name = m.name_norm = ""
+            m.tmview_checked = (m.tmview_checked or "").replace("|nm", "")
+            n += 1
+        for m in db.query(Mark).filter(Mark.holder.like("_ _ _ _ %")):
+            m.tm_status_checked = None          # reverificată primul în TMview → titularul din fișă
+            s += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="declarație ≠ denumire v1"))
+        db.commit()
+        print(f"[DB] Denumiri = declarație, golite: {n}; titulari spațiați de refăcut: {s}")
+    finally:
+        db.close()
+
+
 def _retry_failed_sources():
     """Buletine marcate „citite” deși descărcarea a eșuat (eroare de conexiune la osim.ro, 0 mărci):
     se recitesc la următoarea rulare."""
@@ -1121,6 +1175,8 @@ def init_db():
     _reread_cid_changes()
     _reread_empty_changes()
     _reread_all_changes()
+    _queue_split_bulletins()
+    _fix_disclaimer_names()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),

@@ -287,7 +287,7 @@ RE_DISC_START = re.compile(r"^" + _DISC_OPENERS)
 def split_disclaimer(name: str) -> Tuple[str, str]:
     name = (name or "").strip()
     # Toată „denumirea” e de fapt declarația (marcă figurativă, fără text în (540)).
-    if len(name) > 40 and RE_DISC_START.match(name) and re.search(r"\bart\.?\s*\d|\bnr\.|OSIM|NOTIFICARE", name, re.I):
+    if len(name) > 40 and RE_DISC_START.match(name) and re.search(r"\bart\.?\s*\d|\bnr\.|OSIM|NOTIFICARE|\bregula\s+\d|\bLegii\b|nu revendic", name, re.I):
         return "", name
     parts = RE_DISCLAIMER.split(name, maxsplit=1)
     if len(parts) > 1:

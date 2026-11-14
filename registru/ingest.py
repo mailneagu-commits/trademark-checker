@@ -70,10 +70,11 @@ def list_sources(today: Optional[date] = None) -> List[Dict]:
             y, mo, part = ym
             if y < ARCHIVE_START:
                 continue
-            out.append({"url": url, "kind": "monthly", "date": _month_end(y, mo),
+            dm = mo - 2 if mo > 12 else mo          # nr. 13 / 14 din 2006 → noiembrie / decembrie
+            out.append({"url": url, "kind": "monthly", "date": _month_end(y, dm),
                         "label": f"BOPI {mo:02d}/{y}{part}"})
             # Tabelele aceluiași buletin (transferuri, reînnoiri, radieri...) — pas separat.
-            out.append({"url": url + "#changes", "kind": "changes", "date": _month_end(y, mo),
+            out.append({"url": url + "#changes", "kind": "changes", "date": _month_end(y, dm),
                         "label": f"BOPI {mo:02d}/{y}{part}"})
     # Buletinele lunare 09–10/2022 au și fișierul întreg, și părțile lui: părțile se sar (dubluri).
     whole = {(x["kind"], x["date"]) for x in out if x["kind"] in ("monthly", "changes") and " partea" not in x["label"]}
@@ -103,11 +104,17 @@ def _archive_month(href: str):
     m = re.match(r"mrc_(\d{1,2})[-_](?:partea-(\w+)_)?(\d{4})\.pdf$", name)
     if m:
         return int(m.group(3)), int(m.group(1)), (f" partea {m.group(2).upper()}" if m.group(2) else "")
+    # Buletin în două fișiere: mrc0502_1.pdf / mrc0502_2.pdf (05/2002), mrc0603i.pdf / mrc0603ii.pdf (06/2003).
+    m = re.match(r"mrc_?(\d{2})(\d{2})(?:_(\d)|(i{1,3}))\.pdf$", name)
+    if m and 1 <= int(m.group(1)) <= 12:
+        part = "I" * int(m.group(3)) if m.group(3) else m.group(4).upper()
+        return (int(fy.group(1)) if fy else 2000 + int(m.group(2))), int(m.group(1)), f" partea {part}"
     m = re.match(r"mrc_?(\d{1,2})[-_]?(\d{2})(?:\d)?(?:_full)?\.pdf$", name)
     if m:
         mo, yy = int(m.group(1)), int(m.group(2))
         y = int(fy.group(1)) if fy else 2000 + yy
-        if 1 <= mo <= 12:
+        # 2006 a avut 14 numere: nr. 13 (30.11.2006) și nr. 14 (29.12.2006) — mrc1306.pdf, mrc1406.pdf.
+        if 1 <= mo <= 12 or (y == 2006 and mo in (13, 14)):
             return y, mo, ""
     m = re.match(r"mrc_?(\d{1,2})[-_](\d{4})\.pdf$", name)
     if m and 1 <= int(m.group(1)) <= 12:
@@ -455,6 +462,7 @@ def _stub_filing_date(m: Mark) -> None:
             m.filing_date = date(y, int(m.expiry_date[5:7]), 28).isoformat()
 
 
+_SPACED = re.compile(r"^(?:\S ){4,}")      # nume tipărit cu litere spațiate: „C A L U S C H I …”
 _DATE_LIKE = re.compile(r"^\s*\d{1,2}[./]\d{1,2}[./]\d{2,4}\s*$")
 
 
@@ -1082,8 +1090,9 @@ def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
             m.goods = g
             found = True
     a = (d.get("applicants_detail") or [{}])[0]
-    if not m.holder and (a.get("name") or "").strip():
-        m.holder = a["name"].strip()             # titular necitit din BOPI (ex. M 2019 00680)
+    # Titular necitit din BOPI (ex. M 2019 00680) sau cu literele spațiate („C A L U S C H I C E Z A R”).
+    if (not m.holder or _SPACED.match(m.holder)) and (a.get("name") or "").strip():
+        m.holder = a["name"].strip()
         m.holder_norm = norm(m.holder)
     if a.get("address") and (not m.holder_address or m.holder_address == m.holder):
         m.holder_address = ", ".join(p for p in [m.holder or a.get("name"), a["address"].replace("\n", ", "),
