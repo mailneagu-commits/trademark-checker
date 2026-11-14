@@ -886,6 +886,76 @@ def _fix_disclaimer_names():
         db.close()
 
 
+_URL_0907 = "https://osim.ro/wp-content/uploads/Publicatii-OSIM/BOPI-Marci/2007/mrc_09_07/mrc_09_09_full.pdf"
+
+
+def _relabel_0907():
+    """BOPI 09/2007 (fișier numit greșit „mrc_09_09_full.pdf”) fusese citit ca „BOPI 09/2009”: se reciteşte
+    cu eticheta și data corecte; dublurile „09/2009” se scot după recitire (_dedupe_0907)."""
+    marker = "migration:relabel-0907-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        for u in (_URL_0907, _URL_0907 + "#changes"):
+            s = db.get(SourceFile, u)
+            if s is not None:
+                s.status, s.label, s.bulletin_date = "error", "BOPI 09/2007", "2007-09-30"
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="BOPI 09/2007 reetichetat v1"))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _dedupe_0907():
+    """După recitirea BOPI 09/2007: rândurile și evenimentele vechi etichetate „BOPI 09/2009” care repetă
+    exact ce a dat 09/2007 se scot; datele 30.09.2009 venite de acolo devin 30.09.2007."""
+    marker = "migration:dedupe-0907-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        src = [db.get(SourceFile, u) for u in (_URL_0907, _URL_0907 + "#changes")]
+        if any(s is None or s.status != "ok" or s.label != "BOPI 09/2007" for s in src):
+            return                          # recitirea n-a avut loc încă
+        from ingest import _current_rep, _recompute_holder
+        OLD, NEW, OD, ND = "BOPI 09/2009", "BOPI 09/2007", "2009-09-30", "2007-09-30"
+        key = lambda c: (c.kind, c.app_number, c.reg_number, c.old_value, c.new_value, c.expiry)
+        new = {key(c) for c in db.query(MarkChange).filter(MarkChange.label == NEW, MarkChange.bulletin_date == ND)}
+        rows = 0
+        for c in db.query(MarkChange).filter(MarkChange.label == OLD, MarkChange.bulletin_date == OD):
+            if key(c) in new:
+                db.delete(c)
+                rows += 1
+        db.commit()
+        n = 0
+        apps = [a for (a,) in db.query(Mark.app_number)]
+        for i in range(0, len(apps), 5000):
+            for m in db.query(Mark).filter(Mark.app_number.in_(apps[i:i + 5000])):
+                evs = m.events or []
+                got = {(e.get("chapter"), e.get("detail"), e.get("holder")) for e in evs if e.get("bopi") == NEW}
+                if not got:
+                    continue
+                keep = [e for e in evs if not (e.get("bopi") == OLD and e.get("date") == OD
+                                               and (e.get("chapter"), e.get("detail"), e.get("holder")) in got)]
+                if len(keep) == len(evs):
+                    continue
+                m.events = keep
+                if not any(e.get("bopi") == OLD for e in keep):
+                    for f in ("reg_date", "publication_date", "status_date"):
+                        if getattr(m, f) == OD:
+                            setattr(m, f, ND)
+                _recompute_holder(m)
+                _current_rep(m)
+                n += 1
+            db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="BOPI 09/2007 dubluri v1"))
+        db.commit()
+        print(f"[DB] BOPI 09/2007: {rows} modificări dublate scoase, {n} mărci cu istoric corectat")
+    finally:
+        db.close()
+
+
 def _retry_failed_sources():
     """Buletine marcate „citite” deși descărcarea a eșuat (eroare de conexiune la osim.ro, 0 mărci):
     se recitesc la următoarea rulare."""
@@ -1177,11 +1247,12 @@ def init_db():
     _reread_all_changes()
     _queue_split_bulletins()
     _fix_disclaimer_names()
+    _relabel_0907()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
                                      _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources(),
-                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _drop_expiring_renewals()),
+                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _drop_expiring_renewals(), _dedupe_0907()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()

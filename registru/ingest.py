@@ -112,7 +112,9 @@ def _archive_month(href: str):
     m = re.match(r"mrc_?(\d{1,2})[-_]?(\d{2})(?:\d)?(?:_full)?\.pdf$", name)
     if m:
         mo, yy = int(m.group(1)), int(m.group(2))
-        y = int(fy.group(1)) if fy else 2000 + yy
+        # Anul din dosar are prioritate: 2007/mrc_09_07/mrc_09_09_full.pdf e BOPI 09/2007 (nume greșit la OSIM).
+        ya = re.findall(r"/(\d{4})m?/", href)
+        y = int(fy.group(1)) if fy else int(ya[-1]) if ya else 2000 + yy
         # 2006 a avut 14 numere: nr. 13 (30.11.2006) și nr. 14 (29.12.2006) — mrc1306.pdf, mrc1406.pdf.
         if 1 <= mo <= 12 or (y == 2006 and mo in (13, 14)):
             return y, mo, ""
