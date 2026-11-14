@@ -262,6 +262,14 @@ REP_GROUPS = [
 ]
 
 
+def _holder_core(h: str) -> str:
+    """Titularul fără forma juridică: „SC OAMENI SI COMPANII SRL” și „S.C. … S.R.L.” → „oameni si companii”
+    — OSIM scrie aceeași firmă în mai multe feluri, căutarea trebuie să le găsească pe toate."""
+    core = re.sub(r"^(?:s ?c|societatea comerciala) ", "", h)
+    core = re.sub(r" (?:s ?r ?l(?: ?d)?|s ?a|s ?n ?c|s ?c ?s|s ?c ?a|pfa|ii|if|ltd|gmbh|inc|llc|bv|ag|sas)$", "", core)
+    return core.strip() or h
+
+
 @app.get("/api/search")
 def search(name: str = "", holder: str = "", representative: str = "", classes: str = "",
            status: str = "", mode: str = "contains", page: int = 1, size: int = 20,
@@ -298,7 +306,7 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
             order += [case((Mark.name_norm == n, 0), (Mark.name_norm.startswith(n), 1), else_=2),
                       func.length(Mark.name_norm)]
     if h:
-        q = q.filter(Mark.holder_norm.contains(h))
+        q = q.filter(Mark.holder_norm.contains(_holder_core(h)))
     if r:
         group = next((g for g in REP_GROUPS if any(a in r for a in g)), None)
         q = q.filter(or_(*[Mark.rep_norm.contains(a) for a in group]) if group else Mark.rep_norm.contains(r))
