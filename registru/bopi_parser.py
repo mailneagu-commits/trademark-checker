@@ -17,6 +17,17 @@ import re
 from typing import Dict, Iterator, List, Optional, Tuple
 
 import pdfplumber
+import pdfminer.cmapdb as _cmapdb
+
+
+def _identity_decode(self, code: bytes):
+    # BOPI nr. 14/2006: șiruri cu număr impar de octeți într-un font pe 2 octeți — pdfminer se oprea
+    # („unpack requires a buffer of 2 bytes”) și buletinul nu putea fi citit; octetul în plus se ignoră.
+    n = len(code) // 2
+    return _cmapdb.struct.unpack(">%dH" % n, code[:2 * n]) if n else ()
+
+
+_cmapdb.IdentityCMap.decode = _identity_decode
 
 WATERMARK = "Arial-Black"
 INID = ("111", "116", "141", "151", "156", "180", "181", "186", "210", "220", "230", "300",
