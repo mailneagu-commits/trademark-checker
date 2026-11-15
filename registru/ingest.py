@@ -1743,7 +1743,7 @@ def _reg_gaps(after: int, old: bool = False) -> List[int]:
     return [i for i in range(max(after, GAP_FROM), top + 1) if i not in have]
 
 
-def fill_reg_gaps(batches: int = 12) -> None:
+def fill_reg_gaps(batches: int = 4) -> None:
     """Golurile din numerotare căutate în TMview după nr. mărcii: cererea din BOPI primește nr. de
     înregistrare (ex. M 2010 08424 → 113255); marca lipsă cu totul intră cu datele de bază.
     Întâi seria recentă (de la GAP_FROM), apoi numerele vechi 1–47.999."""
@@ -1764,13 +1764,20 @@ def fill_reg_gaps(batches: int = 12) -> None:
         if _tmview_paused():
             return
         batch = [str(n).zfill(6) for n in gaps[i:i + 25]]
-        data = _regsearch(batch, "registrationNumber")
-        if data is None or any(not isinstance(data.get(n), dict) or data[n].get("status") != 200 for n in batch):
+        data = _regsearch(batch, "registrationNumber") or {}
+        # Ce a răspuns TMview, la rând, se păstrează; de la primul nr. fără răspuns lotul se reia.
+        ok = []
+        for n in batch:
+            if not isinstance(data.get(n), dict) or data[n].get("status") != 200:
+                break
+            ok.append(n)
+        blocked = len(ok) < len(batch)
+        if not ok:
             _tmview_backoff()
-            return                                # lotul se reia la rularea următoare
+            return
         db = SessionLocal()
         try:
-            for num in batch:
+            for num in ok:
                 hit = next((x for x in data[num].get("hits") or []
                             if (x.get("registrationNumber") or "").zfill(6) == num), None)
                 app = re.sub(r"\s+", "", (hit or {}).get("applicationNumber") or "").upper()
@@ -1793,7 +1800,7 @@ def fill_reg_gaps(batches: int = 12) -> None:
                         "detail": f"nr. marcă {m.reg_number} (nepublicat în buletinele OSIM citite)",
                         "st13": hit.get("ST13") or ""}]
                     old_job["gaps_reg"] = old_job.get("gaps_reg", 0) + 1
-            db.merge(SourceFile(url=cursor, kind="cursor", label=str(int(batch[-1]) + 1), status="cursor"))
+            db.merge(SourceFile(url=cursor, kind="cursor", label=str(int(ok[-1]) + 1), status="cursor"))
             db.commit()
         except Exception as e:
             db.rollback()
@@ -1801,6 +1808,9 @@ def fill_reg_gaps(batches: int = 12) -> None:
             return
         finally:
             db.close()
+        if blocked:
+            _tmview_backoff()
+            return
 
 
 def _fill_names(limit: int = 100) -> None:
