@@ -1670,3 +1670,94 @@ def import_prowatch(body: PartyImportIn, db: Session = Depends(get_db)):
     db.commit()
     result["imported"] = len(new)
     return result
+
+
+PROWATCH_XLS_HEADERS = [
+    "Nr Crt", "Denumire marcă", "Reprezentare marcă", "Clase Nisa", "Nr. marcă înregistrată", "Nr. Depozit",
+    "Dată de depozit", "Dată înregistrare marcă", "Data expirării", "Tip marcă", "Stare marcă", "Titular",
+    "Reprezentant", "Găsită după", "Deja monitorizată", "Prag similaritate (opțional, implicit 0.6)",
+    "Email notificare (opțional)",
+]
+
+
+def _logo_png(data: Optional[bytes], box: int = 70) -> Optional[bytes]:
+    from PIL import Image as PILImage
+    try:
+        im = PILImage.open(io.BytesIO(data))
+        im.thumbnail((box * 2, box))
+        if im.mode not in ("RGB", "RGBA"):
+            im = im.convert("RGBA")
+        out = io.BytesIO()
+        im.save(out, "PNG")
+        return out.getvalue()
+    except Exception:
+        return None
+
+
+@router.get("/prowatch-excel")
+def prowatch_excel(holder: str = "", representative: str = "", statuses: str = "valabile,cereri",
+                   db: Session = Depends(get_db)):
+    """Mărcile ProWatch ale titularului și/sau reprezentantului într-un tabel Excel în formatul de
+    import (foaia OSIM, cu logo-urile) — se poate completa / corecta și importa apoi cu „Import Excel”."""
+    from concurrent.futures import ThreadPoolExecutor
+    from openpyxl import Workbook
+    from openpyxl.drawing.image import Image as XLImage
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    holder, representative = holder.strip(), representative.strip()
+    if len(holder) < 3 and len(representative) < 3:
+        raise HTTPException(400, "Completați numele titularului și/sau al reprezentantului (minimum 3 caractere).")
+    sts = [s for k in statuses.split(",") for s in PROWATCH_STATUSES.get(k.strip(), [])]
+    if not sts:
+        raise HTTPException(400, "Alegeți cel puțin o categorie: mărci valabile și/sau cereri în curs.")
+    found = sorted(_prowatch_marks(holder, representative, sts).values(),
+                   key=lambda x: (x.get("name") or "~").lower())
+    existing = db.query(WatchItem.application_number, WatchItem.registration_number).all()
+    have_app = {_num_key(a) for a, _ in existing if a}
+    have_reg = {_num_key(r) for _, r in existing if r}
+    with ThreadPoolExecutor(8) as ex:
+        logos = list(ex.map(lambda m: _logo_png(_prowatch_logo(m["image"])) if m.get("image") else None, found))
+
+    head_fill, head_font = PatternFill("solid", fgColor="1A3C5E"), Font(bold=True, color="FFFFFF", size=11)
+    side = Side(style="thin", color="BBBBBB")
+    border = Border(left=side, right=side, top=side, bottom=side)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = (re.sub(r"[\[\]:*?/\\]", " ", " - ".join(v for v in (holder, representative) if v))[:24] + " OSIM").strip()
+    widths = {"Denumire marcă": 32, "Reprezentare marcă": 22, "Clase Nisa": 14, "Titular": 36, "Reprezentant": 30,
+              "Găsită după": 22, "Stare marcă": 20, "Email notificare (opțional)": 28}
+    for c, h in enumerate(PROWATCH_XLS_HEADERS, start=1):
+        cell = ws.cell(row=1, column=c, value=h)
+        cell.fill, cell.font, cell.border = head_fill, head_font, border
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws.column_dimensions[cell.column_letter].width = widths.get(h, 16)
+    ws.row_dimensions[1].height = 36
+    ws.freeze_panes = "A2"
+    img_col = PROWATCH_XLS_HEADERS.index("Reprezentare marcă") + 1
+    for i, (m, logo) in enumerate(zip(found, logos), start=1):
+        row = i + 1
+        app = (m.get("deposit") if m["app_number"].startswith("R") else m.get("app")) or ""
+        reg = m.get("reg_number") or ""
+        monitored = (app and _num_key(app) in have_app) or (reg and _num_key(reg) in have_reg)
+        vals = [i, m.get("name") or "", "", ", ".join(str(c) for c in m.get("classes") or []), reg, app,
+                m.get("filing_date") or "", m.get("reg_date") or "", m.get("expiry_date") or "",
+                m.get("mark_type") or "", m.get("status") or "", m.get("holder") or "", m.get("representative") or "",
+                " + ".join(m["criteria"]), "DA" if monitored else "NU", "", ""]
+        for c, v in enumerate(vals, start=1):
+            cell = ws.cell(row=row, column=c, value=v)
+            cell.border = border
+            cell.alignment = Alignment(vertical="center", wrap_text=c in (2, 12, 13))
+        if logo:
+            try:
+                img = XLImage(io.BytesIO(logo))
+                img.anchor = f"{ws.cell(row=row, column=img_col).column_letter}{row}"
+                ws.add_image(img)
+                ws.row_dimensions[row].height = 56
+            except Exception:
+                pass
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = re.sub(r"[^A-Za-z0-9_-]+", "_", f"mărci_{holder or representative}")[:60] + ".xlsx"
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})

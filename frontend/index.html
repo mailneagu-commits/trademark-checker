@@ -893,6 +893,7 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn-export" onclick="bulkImport(true)" id="bulkPreviewBtn">🔍 Previzualizează</button>
         <button class="btn-primary" style="padding:9px 18px;font-size:.85rem;" onclick="bulkImport(false)" id="bulkImportBtn" disabled>✅ Adaugă la monitorizare</button>
+        <button class="btn-export" onclick="bulkExcel()" id="bulkExcelBtn">📊 Descarcă tabel Excel</button>
       </div>
       <div id="bulkResult" style="margin-top:14px;"></div>
     </div>
@@ -4047,6 +4048,20 @@ function toggleBulkForm() {
   const el = document.getElementById(id);
   if (el) el.addEventListener("input", () => { document.getElementById("bulkImportBtn").disabled = true; });
 }));
+
+function bulkExcel() {
+  const statuses = [];
+  if (document.getElementById("bulkValid").checked) statuses.push("valabile");
+  if (document.getElementById("bulkPending").checked) statuses.push("cereri");
+  const q = new URLSearchParams({
+    holder: document.getElementById("bulkHolder").value.trim(),
+    representative: document.getElementById("bulkRep").value.trim(),
+    statuses: statuses.join(","),
+  });
+  document.getElementById("bulkResult").innerHTML =
+    '<em style="color:#888;">Se pregătește tabelul (cu logo-urile) — poate dura până la un minut...</em>';
+  window.location.href = "/api/monitor/prowatch-excel?" + q.toString();
+}
 
 async function bulkImport(dryRun) {
   const res = document.getElementById("bulkResult");
