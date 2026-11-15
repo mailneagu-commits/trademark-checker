@@ -549,7 +549,11 @@ def coverage(year: int = 0, gaps: int = 0, db: Session = Depends(get_db)):
                                            "marks": r.marks, "error": (r.error or "")[:200]} for r in rows]}
     yr = func.substr(Mark.app_number, 2, 4)
     by = dict(db.query(yr, func.count(Mark.app_number)).filter(Mark.app_number.like("M%")).group_by(yr).all())
-    return {"marks_by_deposit_year": dict(sorted(by.items()))}
+    # Cereri fără rezultat cunoscut (fără nr. de înregistrare), pe an de depozit — la cele vechi starea
+    # reală (înregistrată / respinsă / retrasă) lipsește din buletinele citite.
+    pend = dict(db.query(yr, func.count(Mark.app_number)).filter(
+        Mark.app_number.like("M%"), Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"])).group_by(yr).all())
+    return {"marks_by_deposit_year": dict(sorted(by.items())), "pending_by_deposit_year": dict(sorted(pend.items()))}
 
 
 @app.get("/api/quality")
