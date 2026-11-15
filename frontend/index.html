@@ -766,6 +766,7 @@
           📤 Import Excel
         </button>
         <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display:none" onchange="importExcel(this)">
+        <button class="btn-export" onclick="toggleBulkForm()">🏢 Adaugă în bloc (titular / reprezentant)</button>
         <button class="btn-export" onclick="toggleAddForm()">➕ Adaugă manual</button>
       </div>
     </div>
@@ -871,6 +872,30 @@
 
     <!-- Import result -->
     <div id="importResult" style="display:none;margin-bottom:14px;"></div>
+
+    <!-- Adăugare în bloc din ProWatch -->
+    <div id="bulkForm" style="display:none;background:#f8f8f8;border-radius:10px;border:1.5px solid #e0e0e0;padding:20px;margin-bottom:18px;">
+      <h3 style="font-size:.92rem;color:#0a0d31;margin-bottom:6px;">Adaugă în bloc mărcile unui titular și/sau reprezentant</h3>
+      <div style="font-size:.78rem;color:#777;margin-bottom:14px;">Mărcile OSIM din ProWatch. Completați unul sau ambele câmpuri — o marcă găsită după ambele criterii se adaugă o singură dată, iar mărcile deja monitorizate nu se adaugă din nou.</div>
+      <div class="form-row" style="margin-bottom:12px;">
+        <div class="form-col"><label>Titular</label><input type="text" id="bulkHolder" placeholder="ex. DACIA"></div>
+        <div class="form-col"><label>Reprezentant</label><input type="text" id="bulkRep" placeholder="ex. PROTECTMARK"></div>
+      </div>
+      <div class="form-row" style="margin-bottom:12px;">
+        <div class="form-col"><label>Email notificare *</label><input type="email" id="bulkEmail" placeholder="ex. office@protectmark.ro" style="width:100%;padding:11px 14px;border:2px solid #e0e0e0;border-radius:8px;font-size:1rem;background:#fff;"></div>
+        <div class="form-col"><label>Frecvență</label>
+          <select id="bulkFreq" style="width:100%;padding:11px 14px;border:2px solid #e0e0e0;border-radius:8px;font-size:1rem;background:#fff;"><option value="weekly">Săptămânal</option><option value="daily">Zilnic</option><option value="monthly">Lunar</option></select></div>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:.84rem;margin-bottom:14px;">
+        <label style="display:inline;text-transform:none;"><input type="checkbox" id="bulkValid" checked> mărci valabile</label>
+        <label style="display:inline;text-transform:none;"><input type="checkbox" id="bulkPending" checked> cereri în curs</label>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-export" onclick="bulkImport(true)" id="bulkPreviewBtn">🔍 Previzualizează</button>
+        <button class="btn-primary" style="padding:9px 18px;font-size:.85rem;" onclick="bulkImport(false)" id="bulkImportBtn" disabled>✅ Adaugă la monitorizare</button>
+      </div>
+      <div id="bulkResult" style="margin-top:14px;"></div>
+    </div>
 
     <!-- Add form -->
     <div id="addForm" style="display:none;background:#f8f8f8;border-radius:10px;border:1.5px solid #e0e0e0;padding:20px;margin-bottom:18px;">
@@ -4009,6 +4034,60 @@ function handleDrop(event) {
 
 function importExcel(input) {
   if (input.files[0]) uploadExcel(input.files[0]);
+}
+
+function toggleBulkForm() {
+  const f = document.getElementById("bulkForm");
+  f.style.display = f.style.display === "none" ? "block" : "none";
+  const em = document.getElementById("bulkEmail");
+  if (!em.value) { try { em.value = localStorage.getItem("importEmail") || ""; } catch(e) {} }
+}
+
+["bulkHolder","bulkRep","bulkValid","bulkPending"].forEach(id => document.addEventListener("DOMContentLoaded", () => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("input", () => { document.getElementById("bulkImportBtn").disabled = true; });
+}));
+
+async function bulkImport(dryRun) {
+  const res = document.getElementById("bulkResult");
+  const statuses = [];
+  if (document.getElementById("bulkValid").checked) statuses.push("valabile");
+  if (document.getElementById("bulkPending").checked) statuses.push("cereri");
+  const body = {
+    holder: document.getElementById("bulkHolder").value.trim(),
+    representative: document.getElementById("bulkRep").value.trim(),
+    notification_email: document.getElementById("bulkEmail").value.trim(),
+    frequency: document.getElementById("bulkFreq").value,
+    statuses, dry_run: dryRun,
+  };
+  const btn = document.getElementById(dryRun ? "bulkPreviewBtn" : "bulkImportBtn");
+  btn.disabled = true;
+  res.innerHTML = `<em style="color:#888;">${dryRun ? "Se caută în ProWatch..." : "Se adaugă (și logo-urile)..."}</em>`;
+  try {
+    const r = await fetch("/api/monitor/import-prowatch", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    const data = await r.json();
+    if (!r.ok) { res.innerHTML = `<div class="import-err">❌ ${escHtml(data.detail || "Eroare.")}</div>`; return; }
+    const crit = c => c.join(" + ");
+    const list = (rows, extra) => `<ul style="margin:4px 0 0 16px;max-height:260px;overflow:auto;">${rows.map(d =>
+      `<li>${escHtml(d.trademark || "(fără denumire)")} — ${escHtml(d.app || d.reg || "")} · cl. ${escHtml((d.classes||[]).join(", "))} · ${escHtml(d.status)} <span style="color:#999;">(${escHtml(crit(d.criteria))})</span>${extra && d.reason ? " — " + escHtml(d.reason) : ""}</li>`).join("")}</ul>`;
+    let html = `<div class="${dryRun ? "import-warn" : "import-ok"}">`;
+    html += dryRun
+      ? `<strong>${data.found} mărci găsite</strong>${data.found_both ? ` (${data.found_both} după ambele criterii, numărate o dată)` : ""} · <strong>${data.to_import} de adăugat</strong>`
+      : `<strong>${data.imported} mărci adăugate la monitorizare</strong>`;
+    if (data.duplicates) html += ` · <span style="color:#e67e22;">${data.duplicates} deja monitorizate</span>`;
+    if (data.skipped) html += ` · ${data.skipped} ignorate`;
+    html += "</div>";
+    if (dryRun && data.details.to_import.length) html += `<div style="margin-top:8px;font-size:.8rem;"><strong>De adăugat:</strong>${list(data.details.to_import)}</div>`;
+    if (data.details.duplicates.length) html += `<div style="margin-top:8px;font-size:.8rem;color:#e67e22;"><strong>Deja în listă (nu se adaugă din nou):</strong>${list(data.details.duplicates, true)}</div>`;
+    if (data.details.skipped.length) html += `<div style="margin-top:8px;font-size:.8rem;color:#888;"><strong>Ignorate:</strong>${list(data.details.skipped, true)}</div>`;
+    res.innerHTML = html;
+    if (dryRun) document.getElementById("bulkImportBtn").disabled = !data.to_import;
+    else loadWatches();
+  } catch(e) {
+    res.innerHTML = `<div class="import-err">❌ Eroare conexiune: ${escHtml(e.message)}</div>`;
+  } finally {
+    if (dryRun) btn.disabled = false;
+  }
 }
 
 async function uploadExcel(file) {

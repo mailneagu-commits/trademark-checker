@@ -1522,3 +1522,151 @@ def import_excel(file: UploadFile = File(...), default_email: str = Form(""), db
             "duplicates": duplicates,
         },
     }
+
+
+# ── Import în bloc din ProWatch (după titular / reprezentant) ─────────────────
+
+PROWATCH_API = os.environ.get("PROWATCH_API", "https://prowatch.protectmark.ro")
+# Stările ProWatch care se monitorizează: mărcile valabile și cererile în curs (nu expirate / respinse).
+PROWATCH_STATUSES = {"valabile": ["Valabile"], "cereri": ["Cerere publicată", "Admisă la înregistrare"]}
+PROWATCH_MAX = 3000
+
+
+class PartyImportIn(BaseModel):
+    holder:             str  = ""
+    representative:     str  = ""
+    statuses:           List[str] = ["valabile", "cereri"]
+    notification_email: str  = ""
+    frequency:          str  = "weekly"
+    offices:            List[str] = list(DEFAULT_WATCH_OFFICES)
+    dry_run:            bool = True      # întâi previzualizare, apoi importul propriu-zis
+
+
+def _num_key(v) -> str:
+    return re.sub(r"[\s/.-]", "", str(v or "")).upper().lstrip("0")
+
+
+def _prowatch_marks(holder: str, representative: str, statuses: List[str]) -> Dict[str, dict]:
+    """Mărcile ProWatch ale titularului ȘI/SAU reprezentantului — reuniunea celor două căutări,
+    fiecare marcă o singură dată (cheia = nr. de depozit din ProWatch); `criteria` spune după ce s-a găsit."""
+    import requests
+    out: Dict[str, dict] = {}
+    for crit, value in (("titular", holder), ("reprezentant", representative)):
+        if not value:
+            continue
+        for st in statuses:
+            page = 1
+            while True:
+                params = {"holder" if crit == "titular" else "representative": value,
+                          "status": st, "page": page, "size": 100}
+                try:
+                    r = requests.get(f"{PROWATCH_API}/api/search", params=params, timeout=60)
+                except Exception as e:
+                    raise HTTPException(502, f"ProWatch nu răspunde: {type(e).__name__}")
+                if r.status_code != 200:
+                    raise HTTPException(502, f"ProWatch: {r.text[:200]}")
+                data = r.json()
+                for m in data.get("results") or []:
+                    item = out.setdefault(m["app_number"], dict(m, criteria=[]))
+                    if crit not in item["criteria"]:
+                        item["criteria"].append(crit)
+                if len(out) > PROWATCH_MAX:
+                    raise HTTPException(400, f"Peste {PROWATCH_MAX} de mărci — restrângeți căutarea "
+                                             f"(numele complet al titularului / reprezentantului).")
+                if page * data.get("size", 100) >= data.get("total", 0):
+                    break
+                page += 1
+    return out
+
+
+def _prowatch_logo(path: str) -> Optional[bytes]:
+    import requests
+    try:
+        r = requests.get(PROWATCH_API + path, timeout=30)
+        return r.content if r.status_code == 200 and r.content else None
+    except Exception:
+        return None
+
+
+@router.post("/import-prowatch")
+def import_prowatch(body: PartyImportIn, db: Session = Depends(get_db)):
+    """Adăugare în bloc din ProWatch (mărcile OSIM) după numele titularului și/sau reprezentantului.
+    O marcă găsită după ambele criterii intră o singură dată; mărcile deja monitorizate (același nr.
+    de depozit / înregistrare, sau aceeași denumire + clase + imagine) nu se adaugă din nou."""
+    import hashlib
+    import uuid
+    from concurrent.futures import ThreadPoolExecutor
+
+    holder, rep = body.holder.strip(), body.representative.strip()
+    if len(holder) < 3 and len(rep) < 3:
+        raise HTTPException(400, "Completați numele titularului și/sau al reprezentantului (minimum 3 caractere).")
+    statuses = [s for k in body.statuses for s in PROWATCH_STATUSES.get(k, [])]
+    if not statuses:
+        raise HTTPException(400, "Alegeți cel puțin o categorie: mărci valabile și/sau cereri în curs.")
+    email = body.notification_email.strip()
+    if not body.dry_run and "@" not in email:
+        raise HTTPException(400, "Emailul de notificare este obligatoriu.")
+
+    found = _prowatch_marks(holder, rep, statuses)
+
+    existing = db.query(WatchItem).all()
+    have_app = {_num_key(w.application_number) for w in existing if w.application_number}
+    have_reg = {_num_key(w.registration_number) for w in existing if w.registration_number}
+    existing_keys = [{"name": w.trademark_name, "classes": w.nice_classes or [], "image_hash": w.image_hash,
+                      "application_number": w.application_number, "registration_number": w.registration_number,
+                      "filing_date": w.filing_date} for w in existing]
+
+    new, duplicates, skipped = [], [], []
+    for m in sorted(found.values(), key=lambda x: (x.get("name") or "").lower()):
+        app = m.get("deposit") if m["app_number"].startswith("R") else m.get("app")
+        app = app or ""
+        reg = m.get("reg_number") or ""
+        label = {"trademark": m.get("name") or "", "app": app, "reg": reg, "criteria": m["criteria"],
+                 "status": m.get("status") or "", "classes": m.get("classes") or []}
+        if not (m.get("name") or "").strip():
+            skipped.append(dict(label, reason="Marcă figurativă fără denumire — nu poate fi monitorizată după nume"))
+            continue
+        if not m.get("classes"):
+            skipped.append(dict(label, reason="Fără clase Nisa în ProWatch"))
+            continue
+        if (app and _num_key(app) in have_app) or (reg and _num_key(reg) in have_reg):
+            duplicates.append(dict(label, reason="Deja în lista de monitorizare (același nr.)"))
+            continue
+        cand = {"name": m["name"], "classes": [str(c) for c in m["classes"]], "image_hash": None,
+                "application_number": app, "registration_number": reg, "filing_date": m.get("filing_date") or ""}
+        if any(_is_duplicate_watch(e, cand) for e in existing_keys if not e["image_hash"]):
+            duplicates.append(dict(label, reason="Marcă identică (denumire + clase) deja în listă"))
+            continue
+        new.append((m, label, app, reg))
+        if app:
+            have_app.add(_num_key(app))
+        if reg:
+            have_reg.add(_num_key(reg))
+
+    both = sum(1 for m in found.values() if len(m["criteria"]) > 1)
+    result = {"found": len(found), "found_both": both, "to_import": len(new), "duplicates": len(duplicates),
+              "skipped": len(skipped), "imported": 0,
+              "details": {"to_import": [x[1] for x in new], "duplicates": duplicates, "skipped": skipped}}
+    if body.dry_run:
+        return result
+
+    with ThreadPoolExecutor(8) as ex:
+        logos = list(ex.map(lambda x: _prowatch_logo(x[0]["image"]) if x[0].get("image") else None, new))
+    offices = _parse_offices(",".join(body.offices)) or list(DEFAULT_WATCH_OFFICES)
+    frequency = _parse_frequency(body.frequency)
+    portfolio = " / ".join(v for v in (holder, rep) if v)[:120]
+    for (m, label, app, reg), logo in zip(new, logos):
+        db.add(WatchItem(
+            trademark_name=m["name"].strip(), holder_name=m.get("holder") or "",
+            nice_classes=[str(c) for c in m["classes"]], offices=offices, notification_email=email,
+            frequency=frequency, reference_image_data=logo,
+            reference_image=f"{uuid.uuid4().hex}.png" if logo else None,
+            image_hash=hashlib.sha256(logo).hexdigest() if logo else None,
+            application_number=app or None, registration_number=reg or None,
+            filing_date=m.get("filing_date") or None, publication_date=m.get("publication_date") or None,
+            representative_name=m.get("representative") or None, origin_office="OSIM",
+            portfolio=f"ProWatch: {portfolio}", status=m.get("status") or None,
+            mark_type=m.get("mark_type") or None, expiry_date=m.get("expiry_date") or None))
+    db.commit()
+    result["imported"] = len(new)
+    return result
