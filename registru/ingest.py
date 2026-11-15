@@ -880,7 +880,7 @@ def enrich_logos_hq(limit: int = 150) -> None:
     """Treptat, toate siglele — doar după terminarea încărcării buletinelor."""
     import time as _t
     from db import MarkImageHQ
-    if hq_job["running"] or job["running"] or _tmview_paused():
+    if hq_job["running"] or job["running"] or _tmview_paused() or _status_backlog():
         return
     # Prioritatea stabilită cu utilizatorul: întâi datele mărcilor (produse, date, stări, depozite),
     # apoi siglele — cât timp mai sunt fișe TMview de completat, siglele așteaptă (cu excepția celor
@@ -925,7 +925,7 @@ def enrich_logos(limit: int = 300) -> int:
     """Logo-urile mărcilor reînnoite vechi („R…”): BOPI nu le are, iar fără logo tipul era dedus
     greșit „Verbală” (ELECTRA 3R29570). „|img” se pune doar după un răspuns clar de la TMview."""
     import time as _t
-    if _tmview_paused():
+    if _tmview_paused() or _status_backlog():
         return 0
     db = SessionLocal()
     n = unknown = 0
@@ -986,6 +986,27 @@ def _tmview_paused() -> bool:
     if ro.weekday() < 5 and (15, 0) <= (ro.hour, ro.minute) < (15, 30):
         return True
     return datetime.utcnow() < tmview_pause["until"]
+
+
+_backlog = {"at": None, "n": 0}
+
+
+def _status_backlog() -> int:
+    """Cererile din arhivă (depozit până în 2021) încă neverificate în TMview: cât timp sunt, starea lor
+    (înregistrată / respinsă / retrasă) are prioritate — produsele, siglele și seria veche așteaptă."""
+    from sqlalchemy import func as _f
+    now = datetime.utcnow()
+    if _backlog["at"] and now - _backlog["at"] < timedelta(minutes=10):
+        return _backlog["n"]
+    db = SessionLocal()
+    try:
+        n = db.query(_f.count(Mark.app_number)).filter(
+            Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.app_number.like("M%"),
+            _f.substr(Mark.app_number, 2, 4) <= "2021", Mark.tm_status_checked.is_(None)).scalar() or 0
+    finally:
+        db.close()
+    _backlog.update(at=now, n=n)
+    return n
 
 
 def _weekend() -> bool:
@@ -1074,6 +1095,7 @@ def refresh_status(app: str) -> None:
                         tc = m.tmview_checked or ""
                         _apply_detail(m, d, app, tc, db)      # toată fișa, nu doar starea
                         _set_tm_status(m, d)
+                        _registered_from_tmview(m, d)
                         if "|gs3" not in tc:
                             m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
                         db.commit()
@@ -1151,6 +1173,7 @@ def enrich_status(limit: int = 600) -> None:
                     tc = m.tmview_checked or ""
                     _apply_detail(m, d, app, tc, db)      # aceeași fișă: produse complete, data exactă a înregistrării
                     _set_tm_status(m, d)
+                    _registered_from_tmview(m, d)
                     if "|gs3" not in tc:
                         m.tmview_checked = tc[:-4] + "|gs3|img" if tc.endswith("|img") else tc + "|gs3"
                     db.commit()
@@ -1161,6 +1184,23 @@ def enrich_status(limit: int = 600) -> None:
             _t.sleep(1)
     finally:
         status_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")
+
+
+def _registered_from_tmview(m: Mark, d: Dict) -> None:
+    """Cerere din arhivă pe care TMview o dă înregistrată (înregistrarea nepublicată în buletinele citite,
+    ex. M 2010 08424 → 113255): devine marcă înregistrată, cu nr. și expirarea din TMview."""
+    code = (d.get("markCurrentStatusCode") or "").lower()
+    if not code.startswith("regist") or m.status not in ("Cerere publicată", "Admisă la înregistrare"):
+        return
+    reg = str(d.get("registrationNumber") or "").strip().lstrip("0")
+    m.status = "Înregistrată"
+    if reg.isdigit() and not m.reg_number:
+        m.reg_number = reg
+    exp = (d.get("expiryDate") or "")[:10]
+    m.expiry_date = exp if exp[:4].isdigit() else (m.expiry_date or expiry_of(m))
+    m.events = (m.events or []) + [{"date": date.today().isoformat(), "bopi": "TMview",
+        "chapter": "Înregistrare confirmată din TMview",
+        "detail": (f"nr. marcă {m.reg_number} · " if m.reg_number else "") + "înregistrarea nu apare în buletinele OSIM citite"}]
 
 
 def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
@@ -1245,7 +1285,7 @@ def enrich_goods(limit: int = 1500) -> None:
     doar clasele. Le luăm din fișa TMview (în română), prin aplicația de monitorizare."""
     from concurrent.futures import ThreadPoolExecutor
     from sqlalchemy import Text, cast, or_
-    if goods_job["running"] or _tmview_paused():
+    if goods_job["running"] or _tmview_paused() or _status_backlog():
         return
     goods_job.update(running=True, done=0, found=0)
     try:
@@ -1882,6 +1922,8 @@ def enrich_old(batches: int = 8) -> None:
         # Golurile din numerotare întâi: aduc mărci înregistrate lipsă (cele mai utile), apoi denumirile.
         fill_reg_gaps()
         _fill_names()
+        if _status_backlog():
+            return                                # seria veche după starea cererilor din arhivă
         if start > OLD_END:
             # Toate mărcile sunt în bază cu datele de bază — acum fișele complete.
             _complete_skels(300 if _weekend() else 150)
