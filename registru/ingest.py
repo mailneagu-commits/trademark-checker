@@ -1720,10 +1720,14 @@ def fetch_old(num: str) -> Optional[str]:
 
 GAP_CURSOR = "cursor:reg-gaps-v1"
 GAP_FROM = 48000
+# După seria recentă: numerele vechi 1–47.999 (mărci înregistrate până în 2001), cu cursor separat.
+GAP_OLD_CURSOR = "cursor:reg-gaps-old-v1"
+GAP_OLD_ON = False      # se pornește după ce se verifică forma nr. vechi în căutarea TMview
 
 
-def _reg_gaps(after: int) -> List[int]:
-    """Nr. de înregistrare lipsă din bază (OSIM le dă la rând) de la `after` până la capătul seriei."""
+def _reg_gaps(after: int, old: bool = False) -> List[int]:
+    """Nr. de înregistrare lipsă din bază (OSIM le dă la rând) de la `after` până la capătul seriei
+    (old=True: de la `after` până la GAP_FROM)."""
     from collections import Counter
     db = SessionLocal()
     try:
@@ -1734,19 +1738,27 @@ def _reg_gaps(after: int) -> List[int]:
     # Capătul seriei = ultimul nr. dintr-o mie bine populată (un nr. citit greșit nu lungește lista).
     per = Counter(i // 1000 for i in have)
     top = max((i for i in have if per[i // 1000] >= 300), default=0)
+    if old:
+        return [i for i in range(max(after, 1), GAP_FROM) if i not in have]
     return [i for i in range(max(after, GAP_FROM), top + 1) if i not in have]
 
 
-def fill_reg_gaps(batches: int = 4) -> None:
+def fill_reg_gaps(batches: int = 12) -> None:
     """Golurile din numerotare căutate în TMview după nr. mărcii: cererea din BOPI primește nr. de
-    înregistrare (ex. M 2010 08424 → 113255); marca lipsă cu totul intră cu datele de bază."""
+    înregistrare (ex. M 2010 08424 → 113255); marca lipsă cu totul intră cu datele de bază.
+    Întâi seria recentă (de la GAP_FROM), apoi numerele vechi 1–47.999."""
     db = SessionLocal()
     try:
         cur = db.get(SourceFile, GAP_CURSOR)
         after = int(cur.label) if cur and (cur.label or "").isdigit() else GAP_FROM
+        cur_old = db.get(SourceFile, GAP_OLD_CURSOR)
+        after_old = int(cur_old.label) if cur_old and (cur_old.label or "").isdigit() else 1
     finally:
         db.close()
-    gaps = _reg_gaps(after)[:batches * 25]
+    cursor, gaps = GAP_CURSOR, _reg_gaps(after)[:batches * 25]
+    if not gaps and GAP_OLD_ON:
+        cursor, gaps = GAP_OLD_CURSOR, _reg_gaps(after_old, old=True)[:batches * 25]
+    old_job["gaps_next"] = gaps[0] if gaps else None
     today = date.today().isoformat()
     for i in range(0, len(gaps), 25):
         if _tmview_paused():
@@ -1781,7 +1793,7 @@ def fill_reg_gaps(batches: int = 4) -> None:
                         "detail": f"nr. marcă {m.reg_number} (nepublicat în buletinele OSIM citite)",
                         "st13": hit.get("ST13") or ""}]
                     old_job["gaps_reg"] = old_job.get("gaps_reg", 0) + 1
-            db.merge(SourceFile(url=GAP_CURSOR, kind="cursor", label=str(int(batch[-1]) + 1), status="cursor"))
+            db.merge(SourceFile(url=cursor, kind="cursor", label=str(int(batch[-1]) + 1), status="cursor"))
             db.commit()
         except Exception as e:
             db.rollback()
@@ -1843,6 +1855,7 @@ def enrich_old(batches: int = 8) -> None:
         # din TMview și între timp (cereri mici, 100 pe rulare); importul vechi așteaptă.
         old_job["running"] = True
         try:
+            fill_reg_gaps()
             _fill_names()
         finally:
             old_job["running"] = False
@@ -1856,8 +1869,9 @@ def enrich_old(batches: int = 8) -> None:
         finally:
             db.close()
         old_job["next"] = start
-        _fill_names()
+        # Golurile din numerotare întâi: aduc mărci înregistrate lipsă (cele mai utile), apoi denumirile.
         fill_reg_gaps()
+        _fill_names()
         if start > OLD_END:
             # Toate mărcile sunt în bază cu datele de bază — acum fișele complete.
             _complete_skels(300 if _weekend() else 150)
