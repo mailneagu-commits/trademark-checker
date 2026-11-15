@@ -68,7 +68,7 @@ def _startup():
     sched.add_job(ingest.enrich_goods, "interval", minutes=5, id="tmview_goods",
                   misfire_grace_time=900, coalesce=True)
     # Starea cererilor în curs (opoziție, contestație…) din TMview.
-    sched.add_job(ingest.enrich_status, "interval", minutes=15, id="tmview_status",
+    sched.add_job(ingest.enrich_status, "interval", minutes=5, id="tmview_status",
                   misfire_grace_time=1800, coalesce=True)
     # Dosarele cu obiect „marcă” din Portalul instanțelor — săptămânal (duminică noaptea).
     # Oprit deocamdată, la cererea utilizatorului (reluăm după finalizarea bazei de mărci).
