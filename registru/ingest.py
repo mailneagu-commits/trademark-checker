@@ -1027,7 +1027,7 @@ def _missing_pending() -> bool:
         start = int(old.label) if old and (old.label or "").isdigit() else 1
     finally:
         db.close()
-    v = start <= OLD_END or bool(_reg_gaps(after))
+    v = bool(_reg_gaps(after))          # seria veche (start) vine după starea cererilor — cererea userului 15.11
     _missing.update(at=now, v=v)
     return v
 
@@ -1961,6 +1961,8 @@ def enrich_old(batches: int = 8) -> None:
         # Golurile din numerotare întâi: aduc mărci înregistrate lipsă (cele mai utile), apoi denumirile.
         fill_reg_gaps()
         _fill_names()
+        if _status_backlog():
+            return                                # seria veche după starea cererilor 2010–2021 (userul, 15.11)
         if start > OLD_END:
             # Toate mărcile sunt în bază cu datele de bază — acum fișele complete.
             _complete_skels(300 if _weekend() else 150)
