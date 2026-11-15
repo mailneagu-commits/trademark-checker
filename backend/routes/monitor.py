@@ -1381,6 +1381,11 @@ def import_excel(file: UploadFile = File(...), default_email: str = Form(""), db
         for w in db.query(WatchItem).all()
     ]
 
+    # Același nr. de depozit / înregistrare = aceeași marcă, oricum ar arăta logo-ul (ex. tabelul exportat
+    # din ProWatch, cu logo-ul de acolo, reimportat peste portofoliul existent).
+    have_app = {_num_key(e["application_number"]) for e in existing_keys if e["application_number"]}
+    have_reg = {_num_key(e["registration_number"]) for e in existing_keys if e["registration_number"]}
+
     # Toate foile cu un antet de tabel de mărci (OSIM / EUIPO / template-ul vechi); dacă niciuna
     # nu are antet recunoscut, foaia activă e citită după ordinea veche a coloanelor.
     tables = []
@@ -1457,6 +1462,11 @@ def import_excel(file: UploadFile = File(...), default_email: str = Form(""), db
                 "application_number": application_number, "registration_number": registration_number,
                 "filing_date": filing_date,
             }
+            if (application_number and _num_key(application_number) in have_app) or \
+                    (registration_number and _num_key(registration_number) in have_reg):
+                duplicates.append({"row": where, "trademark": trademark_name,
+                                   "reason": f"Deja în listă — același nr. {application_number or registration_number}"})
+                continue
             dup = next((e for e in existing_keys if _is_duplicate_watch(e, candidate_key)), None)
             if dup:
                 duplicates.append({
@@ -1505,6 +1515,10 @@ def import_excel(file: UploadFile = File(...), default_email: str = Form(""), db
             # rândul abia adăugat intră și el în lista de verificare, ca să prindem
             # și duplicate ÎNTRE rândurile acestui fișier, nu doar față de DB
             existing_keys.append(candidate_key)
+            if application_number:
+                have_app.add(_num_key(application_number))
+            if registration_number:
+                have_reg.add(_num_key(registration_number))
         sheets.append({"sheet": ws.title, "imported": sheet_count})
 
     db.commit()
