@@ -16,7 +16,8 @@ async function api(path, opts) {
 function statusBadge(s) {
   const cls = { "Înregistrată": "ok", "Cerere publicată": "pub", "Admisă la înregistrare": "adm", "Respinsă": "bad",
                 "Radiată": "bad", "Retrasă": "bad", "Expirată": "bad", "În opoziție": "warn", "În contestație": "warn", "Anulată": "bad", "Decăzută": "bad",
-                "Renunțare": "bad", "Încetată": "bad", "În termen de grație": "warn", "În curs de reînnoire": "warn", "Posibil în curs de reînnoire": "warn" }[s] || "pub";
+                "Renunțare": "bad", "Încetată": "bad", "În termen de grație": "warn", "În curs de reînnoire": "warn", "Posibil în curs de reînnoire": "warn",
+                "Neînregistrată în BOPI (probabil respinsă / retrasă)": "bad" }[s] || "pub";
   return s ? `<span class="st ${cls}">${esc(s)}</span>` : "";
 }
 const chips = cl => `<div class="chips">${(cl || []).map(c => `<span class="chip">${c}</span>`).join("")}</div>`;
@@ -174,6 +175,7 @@ function searchForm() {
         ${[["", "toate"], ["Valabile", "valabile (înregistrate, neexpirate)"], ["Înregistrată", "înregistrate"], ["Expirată", "expirate"], ["În termen de grație", "în termen de grație (6 luni după expirare)"], ["Posibil în curs de reînnoire", "posibil în curs de reînnoire"],
            ["Cerere publicată", "cereri publicate"], ["Admisă la înregistrare", "admise la înregistrare"], ["În examinare", "în examinare"], ["În opoziție", "în opoziție"],
            ["În contestație", "în contestație"], ["Respinsă", "respinse"],
+           ["Neînregistrată în BOPI (probabil respinsă / retrasă)", "cereri vechi neînregistrate (probabil respinse / retrase)"],
            ["Radiată", "radiate"], ["Încetată", "anulate / decăzute / încetate (TMview)"], ["Retrasă", "retrase"]].map(([v, t]) =>
           `<option value="${v}" ${qs.get("status") === v ? "selected" : ""}>${t}</option>`).join("")}</select></div>
       <div class="go"><button class="btn alt" style="width:100%;">Caută</button></div>

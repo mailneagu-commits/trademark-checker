@@ -100,6 +100,13 @@ async def _cache_headers(request: Request, call_next):
 
 GRACE = "În termen de grație"
 RENEW_MAYBE = "Posibil în curs de reînnoire"
+# Cerere depusă de peste 3 ani, fără înregistrare în buletinele lunare și fără stare în TMview (încă):
+# BOPI nu publică respingerile / retragerile — aproape sigur n-a ajuns la înregistrare.
+NOT_REG = "Neînregistrată în BOPI (probabil respinsă / retrasă)"
+
+
+def _old_cutoff() -> str:
+    return (date.today() - timedelta(days=3 * 365)).isoformat()
 
 
 def _grace_start(months: int = 6) -> str:
@@ -130,10 +137,10 @@ def _status(m: Mark) -> str:
     # Cereri în curs: opoziția / contestația / retragerea apar doar în TMview, nu în BOPI.
     if m.status in ("Cerere publicată", "Admisă la înregistrare") and ingest.tm_status_ro(m.tm_status or ""):
         return ingest.tm_status_ro(m.tm_status)
-    # Cerere din arhiva 2010–2021, încă neverificată în TMview: nu e o cerere „în curs”.
-    if m.status == "Cerere publicată" and not m.tm_status and (m.publication_date or "9999") < \
-            (date.today() - timedelta(days=3 * 365)).isoformat():
-        return "Cerere publicată (stare de verificat)"
+    # Cerere depusă de peste 3 ani, fără înregistrare în BOPI și încă fără stare în TMview: nu e „în curs”.
+    if m.status in ("Cerere publicată", "Admisă la înregistrare") and not m.tm_status and \
+            (m.filing_date or "9999") < _old_cutoff():
+        return NOT_REG
     # Mărci înregistrate anulate / decăzute / la care s-a renunțat — după TMview, dacă e mai nou decât BOPI.
     # „Expired” în TMview, dar expirarea din BOPI e în viitor: TMview e în urmă (DINES D, M 2011 06887 —
     # reînnoită până în 2031, așa cum arată și registrul OSIM) — rămâne „Înregistrată”.
@@ -338,6 +345,13 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
         kw = "%ithdraw%" if status == "Retrasă" else "%efus%"
         q = q.filter(or_(Mark.status == status, Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"])
                          & Mark.tm_status.ilike(kw)))
+    elif status == NOT_REG:
+        q = q.filter(Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.filing_date < _old_cutoff(),
+                     or_(Mark.tm_status.is_(None), Mark.tm_status == ""))
+    elif status in ("Cerere publicată", "Admisă la înregistrare"):
+        # Doar cererile în curs — cele vechi, fără rezultat, sunt la NOT_REG.
+        q = q.filter(Mark.status == status, or_(Mark.filing_date >= _old_cutoff(),
+                                                and_(Mark.tm_status.isnot(None), Mark.tm_status != "")))
     elif status:
         q = q.filter(Mark.status == status)
     order.append(Mark.filing_date.desc())
