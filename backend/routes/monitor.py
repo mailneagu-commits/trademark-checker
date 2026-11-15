@@ -1702,6 +1702,8 @@ def prowatch_excel(holder: str = "", representative: str = "", statuses: str = "
     from concurrent.futures import ThreadPoolExecutor
     from openpyxl import Workbook
     from openpyxl.drawing.image import Image as XLImage
+    from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, OneCellAnchor
+    from openpyxl.drawing.xdr import XDRPositiveSize2D
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
     holder, representative = holder.strip(), representative.strip()
@@ -1746,15 +1748,21 @@ def prowatch_excel(holder: str = "", representative: str = "", statuses: str = "
         for c, v in enumerate(vals, start=1):
             cell = ws.cell(row=row, column=c, value=v)
             cell.border = border
-            cell.alignment = Alignment(vertical="center", wrap_text=c in (2, 12, 13))
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         if logo:
             try:
                 img = XLImage(io.BytesIO(logo))
-                img.anchor = f"{ws.cell(row=row, column=img_col).column_letter}{row}"
+                # Logo-ul centrat în celulă: decalaj de la colțul ei (lățime coloană ~7 px / caracter + 5,
+                # rând de 56 pt = 75 px).
+                cw, rh = int(widths["Reprezentare marcă"] * 7 + 5), 75
+                emu = 9525
+                marker = AnchorMarker(col=img_col - 1, colOff=max(0, (cw - img.width) // 2) * emu,
+                                      row=row - 1, rowOff=max(0, (rh - img.height) // 2) * emu)
+                img.anchor = OneCellAnchor(_from=marker, ext=XDRPositiveSize2D(img.width * emu, img.height * emu))
                 ws.add_image(img)
-                ws.row_dimensions[row].height = 56
             except Exception:
                 pass
+        ws.row_dimensions[row].height = 56
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
