@@ -1319,7 +1319,8 @@ def init_db():
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
                                      _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources(),
-                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _drop_expiring_renewals(), _dedupe_0907()),
+                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _drop_expiring_renewals(), _dedupe_0907(),
+                                     __import__("osim_export").import_all()),
                      daemon=True).start()
     _fix_reg_zeros()
     _fill_stub_filing_dates()

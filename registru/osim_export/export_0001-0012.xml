@@ -1,0 +1,471 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Transaction xmlns="http://www.wipo.int/standards/XMLSchema/trademarks">
+    <TradeMarkTransactionBody>
+        <TransactionContentDetails>
+            <TransactionCode>RO Trade Mark Complete</TransactionCode>
+            <TransactionData>
+                <TradeMarkDetails>
+                    <TradeMark>
+                        <RegistrationOfficeCode>RO</RegistrationOfficeCode>
+                        <ReceivingOfficeDate>1989-01-05+02:00</ReceivingOfficeDate>
+                        <ApplicationNumber>000001</ApplicationNumber>
+                        <ApplicationDate>1989-01-05+02:00</ApplicationDate>
+                        <RegistrationNumber>010519</RegistrationNumber>
+                        <RegistrationDate>1992-08-27+03:00</RegistrationDate>
+                        <ApplicationLanguageCode>ro</ApplicationLanguageCode>
+                        <MarkCurrentStatusCode>Decazuta</MarkCurrentStatusCode>
+                        <MarkCurrentStatusDate>2006-10-18+03:00</MarkCurrentStatusDate>
+                        <KindMark>Individuala</KindMark>
+                        <MarkFeature>Figurativă</MarkFeature>
+                        <WordMarkSpecification>
+                            <MarkVerbalElementText></MarkVerbalElementText>
+                        </WordMarkSpecification>
+                        <MarkImageDetails>
+                            <MarkImage>
+<MarkImageFilename>https://api.osim.ro/picture/00/00/00000001.gif</MarkImageFilename>
+<MarkImageFileFormat>gif</MarkImageFileFormat>
+                            </MarkImage>
+                        </MarkImageDetails>
+                        <GoodsServicesDetails>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>25</ClassNumber>
+        <GoodsServicesDescription>Tricotaje pentru copii, adolescenti si adulti.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                        </GoodsServicesDetails>
+                        <ApplicantDetails>
+                            <Applicant>
+<ApplicantIdentifier>5216</ApplicantIdentifier>
+                            </Applicant>
+                        </ApplicantDetails>
+                    </TradeMark>
+                </TradeMarkDetails>
+            </TransactionData>
+        </TransactionContentDetails>
+    </TradeMarkTransactionBody>
+    <TradeMarkTransactionBody>
+        <TransactionContentDetails>
+            <TransactionCode>RO Trade Mark Complete</TransactionCode>
+            <TransactionData>
+                <TradeMarkDetails>
+                    <TradeMark>
+                        <RegistrationOfficeCode>RO</RegistrationOfficeCode>
+                        <ReceivingOfficeDate>1989-12-09+02:00</ReceivingOfficeDate>
+                        <ApplicationNumber>000004</ApplicationNumber>
+                        <ApplicationDate>1979-03-23+02:00</ApplicationDate>
+                        <RegistrationNumber>010710</RegistrationNumber>
+                        <RegistrationDate>1993-07-31+03:00</RegistrationDate>
+                        <ApplicationLanguageCode>ro</ApplicationLanguageCode>
+                        <MarkCurrentStatusCode>Decazuta</MarkCurrentStatusCode>
+                        <MarkCurrentStatusDate>2006-10-18+03:00</MarkCurrentStatusDate>
+                        <KindMark>Individuala</KindMark>
+                        <MarkFeature>Verbală</MarkFeature>
+                        <WordMarkSpecification>
+                            <MarkVerbalElementText>ACETADIN</MarkVerbalElementText>
+                        </WordMarkSpecification>
+                        <GoodsServicesDetails>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>5</ClassNumber>
+        <GoodsServicesDescription>Dinosebacetat emulsionabil si tehnic utilizat ca erbicid in agricultura.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                        </GoodsServicesDetails>
+                        <ApplicantDetails>
+                            <Applicant>
+<ApplicantIdentifier>12</ApplicantIdentifier>
+                            </Applicant>
+                        </ApplicantDetails>
+                    </TradeMark>
+                </TradeMarkDetails>
+            </TransactionData>
+        </TransactionContentDetails>
+    </TradeMarkTransactionBody>
+    <TradeMarkTransactionBody>
+        <TransactionContentDetails>
+            <TransactionCode>RO Trade Mark Complete</TransactionCode>
+            <TransactionData>
+                <TradeMarkDetails>
+                    <TradeMark>
+                        <RegistrationOfficeCode>RO</RegistrationOfficeCode>
+                        <ReceivingOfficeDate>1989-12-09+02:00</ReceivingOfficeDate>
+                        <ApplicationNumber>000005</ApplicationNumber>
+                        <ApplicationDate>1979-01-09+02:00</ApplicationDate>
+                        <RegistrationNumber>010739</RegistrationNumber>
+                        <RegistrationDate>1993-07-31+03:00</RegistrationDate>
+                        <ApplicationLanguageCode>ro</ApplicationLanguageCode>
+                        <MarkCurrentStatusCode>Decazuta</MarkCurrentStatusCode>
+                        <MarkCurrentStatusDate>2006-10-03+03:00</MarkCurrentStatusDate>
+                        <KindMark>Individuala</KindMark>
+                        <MarkFeature>Combinată</MarkFeature>
+                        <WordMarkSpecification>
+                            <MarkVerbalElementText>AVERSA</MarkVerbalElementText>
+                        </WordMarkSpecification>
+                        <MarkImageDetails>
+                            <MarkImage>
+<MarkImageFilename>https://api.osim.ro/picture/00/00/00000005.gif</MarkImageFilename>
+<MarkImageFileFormat>gif</MarkImageFileFormat>
+                            </MarkImage>
+                        </MarkImageDetails>
+                        <GoodsServicesDetails>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>7</ClassNumber>
+        <GoodsServicesDescription>Pompe de toate tipurile si in special: pompe de circulatie, pompe centrifuge, pompe sumersibile, pompe multietajate, pompe verticale, pompe periferiale, pompe de noroi, pompe pentru procese in industria petroliera, pentru dragarea apelor; pompe navale; pompe pentru centrale termice; pompe de condens; pompe pentru industria zaharului, pentru industria celulozei-hirtiei; pompe sumersibile multietajate; pompe de ulei si in special: pompe de circulatie ulei la transformatoare, pompe de racire utilizate la masini-unelte si motoare termice; pompe de vid; pompe de stropit si prafuit folosite in agricultura; agregat axial pentru racirea bailor de ulei tratamente termice; agregat de inalta presiune pentru desfundari; agregat de pompat mortar.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                        </GoodsServicesDetails>
+                        <ApplicantDetails>
+                            <Applicant>
+<ApplicantIdentifier>13</ApplicantIdentifier>
+                            </Applicant>
+                        </ApplicantDetails>
+                    </TradeMark>
+                </TradeMarkDetails>
+            </TransactionData>
+        </TransactionContentDetails>
+    </TradeMarkTransactionBody>
+    <TradeMarkTransactionBody>
+        <TransactionContentDetails>
+            <TransactionCode>RO Trade Mark Complete</TransactionCode>
+            <TransactionData>
+                <TradeMarkDetails>
+                    <TradeMark>
+                        <RegistrationOfficeCode>RO</RegistrationOfficeCode>
+                        <ReceivingOfficeDate>1989-12-09+02:00</ReceivingOfficeDate>
+                        <ApplicationNumber>000006</ApplicationNumber>
+                        <ApplicationDate>1979-01-09+02:00</ApplicationDate>
+                        <RegistrationNumber>010740</RegistrationNumber>
+                        <RegistrationDate>1993-07-31+03:00</RegistrationDate>
+                        <ApplicationLanguageCode>ro</ApplicationLanguageCode>
+                        <MarkCurrentStatusCode>Decazuta</MarkCurrentStatusCode>
+                        <MarkCurrentStatusDate>2006-10-03+03:00</MarkCurrentStatusDate>
+                        <KindMark>Individuala</KindMark>
+                        <MarkFeature>Combinată</MarkFeature>
+                        <WordMarkSpecification>
+                            <MarkVerbalElementText>CERO</MarkVerbalElementText>
+                        </WordMarkSpecification>
+                        <MarkImageDetails>
+                            <MarkImage>
+<MarkImageFilename>https://api.osim.ro/picture/00/00/00000006.gif</MarkImageFilename>
+<MarkImageFileFormat>gif</MarkImageFileFormat>
+                            </MarkImage>
+                        </MarkImageDetails>
+                        <GoodsServicesDetails>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>7</ClassNumber>
+        <GoodsServicesDescription>Pompe de toate tipurile si in special: pompe de circulatie, pompe centrifuge, pompe sumersibile, pompe multietajate, pompe verticale, pompe periferiale, pompe de noroi, pompe pentru procese in industria petroliera, pentru dragarea apelor; pompe navale; pompe pentru centrale termice; pompe de condens; pompe pentru industria zaharului, pentru industria celulozei-hirtiei; pompe sumersibile multietajate; pompe de ulei si in special: pompe de circulatie ulei la transformatoare, pompe de racire utilizate la masini-unelte si motoare termice; pompe de vid; pompe de stropit si prafuit folosite in agricultura; agregat axial pentru racirea bailor de ulei tratamente termice; agregat de inalta presiune pentru desfundari; agregat de pompat mortar.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                        </GoodsServicesDetails>
+                        <ApplicantDetails>
+                            <Applicant>
+<ApplicantIdentifier>13</ApplicantIdentifier>
+                            </Applicant>
+                        </ApplicantDetails>
+                    </TradeMark>
+                </TradeMarkDetails>
+            </TransactionData>
+        </TransactionContentDetails>
+    </TradeMarkTransactionBody>
+    <TradeMarkTransactionBody>
+        <TransactionContentDetails>
+            <TransactionCode>RO Trade Mark Complete</TransactionCode>
+            <TransactionData>
+                <TradeMarkDetails>
+                    <TradeMark>
+                        <RegistrationOfficeCode>RO</RegistrationOfficeCode>
+                        <ReceivingOfficeDate>1989-12-09+02:00</ReceivingOfficeDate>
+                        <ApplicationNumber>000007</ApplicationNumber>
+                        <ApplicationDate>1979-03-07+02:00</ApplicationDate>
+                        <RegistrationNumber>010747</RegistrationNumber>
+                        <RegistrationDate>1993-07-31+03:00</RegistrationDate>
+                        <ApplicationLanguageCode>ro</ApplicationLanguageCode>
+                        <MarkCurrentStatusCode>Decazuta</MarkCurrentStatusCode>
+                        <MarkCurrentStatusDate>2011-12-08+02:00</MarkCurrentStatusDate>
+                        <KindMark>Individuala</KindMark>
+                        <MarkFeature>Verbală</MarkFeature>
+                        <WordMarkSpecification>
+                            <MarkVerbalElementText>TELEMAC HT-125</MarkVerbalElementText>
+                        </WordMarkSpecification>
+                        <MarkImageDetails>
+                            <MarkImage>
+<MarkImageFilename>https://api.osim.ro/picture/00/00/00000007.gif</MarkImageFilename>
+<MarkImageFileFormat>gif</MarkImageFileFormat>
+                            </MarkImage>
+                        </MarkImageDetails>
+                        <GoodsServicesDetails>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>37</ClassNumber>
+        <GoodsServicesDescription>Construcţii şi reparaţii.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>7</ClassNumber>
+        <GoodsServicesDescription>Pompe de toate tipurile si in special: pompe de circulatie, pompe centrifuge, pompe sumersibile, pompe multietajate, pompe verticale, pompe periferiale, pompe de noroi, pompe pentru procese in industria petroliera, pentru dragarea apelor; pompe navale; pompe pentru centrale termice; pompe de condens; pompe pentru industria zaharului, pentru industria celulozei-hirtiei; pompe sumersibile multietajate; pompe de ulei si in special: pompe de circulatie ulei la transformatoare, pompe de racire utilizate la masini-unelte si motoare termice; pompe de vid; pompe de stropit si prafuit folosite in agricultura; agregat axial pentru racirea bailor de ulei tratamente termice; agregat de inalta presiune pentru desfundari; agregat de pompat mortar.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                        </GoodsServicesDetails>
+                        <ApplicantDetails>
+                            <Applicant>
+<ApplicantIdentifier>5279</ApplicantIdentifier>
+                            </Applicant>
+                        </ApplicantDetails>
+                    </TradeMark>
+                </TradeMarkDetails>
+            </TransactionData>
+        </TransactionContentDetails>
+    </TradeMarkTransactionBody>
+    <TradeMarkTransactionBody>
+        <TransactionContentDetails>
+            <TransactionCode>RO Trade Mark Complete</TransactionCode>
+            <TransactionData>
+                <TradeMarkDetails>
+                    <TradeMark>
+                        <RegistrationOfficeCode>RO</RegistrationOfficeCode>
+                        <ReceivingOfficeDate>1989-12-09+02:00</ReceivingOfficeDate>
+                        <ApplicationNumber>000008</ApplicationNumber>
+                        <ApplicationDate>1979-06-01+03:00</ApplicationDate>
+                        <RegistrationNumber>010821</RegistrationNumber>
+                        <RegistrationDate>1993-07-31+03:00</RegistrationDate>
+                        <ApplicationLanguageCode>ro</ApplicationLanguageCode>
+                        <MarkCurrentStatusCode>Decazuta</MarkCurrentStatusCode>
+                        <MarkCurrentStatusDate>2006-10-18+03:00</MarkCurrentStatusDate>
+                        <KindMark>Individuala</KindMark>
+                        <MarkFeature>Combinată</MarkFeature>
+                        <WordMarkSpecification>
+                            <MarkVerbalElementText>IM REPUBLICA REGHIN</MarkVerbalElementText>
+                        </WordMarkSpecification>
+                        <MarkImageDetails>
+                            <MarkImage>
+<MarkImageFilename>https://api.osim.ro/picture/00/00/00000008.gif</MarkImageFilename>
+<MarkImageFileFormat>gif</MarkImageFileFormat>
+                            </MarkImage>
+                        </MarkImageDetails>
+                        <GoodsServicesDetails>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>6</ClassNumber>
+        <GoodsServicesDescription>Piese turnate din fonta si otel.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>7</ClassNumber>
+        <GoodsServicesDescription>Pompe de toate tipurile si in special: pompe de circulatie, pompe centrifuge, pompe sumersibile, pompe multietajate, pompe verticale, pompe periferiale, pompe de noroi, pompe pentru procese in industria petroliera, pentru dragarea apelor; pompe navale; pompe pentru centrale termice; pompe de condens; pompe pentru industria zaharului, pentru industria celulozei-hirtiei; pompe sumersibile multietajate; pompe de ulei si in special: pompe de circulatie ulei la transformatoare, pompe de racire utilizate la masini-unelte si motoare termice; pompe de vid; pompe de stropit si prafuit folosite in agricultura; agregat axial pentru racirea bailor de ulei tratamente termice; agregat de inalta presiune pentru desfundari; agregat de pompat mortar.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>12</ClassNumber>
+        <GoodsServicesDescription>Punti auto nemotrice; pompe de aer pentru autocamioane, autoturisme si tractoare, frine pentru autoutilitare.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                        </GoodsServicesDetails>
+                        <ApplicantDetails>
+                            <Applicant>
+<ApplicantIdentifier>15</ApplicantIdentifier>
+                            </Applicant>
+                        </ApplicantDetails>
+                    </TradeMark>
+                </TradeMarkDetails>
+            </TransactionData>
+        </TransactionContentDetails>
+    </TradeMarkTransactionBody>
+    <TradeMarkTransactionBody>
+        <TransactionContentDetails>
+            <TransactionCode>RO Trade Mark Complete</TransactionCode>
+            <TransactionData>
+                <TradeMarkDetails>
+                    <TradeMark>
+                        <RegistrationOfficeCode>RO</RegistrationOfficeCode>
+                        <ReceivingOfficeDate>1987-04-19+03:00</ReceivingOfficeDate>
+                        <ApplicationNumber>000009</ApplicationNumber>
+                        <ApplicationDate>1987-04-19+03:00</ApplicationDate>
+                        <RegistrationNumber>010827</RegistrationNumber>
+                        <RegistrationDate>1990-12-09+02:00</RegistrationDate>
+                        <ApplicationLanguageCode>ro</ApplicationLanguageCode>
+                        <MarkCurrentStatusCode>Decazuta</MarkCurrentStatusCode>
+                        <MarkCurrentStatusDate>1987-08-17+03:00</MarkCurrentStatusDate>
+                        <KindMark>Individuala</KindMark>
+                        <MarkFeature>Verbală</MarkFeature>
+                        <WordMarkSpecification>
+                            <MarkVerbalElementText>MENTOVIT</MarkVerbalElementText>
+                        </WordMarkSpecification>
+                        <GoodsServicesDetails>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>32</ClassNumber>
+        <GoodsServicesDescription>Bauturi racoritoare.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                        </GoodsServicesDetails>
+                        <ApplicantDetails>
+                            <Applicant>
+<ApplicantIdentifier>16</ApplicantIdentifier>
+                            </Applicant>
+                        </ApplicantDetails>
+                    </TradeMark>
+                </TradeMarkDetails>
+            </TransactionData>
+        </TransactionContentDetails>
+    </TradeMarkTransactionBody>
+    <TradeMarkTransactionBody>
+        <TransactionContentDetails>
+            <TransactionCode>RO Trade Mark Complete</TransactionCode>
+            <TransactionData>
+                <TradeMarkDetails>
+                    <TradeMark>
+                        <RegistrationOfficeCode>RO</RegistrationOfficeCode>
+                        <ReceivingOfficeDate>1989-12-09+02:00</ReceivingOfficeDate>
+                        <ApplicationNumber>000010</ApplicationNumber>
+                        <ApplicationDate>1989-12-09+02:00</ApplicationDate>
+                        <RegistrationNumber>010885</RegistrationNumber>
+                        <RegistrationDate>1993-07-31+03:00</RegistrationDate>
+                        <ApplicationLanguageCode>ro</ApplicationLanguageCode>
+                        <MarkCurrentStatusCode>Decazuta</MarkCurrentStatusCode>
+                        <MarkCurrentStatusDate>2006-10-18+03:00</MarkCurrentStatusDate>
+                        <KindMark>Individuala</KindMark>
+                        <MarkFeature>Verbală</MarkFeature>
+                        <WordMarkSpecification>
+                            <MarkVerbalElementText>GEROVITAL H3</MarkVerbalElementText>
+                        </WordMarkSpecification>
+                        <GoodsServicesDetails>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>5</ClassNumber>
+        <GoodsServicesDescription>Dinosebacetat emulsionabil si tehnic utilizat ca erbicid in agricultura.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                        </GoodsServicesDetails>
+                        <ApplicantDetails>
+                            <Applicant>
+<ApplicantIdentifier>17</ApplicantIdentifier>
+                            </Applicant>
+                        </ApplicantDetails>
+                    </TradeMark>
+                </TradeMarkDetails>
+            </TransactionData>
+        </TransactionContentDetails>
+    </TradeMarkTransactionBody>
+    <TradeMarkTransactionBody>
+        <TransactionContentDetails>
+            <TransactionCode>RO Trade Mark Complete</TransactionCode>
+            <TransactionData>
+                <TradeMarkDetails>
+                    <TradeMark>
+                        <RegistrationOfficeCode>RO</RegistrationOfficeCode>
+                        <ReceivingOfficeDate>1989-12-09+02:00</ReceivingOfficeDate>
+                        <ApplicationNumber>000011</ApplicationNumber>
+                        <ApplicationDate>1989-12-09+02:00</ApplicationDate>
+                        <RegistrationNumber>010886</RegistrationNumber>
+                        <RegistrationDate>1993-07-31+03:00</RegistrationDate>
+                        <ApplicationLanguageCode>ro</ApplicationLanguageCode>
+                        <MarkCurrentStatusCode>Decazuta</MarkCurrentStatusCode>
+                        <MarkCurrentStatusDate>2006-10-18+03:00</MarkCurrentStatusDate>
+                        <KindMark>Individuala</KindMark>
+                        <MarkFeature>Verbală</MarkFeature>
+                        <WordMarkSpecification>
+                            <MarkVerbalElementText>GEROVITAL</MarkVerbalElementText>
+                        </WordMarkSpecification>
+                        <GoodsServicesDetails>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>5</ClassNumber>
+        <GoodsServicesDescription>Dinosebacetat emulsionabil si tehnic utilizat ca erbicid in agricultura.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                        </GoodsServicesDetails>
+                        <ApplicantDetails>
+                            <Applicant>
+<ApplicantIdentifier>17</ApplicantIdentifier>
+                            </Applicant>
+                        </ApplicantDetails>
+                    </TradeMark>
+                </TradeMarkDetails>
+            </TransactionData>
+        </TransactionContentDetails>
+    </TradeMarkTransactionBody>
+    <TradeMarkTransactionBody>
+        <TransactionContentDetails>
+            <TransactionCode>RO Trade Mark Complete</TransactionCode>
+            <TransactionData>
+                <TradeMarkDetails>
+                    <TradeMark>
+                        <RegistrationOfficeCode>RO</RegistrationOfficeCode>
+                        <ReceivingOfficeDate>1989-12-09+02:00</ReceivingOfficeDate>
+                        <ApplicationNumber>000012</ApplicationNumber>
+                        <ApplicationDate>1989-08-19+03:00</ApplicationDate>
+                        <RegistrationNumber>010957</RegistrationNumber>
+                        <RegistrationDate>1993-07-31+03:00</RegistrationDate>
+                        <ApplicationLanguageCode>ro</ApplicationLanguageCode>
+                        <MarkCurrentStatusCode>Decazuta</MarkCurrentStatusCode>
+                        <MarkCurrentStatusDate>2006-10-18+03:00</MarkCurrentStatusDate>
+                        <KindMark>Individuala</KindMark>
+                        <MarkFeature>Combinată</MarkFeature>
+                        <WordMarkSpecification>
+                            <MarkVerbalElementText>TANDARICA</MarkVerbalElementText>
+                        </WordMarkSpecification>
+                        <MarkImageDetails>
+                            <MarkImage>
+<MarkImageFilename>https://api.osim.ro/picture/00/00/00000012.gif</MarkImageFilename>
+<MarkImageFileFormat>gif</MarkImageFileFormat>
+                            </MarkImage>
+                        </MarkImageDetails>
+                        <GoodsServicesDetails>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>3</ClassNumber>
+        <GoodsServicesDescription>Creme, emulsii, uleiuri, lotiuni si alte produse cosmetice sub forma de sprayuri, briantine, lacuri, pudre nemedicinale, saruri nemedicinale, masti cosmetice nemedicinale; sapun si sampoane - toate aceste produse destinate copiilor.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                            <GoodsServices>
+<ClassDescriptionDetails>
+    <ClassDescription>
+        <ClassNumber>5</ClassNumber>
+        <GoodsServicesDescription>Dinosebacetat emulsionabil si tehnic utilizat ca erbicid in agricultura.</GoodsServicesDescription>
+    </ClassDescription>
+</ClassDescriptionDetails>
+                            </GoodsServices>
+                        </GoodsServicesDetails>
+                        <ApplicantDetails>
+                            <Applicant>
+<ApplicantIdentifier>19</ApplicantIdentifier>
+                            </Applicant>
+                        </ApplicantDetails>
+                    </TradeMark>
+                </TradeMarkDetails>
+            </TransactionData>
+        </TransactionContentDetails>
+    </TradeMarkTransactionBody>
+</Transaction>
