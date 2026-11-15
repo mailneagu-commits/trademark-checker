@@ -1002,7 +1002,8 @@ def _status_backlog() -> int:
     try:
         n = db.query(_f.count(Mark.app_number)).filter(
             Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.app_number.like("M%"),
-            _f.substr(Mark.app_number, 2, 4) <= "2021", Mark.tm_status_checked.is_(None)).scalar() or 0
+            _f.substr(Mark.app_number, 2, 4) <= "2021",
+            Mark.tm_status_checked.is_(None) | (Mark.tm_status_checked == "")).scalar() or 0
     finally:
         db.close()
     _backlog.update(at=now, n=n)
