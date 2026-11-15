@@ -1120,11 +1120,14 @@ def refresh_status(app: str) -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
-def enrich_status(limit: int = 600) -> None:
+def enrich_status(limit: int = 150) -> None:
     """Pentru cererile publicate / admise: starea din fișa TMview, reverificată săptămânal."""
     import time as _t
     if status_job["running"] or _tmview_paused():
         return
+    y = status_job.get("yield_at")
+    if y and datetime.utcnow() - y < timedelta(minutes=15):
+        return                                    # rândul golurilor din numerotare (enrich_old)
     for _ in range(40):                           # golurile / denumirile din TMview termină întâi
         if not old_job["running"]:
             break
@@ -1195,9 +1198,10 @@ def enrich_status(limit: int = 600) -> None:
             finally:
                 db.close()
             status_job["done"] += 1
+            status_job["total"] = status_job.get("total", 0) + 1     # de la pornirea serverului
             _t.sleep(1)
     finally:
-        status_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")
+        status_job.update(running=False, last=datetime.utcnow().isoformat() + "Z", yield_at=datetime.utcnow())
 
 
 def _registered_from_tmview(m: Mark, d: Dict) -> None:
@@ -1914,6 +1918,7 @@ def enrich_old(batches: int = 8) -> None:
     import time as _t
     if old_job["running"] or status_job["running"] or _tmview_paused():
         return                                    # nu în paralel cu starea cererilor (TMview cedează)
+    status_job["yield_at"] = None                 # după goluri, din nou starea cererilor
     if job["running"]:
         # Citirea buletinelor poate dura ore (arhiva cererilor 2010–2021): denumirile lipsă se completează
         # din TMview și între timp (cereri mici, 100 pe rulare); importul vechi așteaptă.
