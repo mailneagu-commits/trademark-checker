@@ -954,9 +954,9 @@
         <select id="watchOrigin" onchange="renderWatches(_watchItems)" style="padding:6px 8px;border:1.5px solid #e0e0e0;border-radius:7px;font-size:.82rem;">
           <option value="">Toate oficiile</option><option value="OSIM">OSIM</option><option value="EUIPO">EUIPO</option>
         </select>
-        <select id="watchSort" onchange="try{localStorage.setItem('watchSort',this.value)}catch(e){};renderWatches(_watchItems)" style="padding:6px 8px;border:1.5px solid #e0e0e0;border-radius:7px;font-size:.82rem;">
-          <option value="asc">Cronologic — cele mai vechi primele</option>
+        <select id="watchSort" onchange="try{localStorage.setItem('watchSort2',this.value)}catch(e){};renderWatches(_watchItems)" style="padding:6px 8px;border:1.5px solid #e0e0e0;border-radius:7px;font-size:.82rem;">
           <option value="desc">Cronologic — cele mai noi primele</option>
+          <option value="asc">Cronologic — cele mai vechi primele</option>
           <option value="added">Ordinea adăugării</option>
         </select>
         <input type="search" id="watchSearch" placeholder="Caută marcă / titular / nr. depozit" oninput="renderWatches(_watchItems)" style="padding:6px 10px;border:1.5px solid #e0e0e0;border-radius:7px;min-width:240px;font-size:.82rem;">
@@ -3563,9 +3563,9 @@ function renderWatches(allItems) {
   const sortEl = document.getElementById("watchSort");
   if (sortEl && !sortEl.dataset.init) {
     sortEl.dataset.init = "1";
-    try { sortEl.value = localStorage.getItem("watchSort") || "asc"; } catch(e) {}
+    try { sortEl.value = localStorage.getItem("watchSort2") || "desc"; } catch(e) {}
   }
-  const sort = sortEl ? sortEl.value : "asc";
+  const sort = sortEl ? sortEl.value : "desc";
   if (sort !== "added") {
     const dir = sort === "desc" ? -1 : 1;
     const key = it => (it.filing_date || "") + "|" + (it.application_number || "").replace(/\s/g, "");
