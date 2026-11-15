@@ -808,6 +808,49 @@ def _fix_cp1252_parties():
         db.close()
 
 
+_RO_OK = set("ĂÂÎȘȚŞŢăâîșțşţ")
+
+
+def _odd_char(c: str) -> bool:
+    return ord(c) > 127 and c not in _RO_OK
+
+
+def _names_from_later_bulletin():
+    """Denumiri din buletinele zilnice de cereri citite cu font greșit („MOMENTE PREÚIOASE”, M 2016 04176):
+    dacă alt buletin al aceleiași mărci (de regulă cel de înregistrare) dă aceeași denumire, diferită doar
+    prin diacritice românești în locul literelor ciudate, se ia denumirea corectă."""
+    marker = "migration:names-later-bulletin-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n, pairs = 0, {}
+        q = db.query(Mark).filter(Mark.name.op("~")(r"[^\x00-\x7FĂÂÎȘȚŞŢăâîșțşţ]")) if IS_PG else db.query(Mark)
+        for m in q.yield_per(2000):
+            bad = m.name or ""
+            if not any(_odd_char(c) for c in bad):
+                continue
+            for e in reversed(m.events or []):
+                good = e.get("name") or ""
+                if len(good) != len(bad) or good == bad:
+                    continue
+                diff = [(a, b) for a, b in zip(bad, good) if a != b]
+                if all(_odd_char(a) and b in _RO_OK for a, b in diff):
+                    for a, b in diff:
+                        pairs[a + b] = pairs.get(a + b, 0) + 1
+                    m.name, m.name_norm = good, norm(good)
+                    m.events = [dict(x, name=good) if x.get("name") == bad else x for x in (m.events or [])]
+                    n += 1
+                    break
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=n,
+                          label=f"denumiri corectate din alt buletin: {n} · " +
+                                ", ".join(f"{k[0]}→{k[1]} {v}" for k, v in sorted(pairs.items(), key=lambda x: -x[1]))[:400]))
+        db.commit()
+        print(f"[DB] Denumiri cu litere greșite corectate din alt buletin: {n} {pairs}")
+    finally:
+        db.close()
+
+
 def _drop_expiring_renewals():
     """„Tabel al mărcilor ce urmează să expire” fusese citit ca listă de reînnoiri: reînnoiri false în
     istoric (BUSCOPAN, VIDAL SASSOON 05/2021). Se scot rândurile acestui tabel și reînnoirile fără expirare
@@ -1319,7 +1362,7 @@ def init_db():
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
                                      _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources(),
-                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _drop_expiring_renewals(), _dedupe_0907(),
+                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _names_from_later_bulletin(), _drop_expiring_renewals(), _dedupe_0907(),
                                      __import__("osim_export").import_all()),
                      daemon=True).start()
     _fix_reg_zeros()
