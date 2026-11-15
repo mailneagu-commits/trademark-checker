@@ -1026,7 +1026,7 @@ TM_FEATURE = {"Word": "Verbală", "Figurative": "Figurativă", "Combined": "Comb
 
 
 # Starea curentă din TMview a cererilor în curs — BOPI nu publică opozițiile și contestațiile.
-status_job: Dict = {"running": False, "done": 0, "found": 0, "last": None, "codes": {}}
+status_job: Dict = {"running": False, "done": 0, "found": 0, "last": None, "codes": {}, "fail": {}}
 _status_failed: Dict[str, datetime] = {}
 
 
@@ -1125,7 +1125,11 @@ def enrich_status(limit: int = 600) -> None:
     import time as _t
     if status_job["running"] or _tmview_paused():
         return
-    status_job.update(running=True, done=0, found=0)
+    for _ in range(40):                           # golurile / denumirile din TMview termină întâi
+        if not old_job["running"]:
+            break
+        _t.sleep(15)
+    status_job.update(running=True, done=0, found=0, fail={})
     try:
         week = (date.today() - timedelta(days=7)).isoformat()
         db = SessionLocal()
@@ -1161,7 +1165,10 @@ def enrich_status(limit: int = 600) -> None:
                 d = r.json() if r.status_code == 200 else None
             except Exception as e:
                 print(f"[STATUS] {app}: {type(e).__name__}")
+                d = {"error": type(e).__name__}
             if not isinstance(d, dict) or "error" in d or not d:
+                why = str(d.get("error", "gol"))[:60] if isinstance(d, dict) else f"HTTP {r.status_code}"
+                status_job["fail"][why] = status_job["fail"].get(why, 0) + 1
                 _status_failed[app] = datetime.utcnow()
                 fails += 1
                 if fails >= 10:
@@ -1905,8 +1912,8 @@ def enrich_old(batches: int = 8) -> None:
     """Treptat, toate numerele vechi de depozit (loturi de 25 în căutarea TMview, apoi fișa fiecărei
     mărci găsite). Cursorul se păstrează în baza de date — reluarea continuă de unde a rămas."""
     import time as _t
-    if old_job["running"] or _tmview_paused():
-        return
+    if old_job["running"] or status_job["running"] or _tmview_paused():
+        return                                    # nu în paralel cu starea cererilor (TMview cedează)
     if job["running"]:
         # Citirea buletinelor poate dura ore (arhiva cererilor 2010–2021): denumirile lipsă se completează
         # din TMview și între timp (cereri mici, 100 pe rulare); importul vechi așteaptă.
