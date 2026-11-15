@@ -1010,6 +1010,28 @@ def _status_backlog() -> int:
     return n
 
 
+_missing: Dict = {"at": None, "v": True}
+
+
+def _missing_pending() -> bool:
+    """Încă se aduc mărci lipsă (golurile din numerotarea recentă, seria veche după nr. de depozit)?
+    Cererea userului (15.11): starea cererilor din arhivă se verifică abia după aceea."""
+    now = datetime.utcnow()
+    if _missing["at"] and now - _missing["at"] < timedelta(minutes=10):
+        return _missing["v"]
+    db = SessionLocal()
+    try:
+        cur = db.get(SourceFile, GAP_CURSOR)
+        after = int(cur.label) if cur and (cur.label or "").isdigit() else GAP_FROM
+        old = db.get(SourceFile, OLD_CURSOR)
+        start = int(old.label) if old and (old.label or "").isdigit() else 1
+    finally:
+        db.close()
+    v = start <= OLD_END or bool(_reg_gaps(after))
+    _missing.update(at=now, v=v)
+    return v
+
+
 def _weekend() -> bool:
     """Sâmbăta și duminica nu rulează monitorizarea ProMonitor — ProWatch poate lua mai mult din TMview."""
     from zoneinfo import ZoneInfo
@@ -1125,9 +1147,8 @@ def enrich_status(limit: int = 150) -> None:
     import time as _t
     if status_job["running"] or _tmview_paused():
         return
-    y = status_job.get("yield_at")
-    if y and datetime.utcnow() - y < timedelta(minutes=15):
-        return                                    # rândul golurilor din numerotare (enrich_old)
+    if _missing_pending():
+        return                                    # întâi toate mărcile lipsă, apoi starea cererilor
     for _ in range(40):                           # golurile / denumirile din TMview termină întâi
         if not old_job["running"]:
             break
@@ -1201,7 +1222,7 @@ def enrich_status(limit: int = 150) -> None:
             status_job["total"] = status_job.get("total", 0) + 1     # de la pornirea serverului
             _t.sleep(1)
     finally:
-        status_job.update(running=False, last=datetime.utcnow().isoformat() + "Z", yield_at=datetime.utcnow())
+        status_job.update(running=False, last=datetime.utcnow().isoformat() + "Z")
 
 
 def _registered_from_tmview(m: Mark, d: Dict) -> None:
@@ -1918,7 +1939,6 @@ def enrich_old(batches: int = 8) -> None:
     import time as _t
     if old_job["running"] or status_job["running"] or _tmview_paused():
         return                                    # nu în paralel cu starea cererilor (TMview cedează)
-    status_job["yield_at"] = None                 # după goluri, din nou starea cererilor
     if job["running"]:
         # Citirea buletinelor poate dura ore (arhiva cererilor 2010–2021): denumirile lipsă se completează
         # din TMview și între timp (cereri mici, 100 pe rulare); importul vechi așteaptă.
@@ -1941,8 +1961,6 @@ def enrich_old(batches: int = 8) -> None:
         # Golurile din numerotare întâi: aduc mărci înregistrate lipsă (cele mai utile), apoi denumirile.
         fill_reg_gaps()
         _fill_names()
-        if _status_backlog():
-            return                                # seria veche după starea cererilor din arhivă
         if start > OLD_END:
             # Toate mărcile sunt în bază cu datele de bază — acum fișele complete.
             _complete_skels(300 if _weekend() else 150)
