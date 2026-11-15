@@ -1027,6 +1027,7 @@ TM_FEATURE = {"Word": "Verbală", "Figurative": "Figurativă", "Combined": "Comb
 
 # Starea curentă din TMview a cererilor în curs — BOPI nu publică opozițiile și contestațiile.
 status_job: Dict = {"running": False, "done": 0, "found": 0, "last": None, "codes": {}}
+_status_failed: Dict[str, datetime] = {}
 
 
 def tm_status_ro(code: str) -> str:
@@ -1138,7 +1139,11 @@ def enrich_status(limit: int = 600) -> None:
                 Mark.tm_status_checked.is_(None) | (Mark.tm_status_checked < week),
                 Mark.tm_status_checked.is_(None) | (Mark.publication_date >= old) |
                 (Mark.tm_status_checked < half)).order_by(
-                Mark.tm_status_checked.asc().nullsfirst(), Mark.publication_date.asc()).limit(limit)]
+                Mark.tm_status_checked.asc().nullsfirst(), Mark.publication_date.asc()).limit(limit * 2)]
+            # Cererile la care TMview n-a răspuns (timeout) trec la coadă câteva ore — altfel aceleași
+            # 10 cereri rămân în capul listei și fiecare rulare se oprește pe ele.
+            cut = datetime.utcnow() - timedelta(hours=6)
+            todo = [a for a in todo if _status_failed.get(a, cut) <= cut][:limit]
             if len(todo) < limit:
                 # Apoi mărcile înregistrate (anulări / decăderi nepublicate în BOPI) — reverificate lunar.
                 month = (date.today() - timedelta(days=30)).isoformat()
@@ -1157,6 +1162,7 @@ def enrich_status(limit: int = 600) -> None:
             except Exception as e:
                 print(f"[STATUS] {app}: {type(e).__name__}")
             if not isinstance(d, dict) or "error" in d or not d:
+                _status_failed[app] = datetime.utcnow()
                 fails += 1
                 if fails >= 10:
                     print("[STATUS] TMview nu răspunde — pauză")
