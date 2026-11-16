@@ -8,7 +8,9 @@ Regula de conflict (stabilită cu utilizatorul):
     ȘI cel puțin o clasă Nisa comună; SAU
   • un cuvânt identic cu un cuvânt din marca monitorizată (NOIR ↔ N NOIR COFFEE ROASTERS)
     ȘI cel puțin o clasă Nisa comună — cuvintele generice / descriptive nu contează; SAU
-  • marcă identică (scor 1), indiferent de clase.
+  • marcă identică (scor 1), indiferent de clase; SAU
+  • o marcă dintr-un singur cuvânt, cuprins identic în cealaltă (VELORA ↔ V VELORA TRAVEL) —
+    tratată ca marca identică: scor 1, indiferent de clase.
 
 Rulează automat în fiecare zi lucrătoare după 15:00 (ora României), după ce apar buletinele, și
 manual din pagina Monitorizare, pentru orice dată.
@@ -55,6 +57,17 @@ GENERIC_WORDS = {
 def _words(name: str) -> set:
     t = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower()
     return {w for w in re.split(r"[^a-z0-9]+", t) if len(w) >= 3 and not w.isdigit() and w not in GENERIC_WORDS}
+
+
+def _single_word_hit(a: str, b: str) -> set:
+    """Cuvântul unei mărci dintr-un singur cuvânt (distinctiv), cuprins identic în cealaltă marcă —
+    în oricare sens: VELORA ↔ V VELORA TRAVEL. Mulțime goală dacă nu e cazul."""
+    for one, other in ((a, b), (b, a)):
+        t = unicodedata.normalize("NFKD", one or "").encode("ascii", "ignore").decode().lower()
+        tokens = [w for w in re.split(r"[^a-z0-9]+", t) if w]
+        if len(tokens) == 1 and _words(one) and _words(one) <= _words(other):
+            return _words(one)
+    return set()
 
 
 def _watch_snapshot(item: WatchItem) -> Dict:
@@ -107,16 +120,21 @@ def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
                 # (cuvânt comun / rădăcină comună ridicate la 0.60–0.75): acolo vrem să nu scăpăm
                 # nimic, aici ar face din orice „RESTAURANT …” / „… SOCIETY” un conflict.
                 sim = entry["similarity"]
-                like = 1.0 if identical else round((sim["textual_score"] * 0.70 + sim["phonetic_score"] * 0.30) / 100.0, 2)
+                single = set() if identical else _single_word_hit(name, orig.get("tmName") or "")
+                like = 1.0 if (identical or single) else round((sim["textual_score"] * 0.70 + sim["phonetic_score"] * 0.30) / 100.0, 2)
                 overlap = watch_classes & set(_classes(orig))
-                if not (identical or (overlap and like >= threshold)):
+                if not (identical or single or (overlap and like >= threshold)):
                     continue
                 seen.add(app)
+                snap = _watch_snapshot(item)
+                if single:
+                    snap["common_words"] = sorted(single)
                 rows.append({"application_number": app, "watch_item_id": item.id,
                              "like": min(like, 1.0), "identical": identical,
-                             "watch": _watch_snapshot(item)})
+                             "watch": snap})
         # Cuvânt identic cu un cuvânt din marca monitorizată + o clasă comună — oricât de mic ar fi
-        # scorul de ansamblu („NOIR” față de „N NOIR COFFEE ROASTERS”).
+        # scorul de ansamblu („NOIR” față de „N NOIR COFFEE ROASTERS”). Dacă una dintre mărci are un
+        # singur cuvânt, cuprins identic în cealaltă, e tratată ca identică: scor 1, fără clasă comună.
         watch_words = _words(name)
         if watch_words:
             from rapidfuzz import fuzz
@@ -125,10 +143,13 @@ def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
                 if not app or app in seen or (own_app and _norm_app(app) == own_app):
                     continue
                 common = watch_words & _words(m.get("tmName") or "")
-                if not common or not (watch_classes & set(_classes(m))):
+                if not common:
+                    continue
+                single = _single_word_hit(name, m.get("tmName") or "")
+                if not single and not (watch_classes & set(_classes(m))):
                     continue
                 seen.add(app)
-                like = round(fuzz.token_set_ratio(_norm_identity(name), _norm_identity(m.get("tmName") or "")) / 100.0, 2)
+                like = 1.0 if single else round(fuzz.token_set_ratio(_norm_identity(name), _norm_identity(m.get("tmName") or "")) / 100.0, 2)
                 rows.append({"application_number": app, "watch_item_id": item.id,
                              "like": min(like, 1.0), "identical": False,
                              "watch": {**_watch_snapshot(item), "common_words": sorted(common)}})
