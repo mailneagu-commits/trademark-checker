@@ -11,7 +11,8 @@ Regula de conflict (stabilită cu utilizatorul):
   • marcă identică (scor 1), indiferent de clase; SAU
   • o marcă dintr-un singur cuvânt, cuprins identic în cealaltă (VELORA ↔ V VELORA TRAVEL) —
     tratată ca marca identică: scor 1, indiferent de clase; SAU
-  • cel puțin două cuvinte identice (necomune / nedescriptive) în ambele mărci, indiferent de clase.
+  • cel puțin două cuvinte identice în ambele mărci (cuvintele scurte contează, de ex. „CE FACEM” ↔
+    „CE FACEM AZI?”; cel puțin unul distinctiv), indiferent de clase.
 
 Rulează automat în fiecare zi lucrătoare după 15:00 (ora României), după ce apar buletinele, și
 manual din pagina Monitorizare, pentru orice dată.
@@ -58,6 +59,13 @@ GENERIC_WORDS = {
 def _words(name: str) -> set:
     t = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower()
     return {w for w in re.split(r"[^a-z0-9]+", t) if len(w) >= 3 and not w.isdigit() and w not in GENERIC_WORDS}
+
+
+def _tokens(name: str) -> set:
+    """Toate cuvintele mărcii (de la 2 litere, fără cele generice) — pentru regula celor două cuvinte
+    identice, unde contează și cuvintele scurte („CE FACEM” ↔ „CE FACEM AZI?”)."""
+    t = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower()
+    return {w for w in re.split(r"[^a-z0-9]+", t) if len(w) >= 2 and not w.isdigit() and w not in GENERIC_WORDS}
 
 
 def _single_word_hit(a: str, b: str) -> set:
@@ -147,8 +155,12 @@ def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
                 if not common:
                     continue
                 single = _single_word_hit(name, m.get("tmName") or "")
-                # Două (sau mai multe) cuvinte identice — conflict și fără clasă comună.
-                if not single and len(common) < 2 and not (watch_classes & set(_classes(m))):
+                # Două (sau mai multe) cuvinte identice, dintre care cel puțin unul distinctiv —
+                # conflict și fără clasă comună.
+                same = _tokens(name) & _tokens(m.get("tmName") or "")
+                if len(same) >= 2:
+                    common = same
+                if not single and len(same) < 2 and not (watch_classes & set(_classes(m))):
                     continue
                 seen.add(app)
                 like = 1.0 if single else round(fuzz.token_set_ratio(_norm_identity(name), _norm_identity(m.get("tmName") or "")) / 100.0, 2)
