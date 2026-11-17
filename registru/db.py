@@ -68,6 +68,14 @@ class Mark(Base):
     disclaimer       = Column(Text, default="")       # declarația de neinvocare a unui drept exclusiv
     has_image        = Column(Boolean, default=False)
     events           = Column(JSON, default=list)       # [{"date", "bopi", "chapter"}]
+    # Etapele procedurii (procedura.py): sfârșitul observațiilor, „Cereri admise”, sfârșitul opoziției,
+    # publicarea înregistrării și statutul procedurii; proc_manual = corecția administratorului.
+    obs_end          = Column(String, default="")
+    admise_date      = Column(String, default="")
+    opp_end          = Column(String, default="", index=True)
+    reg_pub_date     = Column(String, default="")
+    proc_status      = Column(String, default="", index=True)
+    proc_manual      = Column(String, default="")
     updated_at       = Column(DateTime, default=datetime.utcnow)
 
 
@@ -117,6 +125,20 @@ class CourtLink(Base):
     case_id    = Column(String, primary_key=True)
     app_number = Column(String, primary_key=True, index=True)
     kind       = Column(String, default="")                # „nr” (sigur) / „titular” (de verificat)
+
+
+class ProcLog(Base):
+    """Jurnalul schimbărilor de statut al procedurii: automat (buletin / trecerea termenelor),
+    migrare sau corecție manuală a administratorului."""
+    __tablename__ = "proc_log"
+
+    id          = Column(Integer, primary_key=True)
+    app_number  = Column(String, index=True)
+    old         = Column(String, default="")
+    new         = Column(String, default="")
+    source      = Column(String, default="", index=True)    # automat / buletin / migrare / manual
+    note        = Column(Text, default="")
+    at          = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class SourceFile(Base):
@@ -228,6 +250,13 @@ def _ensure_columns():
     if "tmview_checked" not in have:
         with engine.begin() as c:
             c.execute(text("ALTER TABLE marks ADD COLUMN tmview_checked VARCHAR DEFAULT ''"))
+    for col in ("obs_end", "admise_date", "opp_end", "reg_pub_date", "proc_status", "proc_manual"):
+        if col not in have:
+            with engine.begin() as c:
+                c.execute(text(f"ALTER TABLE marks ADD COLUMN {col} VARCHAR DEFAULT ''"))
+                if col in ("opp_end", "proc_status"):
+                    c.execute(text(f"CREATE INDEX IF NOT EXISTS ix_marks_{col} ON marks ({col})"))
+            print(f"[DB] Coloana marks.{col} adăugată")
     if "expiry_date" not in have:
         with engine.begin() as c:
             c.execute(text("ALTER TABLE marks ADD COLUMN expiry_date VARCHAR DEFAULT ''"))
@@ -1331,6 +1360,31 @@ def _retry_nameless_logos():
         db.close()
 
 
+def _procedure_v1():
+    """O singură dată: etapele procedurii (observații → examinare → opoziție → înregistrare) pentru
+    toate cererile publicate din 2022; schimbările intră în jurnal cu sursa „migrare”."""
+    import procedura
+    marker = "migration:procedure-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = changed = 0
+        apps = [a for (a,) in db.query(Mark.app_number).filter(
+            (Mark.publication_date >= procedura.FROM) | (Mark.status_date >= procedura.FROM))]
+        for i in range(0, len(apps), 500):
+            for m in db.query(Mark).filter(Mark.app_number.in_(apps[i:i + 500])):
+                changed += procedura.apply(db, m, source="migrare")
+                n += 1
+            db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=changed,
+                          label=f"etape procedură v1: {n} mărci, {changed} statuturi"))
+        db.commit()
+        print(f"[DB] Etape procedură: {n} mărci recalculate, {changed} statuturi stabilite")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -1362,7 +1416,7 @@ def init_db():
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
                                      _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources(),
-                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _names_from_later_bulletin(), _drop_expiring_renewals(), _dedupe_0907(),
+                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _names_from_later_bulletin(), _procedure_v1(), _drop_expiring_renewals(), _dedupe_0907(),
                                      __import__("osim_export").import_all()),
                      daemon=True).start()
     _fix_reg_zeros()

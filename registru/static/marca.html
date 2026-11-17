@@ -54,6 +54,28 @@ function casesHtml(cases) {
     <p class="muted small" style="margin:-6px 0 12px;">Dosare cu obiect „marcă” de la Tribunalul București și Curtea de Apel București, din Portalul instanțelor de judecată (portal.just.ro), actualizate săptămânal.</p>${rows}</section>`;
 }
 // Reconstituie, eveniment cu eveniment, ce s-a schimbat față de documentul anterior.
+// Etapele procedurii OSIM: publicare → observații → examinare → cereri admise → opoziție → înregistrare.
+function procHtml(m) {
+  if (!m.obs_end && !m.admise_date) return "";
+  const today = new Date().toISOString().slice(0, 10);
+  const span = (a, b) => a && b ? `${dmy(a)} – ${dmy(b)}` : a ? `din ${dmy(a)}` : "";
+  const steps = [
+    ["Publicare în buletinul zilnic", dmy(m.publication_date), !!m.publication_date],
+    ["Perioada de observații (2 luni)", span(m.publication_date, m.obs_end), !!m.obs_end && today > m.obs_end],
+    ["Examinare", m.obs_end ? span(nextDay(m.obs_end), m.admise_date ? prevDay(m.admise_date) : "") || "" : "", !!m.admise_date],
+    ["Publicare în „Cereri admise”", dmy(m.admise_date), !!m.admise_date],
+    ["Perioada de opoziție (2 luni)", span(m.admise_date, m.opp_end), !!m.opp_end && today > m.opp_end],
+    ["Înregistrare (buletinul lunar)", dmy(m.reg_pub_date), !!m.reg_pub_date],
+  ];
+  const cur = steps.findIndex(s => !s[2]);
+  const flags = (m.proc_flags || []).map(f => `<p class="small" style="margin:6px 0 0;color:#b45309;">⚠ ${esc(f)}</p>`).join("");
+  return `<section class="card"><h2>Procedura de înregistrare</h2>
+    <p class="muted small" style="margin:-6px 0 14px;">Termenele de 2 luni: aceeași zi din luna a doua (ultima zi a lunii, dacă ziua nu există), prelungite la prima zi lucrătoare.${m.proc_manual ? " Statut corectat manual." : ""}</p>
+    <ol class="proc">${steps.map((s, i) => `<li class="${i < cur || cur < 0 ? "done" : i === cur ? "cur" : ""}"><b>${esc(s[0])}</b><span class="muted small">${s[1] || "—"}</span></li>`).join("")}</ol>${flags}</section>`;
+}
+const _shift = (iso, d) => { const x = new Date(iso + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + d); return x.toISOString().slice(0, 10); };
+const nextDay = iso => _shift(iso, 1), prevDay = iso => _shift(iso, -1);
+
 function historyHtml(events) {
   const evs = [...events].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   if (!evs.length) return '<p class="muted">—</p>';
@@ -178,6 +200,7 @@ function repLater(m) {
       <section class="card goods"><h2>Produse și servicii (511) · ${goods.length} ${goods.length === 1 ? "clasă" : "clase"}</h2>
         ${goods.map(([c, t]) => `<div class="row"><div class="cls">${c}</div><div>${esc(t)}</div></div>`).join("") || '<p class="muted">—</p>'}</section>
       ${casesHtml(m.cases)}
+      ${procHtml(m)}
       ${bopi450(m.events || [])}
       <section class="card"><h2>Istoricul mărcii</h2>
         <p class="muted small" style="margin:-6px 0 14px;">Toate aparițiile mărcii în Buletinul Oficial de Proprietate Industrială, în ordine cronologică, cu ce s-a schimbat la fiecare.</p>

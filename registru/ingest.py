@@ -18,6 +18,7 @@ import requests
 
 from bopi_parser import display_app, fix_record, parse_changes, parse_pdf, party_name
 from db import Mark, MarkChange, MarkImage, SessionLocal, SourceFile, norm
+import procedura
 
 OSIM = "https://www.osim.ro"
 INDEX_PAGE = OSIM + "/buletinul-oficial-de-proprietate-industriala-marci"
@@ -312,7 +313,28 @@ def _upsert(db, chapter: str, rec: Dict, src: Dict) -> None:
         _apply_pending(db, m)
     _recompute_holder(m)
     m.expiry_date = expiry_of(m)
+    procedura.apply(db, m, source="buletin " + src["label"])
     m.updated_at = datetime.utcnow()
+
+
+def proc_daily() -> None:
+    """Zilnic: trecerea termenelor — observații → examinare, opoziție → opoziție închisă."""
+    from db import Mark, SessionLocal
+    today = date.today().isoformat()
+    db = SessionLocal()
+    try:
+        n = 0
+        for m in db.query(Mark).filter(
+                ((Mark.proc_status == procedura.OBS) & (Mark.obs_end < today)) |
+                ((Mark.proc_status == procedura.OPP) & (Mark.opp_end < today)) |
+                # înregistrată din TMview / radiată / retrasă din tabelele lunare, între timp
+                (Mark.proc_status.in_(procedura.STATUSES) &
+                 Mark.status.in_([procedura.REG, *procedura.TERMINAL]))):
+            n += procedura.apply(db, m, source="trecerea termenului")
+        db.commit()
+        print(f"[PROC] Tranziții zilnice: {n}")
+    finally:
+        db.close()
 
 
 def _apply_limitation(m: Mark, c: MarkChange) -> str:

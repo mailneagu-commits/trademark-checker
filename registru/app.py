@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 import courts
 import ingest
+import procedura
 
 # Litigiile din Portalul instanțelor (courts.py) — puse pe pauză; datele rămân în baza de date.
 COURTS_ENABLED = os.environ.get("COURTS_ENABLED", "0") == "1"
@@ -70,6 +71,9 @@ def _startup():
     # Starea cererilor în curs (opoziție, contestație…) din TMview.
     sched.add_job(ingest.enrich_status, "interval", minutes=5, id="tmview_status",
                   misfire_grace_time=1800, coalesce=True)
+    # Etapele procedurii: observații → examinare, opoziție → opoziție închisă, la trecerea termenelor.
+    sched.add_job(ingest.proc_daily, "cron", hour=6, minute=5, id="proc_daily",
+                  misfire_grace_time=7200, coalesce=True)
     # Dosarele cu obiect „marcă” din Portalul instanțelor — săptămânal (duminică noaptea).
     # Oprit deocamdată, la cererea utilizatorului (reluăm după finalizarea bazei de mărci).
     if COURTS_ENABLED:
@@ -103,6 +107,8 @@ RENEW_MAYBE = "Posibil în curs de reînnoire"
 # Cerere depusă de peste 3 ani, fără înregistrare în buletinele lunare și fără stare în TMview (încă):
 # BOPI nu publică respingerile / retragerile — aproape sigur n-a ajuns la înregistrare.
 NOT_REG = "Neînregistrată în BOPI (probabil respinsă / retrasă)"
+# Opoziția s-a închis de peste 3 luni și marca nu e încă înregistrată — posibil opoziție depusă.
+LATE = "Neînregistrată la 3 luni după opoziție"
 
 
 def _old_cutoff() -> str:
@@ -135,12 +141,18 @@ def _status(m: Mark) -> str:
     if m.status == "Înregistrată" and "renew" in (m.tm_status or "").lower():
         return "În curs de reînnoire"
     # Cereri în curs: opoziția / contestația / retragerea apar doar în TMview, nu în BOPI.
-    if m.status in ("Cerere publicată", "Admisă la înregistrare") and ingest.tm_status_ro(m.tm_status or ""):
-        return ingest.tm_status_ro(m.tm_status)
+    # „În examinare” din TMview nu înlocuiește etapa calculată (observații / opoziție) din buletine.
+    tm = ingest.tm_status_ro(m.tm_status or "")
+    if m.status in ("Cerere publicată", "Admisă la înregistrare") and tm and \
+            not (tm == procedura.EXAM and m.proc_status in procedura.STATUSES):
+        return tm
     # Cerere depusă de peste 3 ani, fără înregistrare în BOPI și încă fără stare în TMview: nu e „în curs”.
     if m.status in ("Cerere publicată", "Admisă la înregistrare") and not m.tm_status and \
             (m.filing_date or "9999") < _old_cutoff():
         return NOT_REG
+    # Etapa procedurii: observații → examinare → opoziție → opoziție închisă (procedura.py).
+    if m.status in ("Cerere publicată", "Admisă la înregistrare") and m.proc_status in procedura.STATUSES:
+        return m.proc_status
     # Mărci înregistrate anulate / decăzute / la care s-a renunțat — după TMview, dacă e mai nou decât BOPI.
     # „Expired” în TMview, dar expirarea din BOPI e în viitor: TMview e în urmă (DINES D, M 2011 06887 —
     # reînnoită până în 2031, așa cum arată și registrul OSIM) — rămâne „Înregistrată”.
@@ -198,6 +210,8 @@ def _row(m: Mark) -> dict:
         "status": _status(m), "mark_type": m.mark_type, "filing_date": m.filing_date,
         "publication_date": m.publication_date, "reg_number": m.reg_number, "reg_date": m.reg_date,
         "expiry_date": m.expiry_date or ingest.expiry_of(m), "holder": m.holder, "representative": m.representative,
+        "proc_status": m.proc_status or "", "obs_end": m.obs_end or "", "admise_date": m.admise_date or "",
+        "opp_end": m.opp_end or "", "reg_pub_date": m.reg_pub_date or "",
         "classes": m.classes or [], "image": f"/api/image/{m.app_number}" if m.has_image else "",
         # Mărci reînnoite înregistrate înainte de arhiva disponibilă: denumirea nu apare în BOPI.
         "placeholder": "denumire necunoscută — marcă reînnoită" if m.app_number.startswith("R") and not m.name
@@ -225,7 +239,9 @@ def _detail(m: Mark, db=None) -> dict:
         d["cases"] = _cases(db, m.app_number)
     d.update(holder_address=m.holder_address, representative_address=m.representative_address,
              goods=m.goods or {}, vienna=m.vienna, colors=m.colors, disclaimer=m.disclaimer, events=m.events or [],
-             status_date=m.status_date, tm_status=m.tm_status or "", tm_status_date=m.tm_status_date or "")
+             status_date=m.status_date, tm_status=m.tm_status or "", tm_status_date=m.tm_status_date or "",
+             proc_manual=m.proc_manual or "",
+             proc_flags=procedura.anomalies(m, {**procedura.compute(m), "proc_status": m.proc_status or ""}))
     return d
 
 
@@ -338,8 +354,17 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
         q = q.filter(Mark.status == "Înregistrată", or_(Mark.expiry_date == "", Mark.expiry_date >= today), alive)
     elif status == "Încetată":
         q = q.filter(Mark.status == "Înregistrată", ended)
-    elif status in ("În opoziție", "În contestație", "În examinare"):
-        kw = {"În opoziție": "%ppos%", "În contestație": "%ppeal%", "În examinare": "%xamin%"}[status]
+    elif status == procedura.EXAM:
+        q = q.filter(Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]),
+                     or_(Mark.proc_status == procedura.EXAM, Mark.tm_status.ilike("%xamin%")))
+    elif status in (procedura.OBS, procedura.OPP, procedura.OPP_CLOSED):
+        q = q.filter(Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.proc_status == status)
+    elif status == LATE:
+        late = (date.today() - timedelta(days=procedura.LATE_DAYS)).isoformat()
+        q = q.filter(Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]),
+                     Mark.proc_status == procedura.OPP_CLOSED, Mark.opp_end < late)
+    elif status in ("În opoziție", "În contestație"):
+        kw = {"În opoziție": "%ppos%", "În contestație": "%ppeal%"}[status]
         q = q.filter(Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.tm_status.ilike(kw))
     elif status in ("Retrasă", "Respinsă"):
         kw = "%ithdraw%" if status == "Retrasă" else "%efus%"
@@ -615,6 +640,79 @@ def quality(db: Session = Depends(get_db)):
                                         "holder": (m.holder or "")[:100], "status": m.status,
                                         "bopi": (m.events or [{}])[-1].get("bopi", "")})
     return {"total": total, "counts": counts, "examples": examples}
+
+
+# ── Etapele procedurii: raport și corecție manuală ──────────────────────────────
+
+@app.get("/api/procedura/raport")
+def proc_report(tip: str = "schimbari", sursa: str = "migrare", format: str = "json",
+                db: Session = Depends(get_db)):
+    """tip=schimbari: statuturile stabilite / schimbate (din jurnal, după sursă: migrare, buletin, trecerea
+    termenului, manual — „toate” = tot jurnalul); tip=anomalii: mărcile care nu se încadrează în flux."""
+    from db import ProcLog
+    rows = []
+    if tip == "anomalii":
+        for m in db.query(Mark).filter(Mark.proc_status != "", Mark.proc_status.isnot(None)).yield_per(2000):
+            p = {**procedura.compute(m), "proc_status": m.proc_status}
+            for a in procedura.anomalies(m, p):
+                rows.append({"nr_depozit": display_app(m.app_number), "denumire": m.name, "problema": a,
+                             "statut_procedura": m.proc_status, "publicare": m.publication_date or "",
+                             "cereri_admise": m.admise_date or "", "sfarsit_opozitie": m.opp_end or "",
+                             "inregistrare": m.reg_pub_date or "", "stare_tmview": m.tm_status or ""})
+    else:
+        q = db.query(ProcLog)
+        if sursa != "toate":
+            q = q.filter(ProcLog.source.like(sursa + "%"))
+        names = {}
+        for l in q.order_by(ProcLog.at.desc()).limit(100000):
+            rows.append({"nr_depozit": display_app(l.app_number), "statut_vechi": l.old or "—",
+                         "statut_nou": l.new, "sursa": l.source, "nota": l.note or "",
+                         "data": l.at.strftime("%Y-%m-%d %H:%M") if l.at else ""})
+            names[l.app_number] = None
+        for (a, n) in db.query(Mark.app_number, Mark.name).filter(Mark.app_number.in_(list(names))):
+            names[a] = n
+        for r in rows:
+            r["denumire"] = names.get(r["nr_depozit"].replace(" ", ""), "") or ""
+    if format == "csv":
+        import csv, io
+        buf = io.StringIO()
+        if rows:
+            w = csv.DictWriter(buf, fieldnames=list(rows[0]), delimiter=";")
+            w.writeheader()
+            w.writerows(rows)
+        return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="procedura-{tip}.csv"'})
+    from collections import Counter as _C
+    key = "problema" if tip == "anomalii" else "statut_nou"
+    return {"total": len(rows), "pe_tipuri": dict(_C(r[key] for r in rows)), "rows": rows[:500]}
+
+
+class ProcFix(BaseModel):
+    status: str = ""          # "" = anulează corecția (revine la calculul automat)
+    note: str = ""
+
+
+@app.post("/api/admin/procedura/{app_number}", dependencies=[Depends(_admin)])
+def proc_fix(app_number: str, body: ProcFix, db: Session = Depends(get_db)):
+    """Corecția manuală a statutului procedurii (singura care poate merge înapoi); intră în jurnal."""
+    from db import ProcLog
+    m = db.get(Mark, app_number.replace(" ", "").upper())
+    if not m:
+        raise HTTPException(404, "Marca nu există în registru.")
+    allowed = set(procedura.STATUSES) | {procedura.REG, *procedura.TERMINAL, ""}
+    if body.status not in allowed:
+        raise HTTPException(400, "Statut necunoscut.")
+    old = m.proc_status or ""
+    m.proc_manual = body.status
+    if body.status:
+        m.proc_status = body.status
+    else:
+        m.proc_status = ""
+        procedura.apply(db, m, source="manual (anulare corecție)")
+    db.add(ProcLog(app_number=m.app_number, old=old, new=m.proc_status, source="manual",
+                   note=body.note, at=datetime.utcnow()))
+    db.commit()
+    return {"app_number": m.app_number, "proc_status": m.proc_status, "manual": bool(m.proc_manual)}
 
 
 @app.get("/api/admin/ingest", dependencies=[Depends(_admin)])

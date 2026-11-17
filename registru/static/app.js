@@ -17,7 +17,9 @@ function statusBadge(s) {
   const cls = { "Înregistrată": "ok", "Cerere publicată": "pub", "Admisă la înregistrare": "adm", "Respinsă": "bad",
                 "Radiată": "bad", "Retrasă": "bad", "Expirată": "bad", "În opoziție": "warn", "În contestație": "warn", "Anulată": "bad", "Decăzută": "bad",
                 "Renunțare": "bad", "Încetată": "bad", "În termen de grație": "warn", "În curs de reînnoire": "warn", "Posibil în curs de reînnoire": "warn",
-                "Neînregistrată în BOPI (probabil respinsă / retrasă)": "bad" }[s] || "pub";
+                "Neînregistrată în BOPI (probabil respinsă / retrasă)": "bad",
+                "În perioada de observații": "pub", "În examinare": "adm", "În perioada de opoziție": "warn",
+                "Perioadă de opoziție închisă – în așteptarea înregistrării": "adm" }[s] || "pub";
   return s ? `<span class="st ${cls}">${esc(s)}</span>` : "";
 }
 const chips = cl => `<div class="chips">${(cl || []).map(c => `<span class="chip">${c}</span>`).join("")}</div>`;
@@ -173,7 +175,10 @@ function searchForm() {
       <div><label for="f-cls">Clase Nisa</label><input id="f-cls" name="classes" value="${v("classes")}" placeholder="ex. 9, 35" inputmode="numeric"></div>
       <div><label for="f-status">Stare</label><select id="f-status" name="status">
         ${[["", "toate"], ["Valabile", "valabile (înregistrate, neexpirate)"], ["Înregistrată", "înregistrate"], ["Expirată", "expirate"], ["În termen de grație", "în termen de grație (6 luni după expirare)"], ["Posibil în curs de reînnoire", "posibil în curs de reînnoire"],
-           ["Cerere publicată", "cereri publicate"], ["Admisă la înregistrare", "admise la înregistrare"], ["În examinare", "în examinare"], ["În opoziție", "în opoziție"],
+           ["Cerere publicată", "cereri publicate"], ["În perioada de observații", "în perioada de observații (2 luni de la publicare)"], ["În examinare", "în examinare"],
+           ["Admisă la înregistrare", "admise la înregistrare"], ["În perioada de opoziție", "în perioada de opoziție (2 luni de la „Cereri admise”)"],
+           ["Perioadă de opoziție închisă – în așteptarea înregistrării", "opoziție închisă – în așteptarea înregistrării"],
+           ["Neînregistrată la 3 luni după opoziție", "neînregistrate la 3 luni după opoziție (posibilă opoziție)"], ["În opoziție", "cu opoziție depusă (TMview)"],
            ["În contestație", "în contestație"], ["Respinsă", "respinse"],
            ["Neînregistrată în BOPI (probabil respinsă / retrasă)", "cereri vechi neînregistrate (probabil respinse / retrase)"],
            ["Radiată", "radiate"], ["Încetată", "anulate / decăzute / încetate (TMview)"], ["Retrasă", "retrase"]].map(([v, t]) =>
