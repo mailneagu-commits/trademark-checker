@@ -10,7 +10,8 @@ Regula de conflict (stabilită cu utilizatorul):
     ȘI cel puțin o clasă Nisa comună — cuvintele generice / descriptive nu contează; SAU
   • marcă identică (scor 1), indiferent de clase; SAU
   • o marcă dintr-un singur cuvânt, cuprins identic în cealaltă (VELORA ↔ V VELORA TRAVEL) —
-    tratată ca marca identică: scor 1, indiferent de clase.
+    tratată ca marca identică: scor 1, indiferent de clase; SAU
+  • cel puțin două cuvinte identice (necomune / nedescriptive) în ambele mărci, indiferent de clase.
 
 Rulează automat în fiecare zi lucrătoare după 15:00 (ora României), după ce apar buletinele, și
 manual din pagina Monitorizare, pentru orice dată.
@@ -146,7 +147,8 @@ def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
                 if not common:
                     continue
                 single = _single_word_hit(name, m.get("tmName") or "")
-                if not single and not (watch_classes & set(_classes(m))):
+                # Două (sau mai multe) cuvinte identice — conflict și fără clasă comună.
+                if not single and len(common) < 2 and not (watch_classes & set(_classes(m))):
                     continue
                 seen.add(app)
                 like = 1.0 if single else round(fuzz.token_set_ratio(_norm_identity(name), _norm_identity(m.get("tmName") or "")) / 100.0, 2)
