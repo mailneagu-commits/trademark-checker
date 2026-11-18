@@ -62,6 +62,7 @@
   </div>
   <div class="scroll"><div id="root" class="state">⏳ Se încarcă…</div></div>
 </div>
+<style>.grade{display:block;font-size:.72rem;font-weight:700;margin-top:2px}.method{display:block;font-size:.68rem;color:#888;white-space:nowrap}</style>
 <script>
 const P = new URLSearchParams(location.search);
 const TYPE = P.get("type") === "conflicts" ? "conflicts" : "results";
@@ -96,6 +97,16 @@ function party(text, names) {
 const img = u => u ? `<img src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">` : "";
 const idLink = r => `<a class="id" href="${esc(r.link)}"${EMBED ? "" : ' target="_blank"'}>${esc(r.application_number)}</a>`;
 
+// Gradul de similaritate și metoda care a dat scorul (scor compus — composite_similarity.py).
+const METHODS = { existenta: "textual + fonetic", nucleu: "nucleu fără afixe", subsir: "subșir comun",
+  includere: "includere", trigrame: "trigrame (Dice)", identica: "marcă identică",
+  cuvant_cuprins: "cuvânt cuprins identic", cuvant_comun: "cuvânt comun", levenshtein: "Levenshtein" };
+function likeGrade(r) {
+  const g = r.like >= 0.85 ? ["ridicat", "#c62828"] : r.like >= 0.70 ? ["mediu", "#e67e00"] : ["scăzut", "#6b7280"];
+  const m = METHODS[(r.monitor || {}).method] || "";
+  return `<span class="grade" style="color:${g[1]}">${g[0]}</span>${m ? `<span class="method">${m}</span>` : ""}`;
+}
+
 const COLS = {
   results: [
     { h: "210",      key: r => r.application_number, cell: r => `<td class="num">${idLink(r)}</td>` },
@@ -108,7 +119,7 @@ const COLS = {
     { h: "list_511", key: r => (r.classes || [])[0] || 0, cell: r => `<td class="cls">${cls(r.classes)}</td>` },
   ],
   conflicts: [
-    { h: "like",           key: r => -r.like, cell: r => `<td class="num">${r.like.toFixed(2)}${r.identical ? '<span class="ident">identică</span>' : ''}${!r.identical && (r.monitor || {}).common_words ? `<span class="ident" title="cuvânt identic cu marca monitorizată">cuvânt comun: ${r.monitor.common_words.join(", ").toUpperCase()}</span>` : ''}</td>` },
+    { h: "like",           key: r => -r.like, cell: r => `<td class="num">${r.like.toFixed(2)}${likeGrade(r)}${r.identical ? '<span class="ident">identică</span>' : ''}${!r.identical && (r.monitor || {}).common_words ? `<span class="ident" title="cuvânt identic cu marca monitorizată">cuvânt comun: ${r.monitor.common_words.join(", ").toUpperCase()}</span>` : ''}</td>` },
     { h: "Nr. Depozit",    key: r => r.application_number, cell: r => `<td class="num">${idLink(r)}</td>` },
     { h: "Titular",        key: r => (r.applicant || "").toLowerCase(), cell: r => `<td class="multi">${party(r.applicant, r.applicant_names)}</td>` },
     { h: "Reprezentant",   key: r => (r.representative || "").toLowerCase(), cell: r => `<td class="multi">${party(r.representative, r.representative_names) || "(-)"}</td>` },
@@ -119,7 +130,7 @@ const COLS = {
     { h: "monitor_clase",  key: r => (r.monitor.classes || [])[0] || 0, cell: r => `<td class="cls">${cls(r.monitor.classes)}</td>` },
     { h: "monitor_name",   key: r => (r.monitor.holder || "").toLowerCase(),
       cell: r => `<td>${esc(r.monitor.holder)}${r.monitor.portfolio ? `<br><span class="pf">${esc(r.monitor.portfolio)}${r.monitor.application_number ? " · " + esc(r.monitor.application_number) : ""}</span>` : ""}</td>` },
-    { h: "monitor_like",   key: r => r.monitor.monitor_like, cell: r => `<td class="num">${Number(r.monitor.monitor_like ?? 0.6).toFixed(1)}</td>` },
+    { h: "monitor_like",   key: r => r.monitor.monitor_like, cell: r => `<td class="num">${Number(r.monitor.monitor_like ?? 0.55).toFixed(2)}</td>` },
   ],
 };
 

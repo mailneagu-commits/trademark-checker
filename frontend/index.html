@@ -731,12 +731,15 @@
         <select id="dailySource" style="padding:6px 8px;border:1.5px solid #e0e0e0;border-radius:7px;font-size:.84rem;">
           <option value="both">OSIM + EUIPO</option><option value="all">OSIM + EUIPO + WIPO</option><option value="osim">Doar OSIM</option><option value="euipo">Doar EUIPO</option><option value="wipo">Doar WIPO (gazeta de joi)</option>
         </select>
+        <label for="dailyMinLike" title="Pragul minim de afișare a unui conflict (dacă marca monitorizată nu are prag propriu)">Prag minim:</label>
+        <input type="number" id="dailyMinLike" min="30" max="100" step="1" style="width:62px;padding:6px 8px;border:1.5px solid #e0e0e0;border-radius:7px;font-size:.84rem;" onchange="saveDailyMinLike(this.value)"> %
         <button class="btn-primary" id="dailyRunBtn" style="padding:8px 16px;font-size:.84rem;" onclick="startDailyRun()">▶ Pornește monitorizarea</button>
       </div>
     </div>
     <div style="font-size:.76rem;color:#888;margin-bottom:12px;">
       Rulează automat în fiecare zi lucrătoare după ora 15:00 (reîncearcă din oră în oră până la 20:00 dacă buletinul nu a apărut).
-      Conflict = scor ≥ pragul mărcii (implicit 0.6) și cel puțin o clasă comună, sau marcă identică (scor 1) indiferent de clase.
+      Conflict = scor ≥ prag (implicit <span id="dailyMinLikeTxt">55</span>%) și cel puțin o clasă comună, sau marcă identică (scor 1) indiferent de clase.
+      Scorul = maximul dintre: textual + fonetic, nucleu fără afixe (BIO-, ECO-, -IA, -UL…), subșir comun, includere, trigrame. Grad: ≥85% ridicat, 70–84% mediu, sub 70% scăzut.
     </div>
     <div id="dailyStatus" style="display:none;margin-bottom:12px;font-size:.84rem;"></div>
     <div class="daily-grid">
@@ -3919,6 +3922,7 @@ const DAILY_PAGE_SIZE = 10;
 function _dmy(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ""); return m ? `${m[3]}-${m[2]}-${m[1]}` : iso; }
 
 async function loadDailyRuns() {
+  if (document.getElementById("dailyMinLike") && !document.getElementById("dailyMinLike").value) loadDailyMinLike();
   try {
     const r = await fetch("/api/monitor/daily/runs");
     _dailyRuns = await r.json();
@@ -3998,6 +4002,22 @@ function renderDaily(source) {
   el.innerHTML = `<h3 class="dtitle">${title}</h3>
     <table class="dtable"><thead><tr><th>Year</th><th>Results</th><th>Conflicts</th></tr></thead><tbody>${years}</tbody></table>
     <table class="dtable"><thead><tr><th>Date</th><th>Results</th><th>Conflicts</th></tr></thead><tbody>${rows}</tbody></table>${pager}`;
+}
+
+async function loadDailyMinLike() {
+  try {
+    const d = await (await fetch("/api/monitor/daily/settings")).json();
+    const v = Math.round((d.min_like ?? 0.55) * 100);
+    document.getElementById("dailyMinLike").value = v;
+    document.getElementById("dailyMinLikeTxt").textContent = v;
+  } catch (e) {}
+}
+
+async function saveDailyMinLike(v) {
+  const n = Number(v);
+  if (!(n >= 30 && n <= 100)) return loadDailyMinLike();
+  await fetch(`/api/monitor/daily/settings?min_like=${(n / 100).toFixed(2)}`, { method: "POST" });
+  loadDailyMinLike();
 }
 
 async function startDailyRun() {

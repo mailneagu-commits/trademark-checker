@@ -22,6 +22,18 @@ def _check_source(source: str) -> str:
     return source
 
 
+@router.get("/settings")
+def daily_settings():
+    import daily_monitor
+    return {"min_like": daily_monitor.min_like()}
+
+
+@router.post("/settings")
+def set_daily_settings(min_like: float):
+    import daily_monitor
+    return {"min_like": daily_monitor.set_min_like(min_like)}
+
+
 @router.post("/run")
 async def start_daily_run(date: Optional[str] = None, source: str = "both"):
     import daily_monitor

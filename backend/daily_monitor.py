@@ -4,7 +4,9 @@ EUIPO, compară fiecare marcă publicată cu tot portofoliul (mărcile din lista
 salvează în DB conflictele găsite — afișate apoi în tabelele „Results” / „Conflicts” pe zile.
 
 Regula de conflict (stabilită cu utilizatorul):
-  • scor de similaritate ≥ pragul mărcii din portofoliu (`monitor_like`, implicit 0.6)
+  • scor de similaritate ≥ pragul mărcii din portofoliu (`monitor_like`, implicit 0.55 —
+    MONITOR_MIN_LIKE); scorul = maximul dintre metoda veche (textual+fonetic) și scorul compus
+    din composite_similarity.py (nucleu fără afixe, subșir comun, includere, trigrame)
     ȘI cel puțin o clasă Nisa comună; SAU
   • un cuvânt identic cu un cuvânt din marca monitorizată (NOIR ↔ N NOIR COFFEE ROASTERS)
     ȘI cel puțin o clasă Nisa comună — cuvintele generice / descriptive nu contează; SAU
@@ -28,9 +30,47 @@ from typing import Dict, List, Optional
 from db import SessionLocal
 from monitor_models import MonitorConflict, MonitorRun, WatchItem
 
-DEFAULT_MONITOR_LIKE = 0.6
+import os
+
+# Pragul minim de afișare (configurabil prin MONITOR_MIN_LIKE); o marcă monitorizată poate avea prag propriu.
+DEFAULT_MONITOR_LIKE = float(os.environ.get("MONITOR_MIN_LIKE", "0.55"))
 SOURCES = ("osim", "euipo")          # zilnic
 ALL_SOURCES = ("osim", "euipo", "wipo")  # + gazeta WIPO (săptămânal, joia)
+
+_MIN_LIKE_KEY = "monitor_min_like"
+
+
+def min_like() -> float:
+    """Pragul minim de afișare: setat din pagina Monitorizare (app_state), altfel MONITOR_MIN_LIKE / 0.55."""
+    try:
+        from monitor_models import AppState
+        db = SessionLocal()
+        try:
+            row = db.get(AppState, _MIN_LIKE_KEY)
+            v = (row.value or {}).get("value") if row else None
+            return float(v) if v is not None else DEFAULT_MONITOR_LIKE
+        finally:
+            db.close()
+    except Exception:
+        return DEFAULT_MONITOR_LIKE
+
+
+def set_min_like(value: float) -> float:
+    from monitor_models import AppState
+    value = round(min(max(float(value), 0.3), 1.0), 2)
+    db = SessionLocal()
+    try:
+        row = db.get(AppState, _MIN_LIKE_KEY)
+        if row is None:
+            row = AppState(key=_MIN_LIKE_KEY)
+            db.add(row)
+        row.value = {"value": value}
+        row.updated_at = datetime.utcnow()
+        db.commit()
+    finally:
+        db.close()
+    return value
+
 
 # Starea rulării curente (una singură odată) — pentru bara de progres din pagină.
 _job: Dict = {"running": False}
@@ -79,6 +119,9 @@ def _single_word_hit(a: str, b: str) -> set:
     return set()
 
 
+_current_min = DEFAULT_MONITOR_LIKE
+
+
 def _watch_snapshot(item: WatchItem) -> Dict:
     return {
         "name":               item.trademark_name,
@@ -87,7 +130,7 @@ def _watch_snapshot(item: WatchItem) -> Dict:
         "portfolio":          item.portfolio or "",
         "origin_office":      item.origin_office or "",
         "application_number": item.application_number or "",
-        "monitor_like":       item.monitor_like if item.monitor_like is not None else DEFAULT_MONITOR_LIKE,
+        "monitor_like":       item.monitor_like if item.monitor_like is not None else _current_min,
         "reference_image":    item.reference_image or "",
     }
 
@@ -103,44 +146,64 @@ def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
     from monitor_service import _similarity
     from scrapers.bulletin_store import _classes
 
-    by_app = {str(m.get("applicationNumber") or ""): m for m in marks}
+    import composite_similarity as cs
+    global _current_min
+    _current_min = default_min = min_like()
+
+    mark_prep: Dict[str, Dict] = {}
     rows: List[Dict] = []
     for item in items:
         name = (item.trademark_name or "").strip()
         if not name:
             continue
-        threshold = item.monitor_like if item.monitor_like is not None else DEFAULT_MONITOR_LIKE
+        threshold = item.monitor_like if item.monitor_like is not None else default_min
         watch_classes = {str(c) for c in (item.nice_classes or [])}
         watch_norm = _norm_identity(name)
         own_app = _norm_app(item.application_number)
         analysis = _similarity.analyze(name, marks, item.nice_classes or [], user_offices=item.offices)
-        seen = set()
+        # Metoda existentă (textual 70% + fonetic 30%, scorul brut, fără bonusurile din verificarea
+        # manuală — acolo ar face din orice „RESTAURANT …” un conflict), pe nr. de depozit.
+        existing: Dict[str, float] = {}
         for key in ("conflicts", "similar", "expired_conflicts", "expired_similar"):
             for entry in analysis.get(key, []):
                 app = str(entry.get("applicationNumber") or "")
-                if not app or app in seen:
-                    continue
-                # Marca din buletin e chiar marca din portofoliu (același nr. de depozit) — nu e conflict.
-                if own_app and _norm_app(app) == own_app:
-                    continue
-                orig = by_app.get(app) or entry
-                identical = bool(watch_norm) and _norm_identity(orig.get("tmName") or "") == watch_norm
-                # Scorul brut (textual 70% + fonetic 30%), fără bonusurile din verificarea manuală
-                # (cuvânt comun / rădăcină comună ridicate la 0.60–0.75): acolo vrem să nu scăpăm
-                # nimic, aici ar face din orice „RESTAURANT …” / „… SOCIETY” un conflict.
-                sim = entry["similarity"]
-                single = set() if identical else _single_word_hit(name, orig.get("tmName") or "")
-                like = 1.0 if (identical or single) else round((sim["textual_score"] * 0.70 + sim["phonetic_score"] * 0.30) / 100.0, 2)
-                overlap = watch_classes & set(_classes(orig))
-                if not (identical or single or (overlap and like >= threshold)):
-                    continue
-                seen.add(app)
-                snap = _watch_snapshot(item)
-                if single:
-                    snap["common_words"] = sorted(single)
-                rows.append({"application_number": app, "watch_item_id": item.id,
-                             "like": min(like, 1.0), "identical": identical,
-                             "watch": snap})
+                if app and app not in existing:
+                    sim = entry["similarity"]
+                    existing[app] = round((sim["textual_score"] * 0.70 + sim["phonetic_score"] * 0.30) / 100.0, 4)
+        watch_prep = cs.prepare(name)
+        seen = set()
+        for m in marks:
+            app = str(m.get("applicationNumber") or "")
+            if not app or app in seen:
+                continue
+            # Marca din buletin e chiar marca din portofoliu (același nr. de depozit) — nu e conflict.
+            if own_app and _norm_app(app) == own_app:
+                continue
+            tm = m.get("tmName") or ""
+            identical = bool(watch_norm) and _norm_identity(tm) == watch_norm
+            single = set() if identical else _single_word_hit(name, tm)
+            # Scorul compus = maximul dintre metoda existentă și metodele din composite_similarity.
+            like, method = existing.get(app, 0.0), "existenta"
+            if app not in mark_prep:
+                mark_prep[app] = cs.prepare(tm)
+            comp, comp_method = cs.composite(watch_prep, mark_prep[app])
+            if comp > like:
+                like, method = comp, comp_method
+            if identical:
+                like, method = 1.0, "identica"
+            elif single:
+                like, method = 1.0, "cuvant_cuprins"
+            overlap = watch_classes & set(_classes(m))
+            if not (identical or single or (overlap and like >= threshold)):
+                continue
+            seen.add(app)
+            snap = _watch_snapshot(item)
+            snap["method"] = method
+            if single:
+                snap["common_words"] = sorted(single)
+            rows.append({"application_number": app, "watch_item_id": item.id,
+                         "like": round(min(like, 1.0), 2), "identical": identical,
+                         "watch": snap})
         # Cuvânt identic cu un cuvânt din marca monitorizată + o clasă comună — oricât de mic ar fi
         # scorul de ansamblu („NOIR” față de „N NOIR COFFEE ROASTERS”). Dacă una dintre mărci are un
         # singur cuvânt, cuprins identic în cealaltă, e tratată ca identică: scor 1, fără clasă comună.
@@ -166,7 +229,8 @@ def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
                 like = 1.0 if single else round(fuzz.token_set_ratio(_norm_identity(name), _norm_identity(m.get("tmName") or "")) / 100.0, 2)
                 rows.append({"application_number": app, "watch_item_id": item.id,
                              "like": min(like, 1.0), "identical": False,
-                             "watch": {**_watch_snapshot(item), "common_words": sorted(common)}})
+                             "watch": {**_watch_snapshot(item), "common_words": sorted(common),
+                                       "method": "cuvant_cuprins" if single else "cuvant_comun"}})
     rows.sort(key=lambda r: -r["like"])
     return rows
 
