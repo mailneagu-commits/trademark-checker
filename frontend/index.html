@@ -2524,7 +2524,17 @@ checkAppVersion();
 setInterval(checkAppVersion, 120000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkAppVersion(); });
 
+// Subdomenii separate: prosearch.protectmark.ro = doar Verificare, promonitor.protectmark.ro = doar
+// Monitorizare (fără fila celeilalte aplicații). Pe alte adrese (Railway, local) rămân ambele file.
+const SITE_PAGE = /^prosearch\./.test(location.hostname) ? "verificare"
+  : /^promonitor\./.test(location.hostname) ? "monitorizare" : "";
+if (SITE_PAGE) document.addEventListener("DOMContentLoaded", () => {
+  document.querySelector("header nav").style.display = "none";
+  showPage(SITE_PAGE);
+});
+
 function showPage(page) {
+  if (SITE_PAGE) page = SITE_PAGE;
   checkAppVersion();
   document.getElementById("page-verificare").style.display  = page === "verificare"  ? "" : "none";
   document.getElementById("page-monitorizare").style.display = page === "monitorizare" ? "" : "none";
