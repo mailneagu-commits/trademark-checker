@@ -1066,9 +1066,19 @@ def _weekend() -> bool:
     return ro.weekday() >= 5 or (ro.hour, ro.minute) >= (15, 30) or ro.hour < 8
 
 
-def _tmview_backoff(hours: float = 0.25) -> None:
-    tmview_pause["until"] = datetime.utcnow() + timedelta(hours=hours)
-    print(f"[TMVIEW] pauză până la {tmview_pause['until']:%H:%M} UTC")
+def _tmview_backoff(hours: float = 0.0) -> None:
+    """Pauză adaptivă: 5 minute; dacă TMview refuză din nou la mai puțin de 30 de minute după pauza
+    precedentă, durata se dublează (10, 20, 40… maxim 60 de minute); după o perioadă liniștită, iar 5."""
+    now = datetime.utcnow()
+    if hours:
+        minutes = hours * 60
+    else:
+        prev_end, prev_min = tmview_pause.get("until"), tmview_pause.get("minutes", 0)
+        recent = prev_end is not None and prev_min and now - prev_end < timedelta(minutes=30)
+        minutes = min(prev_min * 2, 60) if recent else 5
+    tmview_pause["minutes"] = minutes
+    tmview_pause["until"] = now + timedelta(minutes=minutes)
+    print(f"[TMVIEW] pauză {minutes:.0f} min, până la {tmview_pause['until']:%H:%M} UTC")
 TM_FEATURE = {"Word": "Verbală", "Figurative": "Figurativă", "Combined": "Combinată", "Shape": "Tridimensională",
               "3-D": "Tridimensională", "Sound": "Sonoră", "Colour": "Culoare", "Position": "Poziție",
               "Pattern": "Model", "Motion": "Mișcare", "Multimedia": "Multimedia", "Hologram": "Hologramă",
