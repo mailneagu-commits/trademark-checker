@@ -105,3 +105,29 @@ def test_sarbatori():
     assert p._orthodox_easter(2027) == date(2027, 5, 2)
     assert not p.is_working_day(date(2026, 12, 1)) and not p.is_working_day(date(2026, 4, 10))  # 1 Dec, Vinerea Mare
     assert p.term_end("2026-10-01") == "2026-12-02"     # 1 decembrie → 2 decembrie
+
+
+def test_cerere_veche_fara_admitere():
+    # M 2021 03000 ClearMind — publicată 2021, fără „Cereri admise” / înregistrare / respingere în buletine:
+    # nu mai e „În examinare” după 5 ani.
+    r = p.compute(mark("Cerere publicată", "2021-04-22",
+                       [{"date": "2021-04-22", "bopi": "BOPI 22.04.2021", "chapter": PUB}],
+                       filed="2021-04-12"), TODAY)
+    assert r["proc_status"] == p.NOREG and r["obs_end"] == "2021-06-22"
+
+
+def test_cerere_recenta_ramane_in_examinare():
+    r = p.compute(mark("Cerere publicată", "2025-03-03",
+                       [{"date": "2025-03-03", "bopi": "BOPI 03.03.2025", "chapter": PUB}],
+                       filed="2025-02-20"), TODAY)
+    assert r["proc_status"] == p.EXAM
+
+
+def test_respinsa_in_buletinul_lunar():
+    # M 2021 05000 — admisă 10/2021, respinsă în BOPI 02/2025: statutul din buletinul lunar.
+    r = p.compute(mark("Respinsă", "2021-07-07",
+                       [{"date": "2021-07-07", "bopi": "BOPI 07.07.2021", "chapter": PUB},
+                        {"date": "2021-10-31", "bopi": "BOPI 10/2021", "chapter": ADM},
+                        {"date": "2025-02-28", "bopi": "BOPI 02/2025", "chapter": "Cereri de marcă respinse"}],
+                       filed="2021-06-30"), TODAY)
+    assert r["proc_status"] == "Respinsă"

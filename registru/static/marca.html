@@ -67,6 +67,19 @@ function procHtml(m) {
     ["Perioada de opoziție (2 luni)", span(m.admise_date, m.opp_end), !!m.opp_end && today > m.opp_end],
     ["Înregistrare (buletinul lunar)", dmy(m.reg_pub_date), !!m.reg_pub_date],
   ];
+  // Starea finală din buletinele lunare (respinsă / retrasă / radiată) sau nicio admitere publicată:
+  // pașii rămași nu mai urmează — se încheie cu starea găsită.
+  const END = { "Respinsă": "Cerere respinsă", "Retrasă": "Cerere retrasă", "Radiată": "Radiată la cererea titularului" };
+  const NOREG = "Fără admitere / înregistrare publicată în buletinele lunare";
+  if (!m.reg_pub_date && (END[m.proc_status] || m.proc_status === NOREG)) {
+    let last = steps.length;
+    while (last > 0 && !steps[last - 1][2]) last--;
+    steps.length = last;
+    if (m.proc_status === NOREG) {
+      if (!m.admise_date) steps.push(["Examinare", m.obs_end ? `din ${dmy(nextDay(m.obs_end))}` : "", true]);
+      steps.push([NOREG, "probabil respinsă / retrasă — OSIM nu publică toate respingerile", true]);
+    } else steps.push([END[m.proc_status], m.status_date ? `buletinul lunar, ${dmy(m.status_date)}` : "", true]);
+  }
   const cur = steps.findIndex(s => !s[2]);
   const flags = (m.proc_flags || []).map(f => `<p class="small" style="margin:6px 0 0;color:#b45309;">⚠ ${esc(f)}</p>`).join("");
   return `<section class="card"><h2>Procedura de înregistrare</h2>

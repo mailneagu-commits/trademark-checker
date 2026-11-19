@@ -29,6 +29,10 @@ OPP = "În perioada de opoziție"
 OPP_CLOSED = "Perioadă de opoziție închisă – în așteptarea înregistrării"
 REG = "Înregistrată"
 STATUSES = (OBS, EXAM, OPP, OPP_CLOSED)
+# Cerere veche (depusă de peste 3 ani), neadmisă, neînregistrată și fără altă mențiune în buletinele
+# lunare: nu mai e „în examinare” — BOPI nu publică toate respingerile / retragerile.
+NOREG = "Fără admitere / înregistrare publicată în buletinele lunare"
+NOREG_YEARS = 3
 # Starea finală din buletine — oprește fluxul (o admitere după respingere, la contestație, îl reia).
 TERMINAL = ("Respinsă", "Retrasă", "Radiată")
 
@@ -105,6 +109,13 @@ def _admise_date(events: List[Dict]) -> str:
     return min(lists) if lists else _first(events, ADMITTED)
 
 
+def _years_ago(d: str, today: str) -> float:
+    try:
+        return (date.fromisoformat(today[:10]) - date.fromisoformat(d[:10])).days / 365.25
+    except ValueError:
+        return 0.0
+
+
 def compute(m, today: Optional[str] = None) -> Dict[str, str]:
     """Datele și statutul procedurii pentru marca `m` (rând Mark). Nu modifică marca."""
     today = today or date.today().isoformat()
@@ -126,6 +137,8 @@ def compute(m, today: Optional[str] = None) -> Dict[str, str]:
         out["proc_status"] = m.status
     elif out["admise_date"]:
         out["proc_status"] = OPP if today <= out["opp_end"] else OPP_CLOSED
+    elif today > out["obs_end"] and _years_ago(getattr(m, "filing_date", "") or pub, today) >= NOREG_YEARS:
+        out["proc_status"] = NOREG
     else:
         out["proc_status"] = OBS if today <= out["obs_end"] else EXAM
     return out

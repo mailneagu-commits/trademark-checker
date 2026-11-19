@@ -327,6 +327,9 @@ def proc_daily() -> None:
         for m in db.query(Mark).filter(
                 ((Mark.proc_status == procedura.OBS) & (Mark.obs_end < today)) |
                 ((Mark.proc_status == procedura.OPP) & (Mark.opp_end < today)) |
+                # cerere de peste 3 ani, rămasă în examinare fără nicio mențiune în buletinele lunare
+                ((Mark.proc_status == procedura.EXAM) &
+                 (Mark.filing_date < f"{int(today[:4]) - procedura.NOREG_YEARS}{today[4:]}")) |
                 # înregistrată din TMview / radiată / retrasă din tabelele lunare, între timp
                 (Mark.proc_status.in_(procedura.STATUSES) &
                  Mark.status.in_([procedura.REG, *procedura.TERMINAL]))):

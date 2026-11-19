@@ -211,7 +211,7 @@ def _row(m: Mark) -> dict:
         "publication_date": m.publication_date, "reg_number": m.reg_number, "reg_date": m.reg_date,
         "expiry_date": m.expiry_date or ingest.expiry_of(m), "holder": m.holder, "representative": m.representative,
         "proc_status": m.proc_status or "", "obs_end": m.obs_end or "", "admise_date": m.admise_date or "",
-        "opp_end": m.opp_end or "", "reg_pub_date": m.reg_pub_date or "",
+        "opp_end": m.opp_end or "", "reg_pub_date": m.reg_pub_date or "", "status_date": m.status_date or "",
         "classes": m.classes or [], "image": f"/api/image/{m.app_number}" if m.has_image else "",
         # Mărci reînnoite înregistrate înainte de arhiva disponibilă: denumirea nu apare în BOPI.
         "placeholder": "denumire necunoscută — marcă reînnoită" if m.app_number.startswith("R") and not m.name
@@ -699,7 +699,7 @@ def proc_fix(app_number: str, body: ProcFix, db: Session = Depends(get_db)):
     m = db.get(Mark, app_number.replace(" ", "").upper())
     if not m:
         raise HTTPException(404, "Marca nu există în registru.")
-    allowed = set(procedura.STATUSES) | {procedura.REG, *procedura.TERMINAL, ""}
+    allowed = set(procedura.STATUSES) | {procedura.REG, procedura.NOREG, *procedura.TERMINAL, ""}
     if body.status not in allowed:
         raise HTTPException(400, "Statut necunoscut.")
     old = m.proc_status or ""

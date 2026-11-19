@@ -1410,6 +1410,30 @@ def _procedure_v2():
         db.close()
 
 
+def _procedure_v3():
+    """O singură dată: cererile vechi rămase „În examinare” fără admitere / înregistrare în buletinele
+    lunare primesc statutul final din buletine (respinsă / retrasă / radiată) sau „fără admitere”."""
+    import procedura
+    marker = "migration:procedure-v3-noreg"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = changed = 0
+        apps = [a for (a,) in db.query(Mark.app_number).filter(Mark.proc_status == procedura.EXAM)]
+        for i in range(0, len(apps), 500):
+            for m in db.query(Mark).filter(Mark.app_number.in_(apps[i:i + 500])):
+                changed += procedura.apply(db, m, source="migrare")
+                n += 1
+            db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=changed,
+                          label=f"etape procedură — cereri vechi neadmise: {n} mărci, {changed} statuturi"))
+        db.commit()
+        print(f"[DB] Cereri vechi în examinare: {n} recalculate, {changed} statuturi schimbate")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -1441,7 +1465,7 @@ def init_db():
     import threading
     threading.Thread(target=lambda: (_fix_legacy_diacritics(), _archive_needfix(), _retry_renewed_logos(),
                                      _recompute_reps(), _fix_read_errors(), _fix_old_filing(), _fix_read_errors_v2(), _fix_garbled_names(), _retry_failed_sources(), _flag_unreadable_sources(),
-                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _names_from_later_bulletin(), _procedure_v1(), _procedure_v2(), _drop_expiring_renewals(), _dedupe_0907(),
+                                     _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _names_from_later_bulletin(), _procedure_v1(), _procedure_v2(), _procedure_v3(), _drop_expiring_renewals(), _dedupe_0907(),
                                      __import__("osim_export").import_all()),
                      daemon=True).start()
     _fix_reg_zeros()
