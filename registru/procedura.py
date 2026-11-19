@@ -11,8 +11,9 @@ Termenul de 2 luni (art. 181 Cod procedură civilă): se împlinește în ziua c
 doua; dacă ziua nu există, în ultima zi a lunii; dacă ultima zi e nelucrătoare (sâmbătă, duminică,
 sărbătoare legală), se prelungește până la prima zi lucrătoare.
 
-Etapele se calculează doar pentru cererile publicate din 2022 (formatul actual al buletinelor);
-pentru cele mai vechi rămâne starea din buletine / TMview.
+Etapele se calculează pentru cererile depuse de la intrarea în vigoare a Legii 112/2020 (MO 603 din
+09.07.2020, în vigoare din 12.07.2020), care a introdus procedura actuală. Cererile depuse înainte au
+urmat procedura veche (fără „Cereri admise”): pentru ele rămâne doar istoricul din buletine / TMview.
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ STATUSES = (OBS, EXAM, OPP, OPP_CLOSED)
 # Starea finală din buletine — oprește fluxul (o admitere după respingere, la contestație, îl reia).
 TERMINAL = ("Respinsă", "Retrasă", "Radiată")
 
-FROM = os.environ.get("PROC_FROM", "2022-01-01")       # publicări de la care se calculează etapele
+FROM = os.environ.get("PROC_FROM", "2020-07-12")       # depuneri de la care se aplică procedura nouă
 WORKING_DAY_SHIFT = os.environ.get("PROC_WORKING_DAY", "1") == "1"
 LATE_DAYS = 90       # opoziție închisă de peste 3 luni, fără înregistrare → posibilă opoziție depusă
 
@@ -112,8 +113,8 @@ def compute(m, today: Optional[str] = None) -> Dict[str, str]:
     out = {"pub_date": pub or "", "obs_end": "", "admise_date": "", "opp_end": "",
            "reg_pub_date": "", "proc_status": ""}
     admise = _admise_date(events)
-    # Cererile publicate din 2022 și cele admise din 2022 (publicate mai devreme sau lipsă din buletinul zilnic).
-    if max(pub or "", admise or "") < FROM:
+    # Cererile depuse de la Legea 112/2020; fără dată de depunere, după publicare / admitere.
+    if (getattr(m, "filing_date", "") or max(pub or "", admise or "")) < FROM:
         return out
     out["obs_end"] = term_end(pub)
     out["admise_date"] = admise

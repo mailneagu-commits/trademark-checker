@@ -11,9 +11,28 @@ TODAY = "2026-11-17"
 PUB, ADM, REG = p.PUBLISHED, p.ADMITTED, p.REGISTERED
 
 
-def mark(status, pub, events, reg_date=""):
+def mark(status, pub, events, reg_date="", filed=""):
     return SimpleNamespace(status=status, publication_date=pub, reg_date=reg_date, events=events,
-                           proc_status="", proc_manual="", app_number="X")
+                           proc_status="", proc_manual="", app_number="X", filing_date=filed)
+
+
+def test_depusa_dupa_legea_112_2020():
+    # M 2020 05000 — depusă 17.07.2020 (după 12.07.2020): procedura nouă, cu „Cereri admise”.
+    r = p.compute(mark("Înregistrată", "2020-07-24",
+                       [{"date": "2020-07-24", "bopi": "BOPI 24.07.2020", "chapter": PUB},
+                        {"date": "2021-02-28", "bopi": "BOPI 02/2021", "chapter": ADM},
+                        {"date": "2021-06-30", "bopi": "BOPI 06/2021", "chapter": REG}],
+                       filed="2020-07-17"), TODAY)
+    assert r["obs_end"] == "2020-09-24" and r["admise_date"] == "2021-02-28" and r["proc_status"] == p.REG
+
+
+def test_depusa_inainte_de_legea_112_2020():
+    # M 2020 03000 — depusă 08.05.2020: procedura veche, fără etape (rămâne istoricul mărcii).
+    r = p.compute(mark("Înregistrată", "2020-05-15",
+                       [{"date": "2020-05-15", "bopi": "BOPI 15.05.2020", "chapter": PUB},
+                        {"date": "2021-03-31", "bopi": "BOPI 03/2021", "chapter": REG}],
+                       filed="2020-05-08"), TODAY)
+    assert not r["proc_status"] and not r["obs_end"]
 
 
 def test_observatii_velora():
