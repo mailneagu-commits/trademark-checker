@@ -1055,9 +1055,12 @@ def _missing_pending() -> bool:
 
 
 def _weekend() -> bool:
-    """Sâmbăta și duminica nu rulează monitorizarea ProMonitor — ProWatch poate lua mai mult din TMview."""
+    """Ritm dublu pentru importul ProWatch din TMview: sâmbăta și duminica (nu rulează monitorizarea
+    ProMonitor) și în zilele lucrătoare după monitorizarea zilnică (15:30) până dimineața (08:00),
+    când TMview nu e folosit de ProSearch / ProMonitor. Tot secvențial — fără paralelizare."""
     from zoneinfo import ZoneInfo
-    return datetime.now(ZoneInfo("Europe/Bucharest")).weekday() >= 5
+    ro = datetime.now(ZoneInfo("Europe/Bucharest"))
+    return ro.weekday() >= 5 or (ro.hour, ro.minute) >= (15, 30) or ro.hour < 8
 
 
 def _tmview_backoff(hours: float = 0.25) -> None:
