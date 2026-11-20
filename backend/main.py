@@ -477,6 +477,43 @@ async def tm_detail(st13: str):
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+@app.get("/api/tm-detail-batch")
+async def tm_detail_batch(st13: str, pause: float = 1.0):
+    """Mai multe fișe TMview (max. 25, separate prin virgulă) într-o singură sesiune: pagina principală
+    TMview se cere o dată, apoi fișele una câte una (secvențial, cu `pause` secunde între ele).
+    Folosită de ProWatch la completarea fișelor scheletice — jumătate din cererile către TMview."""
+    from agents.search_agent import AsyncSession, TMVIEW_HOME, _PROXIES, _build_headers, HAS_CURL_CFFI
+    if not HAS_CURL_CFFI:
+        return {"error": "curl_cffi not available"}
+    import export_cache
+    from agents.search_agent import fetch_detail_once
+    ids = [x.strip() for x in st13.split(",") if x.strip() and not x.strip().startswith("DEMO")][:25]
+    loop = asyncio.get_event_loop()
+    cached = await loop.run_in_executor(None, export_cache.get_details, ids)
+    out = {k: v for k, v in (cached or {}).items() if v}
+    todo = [k for k in ids if k not in out]
+    if not todo:
+        return out
+    try:
+        async with AsyncSession(impersonate="chrome120", proxies=_PROXIES, verify=not bool(_PROXIES)) as session:
+            await asyncio.wait_for(session.get(TMVIEW_HOME, timeout=10, headers=_build_headers()), timeout=20)
+            for i, k in enumerate(todo):
+                if i:
+                    await asyncio.sleep(max(0.0, min(pause, 5.0)))
+                try:
+                    d = await asyncio.wait_for(fetch_detail_once(session, k), timeout=40)
+                except Exception as e:
+                    out[k] = {"error": f"{type(e).__name__}: {e}"}
+                    continue
+                out[k] = d or {}
+                if d:
+                    await loop.run_in_executor(None, export_cache.save_details, {k: d})
+    except Exception as e:
+        for k in todo:
+            out.setdefault(k, {"error": f"{type(e).__name__}: {e}"})
+    return out
+
+
 @app.get("/api/session-status")
 async def session_status():
     return {"active": has_browser_session()}

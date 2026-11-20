@@ -1709,6 +1709,10 @@ def _create_skel(db, num: str, t: Dict) -> Optional[Mark]:
     return m
 
 
+SKEL_CHUNK = 20      # fișe per sesiune TMview (/api/tm-detail-batch în aplicația principală)
+SKEL_PAUSE = 1.0     # secunde între fișe, în sesiune (0,3 s ducea la blocări Imperva la ~10 minute)
+
+
 def _complete_skels(limit: int = 150) -> int:
     """Mărcile intrate cu datele de bază: fișa TMview completă (produse, mandatar, logo, date exacte)."""
     import time as _t
@@ -1720,25 +1724,45 @@ def _complete_skels(limit: int = 150) -> int:
                      .limit(limit - len(todo))]
     finally:
         db.close()
+    def _st13(m) -> str:
+        # fișa scheletică fără ST13 în istoric: dedus din numărul de depozit
+        return next((e.get("st13") for e in (m.events or []) if e.get("st13")), "") or "RO50000" + m.app_number.zfill(10)
+
     n = fails = 0
-    for a in todo:
+    got: Dict[str, Dict] = {}
+    for idx, a in enumerate(todo):
         if _tmview_paused():
             break
+        if idx % SKEL_CHUNK == 0:
+            # Lotul următor dintr-o singură sesiune TMview (pagina principală o dată, apoi fișele pe rând).
+            db = SessionLocal()
+            try:
+                ids = [_st13(m) for m in db.query(Mark).filter(Mark.app_number.in_(todo[idx:idx + SKEL_CHUNK]))]
+            finally:
+                db.close()
+            got = {}
+            try:
+                r = requests.get(f"{MONITOR_API}/api/tm-detail-batch",
+                                 params={"st13": ",".join(ids), "pause": SKEL_PAUSE}, timeout=60 * SKEL_CHUNK)
+                if r.status_code == 200 and isinstance(r.json(), dict) and "error" not in r.json():
+                    got = r.json()
+            except Exception as e:
+                print(f"[OLD] lot fișe: {type(e).__name__}")
         db = SessionLocal()
         try:
             m = db.get(Mark, a)
-            st13 = next((e.get("st13") for e in (m.events or []) if e.get("st13")), "")
-            d, net_err = None, False
-            if not st13:
-                st13 = "RO50000" + a.zfill(10)          # fișa scheletică fără ST13 în istoric
-            try:
-                r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": st13}, timeout=120)
-                d = r.json() if r.status_code == 200 else None
-                # TMview blocat / timeout: aplicația principală răspunde 200 cu {"error": …} — nu e „fără fișă”.
-                net_err = r.status_code >= 500 or r.status_code == 429 or (isinstance(d, dict) and "error" in d)
-            except Exception as e:
-                net_err = True
-                print(f"[OLD] fișă {a}: {type(e).__name__}")
+            st13 = _st13(m)
+            d, net_err = got.get(st13), False
+            if d is None:
+                try:   # rezervă: fișa singură
+                    r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": st13}, timeout=120)
+                    d = r.json() if r.status_code == 200 else None
+                    net_err = r.status_code >= 500 or r.status_code == 429
+                except Exception as e:
+                    net_err = True
+                    print(f"[OLD] fișă {a}: {type(e).__name__}")
+            # TMview blocat / timeout: aplicația principală răspunde 200 cu {"error": …} — nu e „fără fișă”.
+            net_err = net_err or (isinstance(d, dict) and "error" in d)
             if not isinstance(d, dict) or not d.get("applicationNumber"):
                 if not net_err:
                     # TMview răspunde, dar nu are fișa: marca trece la sfârșitul cozii (nu blochează restul).
@@ -1783,7 +1807,6 @@ def _complete_skels(limit: int = 150) -> int:
             print(f"[OLD] fișă {a}: {type(e).__name__}: {e}")
         finally:
             db.close()
-        _t.sleep(1.0)        # 0,3 s ducea la blocări Imperva la ~10 minute (pauze 5–10 min) — mai lent, dar continuu
     old_job["completed"] = old_job.get("completed", 0) + n
     return n
 
