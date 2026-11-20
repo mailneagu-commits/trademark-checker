@@ -1452,6 +1452,35 @@ def _requeue_skx_v1():
         db.close()
 
 
+def _finish_opened_skels_v1():
+    """O singură dată: fișele scheletice deschise pe site înainte de 20.11 au primit deja fișa TMview
+    (produse, adresă, mandatar), dar au rămas cu „fișa completă urmează” — le marcăm completate."""
+    from sqlalchemy import Text, cast
+    marker = "migration:finish-opened-skels-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for m in db.query(Mark).filter(Mark.tmview_checked.like("%|sk%"),
+                                       Mark.goods.isnot(None), ~cast(Mark.goods, Text).in_(["{}", "null"])):
+            tc = m.tmview_checked or ""
+            if not any(k in tc for k in ("|skel", "|skx", "|skn")):
+                continue
+            m.tmview_checked = tc.replace("|skel", "|gs3|img").replace("|skx", "|gs3|img").replace("|skn", "|gs3|img")
+            m.events = [dict(e, detail=e["detail"].replace(" · date de bază, fișa completă urmează", ""))
+                        if "fișa completă urmează" in (e.get("detail") or "") else e for e in (m.events or [])]
+            if not m.mark_type:
+                m.mark_type = "Combinată" if m.has_image else "Verbală"
+            n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=n,
+                          label=f"fișe scheletice deja completate la deschidere: {n}"))
+        db.commit()
+        print(f"[DB] Fișe scheletice deja completate (deschise pe site): {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -1488,6 +1517,7 @@ def init_db():
                      daemon=True).start()
     _fix_reg_zeros()
     _requeue_skx_v1()
+    _finish_opened_skels_v1()
     _fill_stub_filing_dates()
     _drop_part_duplicates()
     _retry_nameless_logos()
