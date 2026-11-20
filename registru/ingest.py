@@ -1142,6 +1142,10 @@ def refresh_status(app: str) -> None:
                     m = db.get(Mark, app)
                     if m is not None:
                         tc = m.tmview_checked or ""
+                        if any(k in tc for k in ("|skel", "|skx", "|skn")) and d.get("applicationNumber"):
+                            # Fișă scheletică deschisă pe site: o completăm acum (scoate și „fișa completă urmează”).
+                            _finish_skel(m, d, app, db)
+                            tc = m.tmview_checked or ""
                         _apply_detail(m, d, app, tc, db)      # toată fișa, nu doar starea
                         _set_tm_status(m, d)
                         _registered_from_tmview(m, d)
@@ -1692,6 +1696,28 @@ def _create_skel(db, num: str, t: Dict) -> Optional[Mark]:
     return m
 
 
+def _finish_skel(m: Mark, d: Dict, a: str, db) -> None:
+    """Fișa scheletică (marcă veche intrată doar cu datele de bază) completată din fișa TMview `d`."""
+    if not m.status:
+        m.status = _old_status(d.get("markCurrentStatusCode") or "")
+    if not m.reg_number and m.status == "Înregistrată":
+        m.reg_number = re.sub(r"\D", "", str(d.get("registrationNumber") or "")).lstrip("0")
+    m.status_date = m.status_date or (d.get("registrationDate") or d.get("publicationDate") or "")[:10]
+    exp = (d.get("expiryDate") or "")[:10]
+    if exp[:4].isdigit() and m.filing_date and not d.get("applicationDate"):
+        m.filing_date = old_filing(exp, (d.get("registrationDate") or d.get("publicationDate") or "")[:10])
+    _apply_detail(m, d, a, "", db)
+    _set_tm_status(m, d)
+    if not m.expiry_date and exp[:4].isdigit() and m.status == "Înregistrată":
+        m.expiry_date = exp
+    if not m.mark_type:
+        m.mark_type = "Combinată" if m.has_image else "Verbală"
+    m.events = [dict(e, detail=e["detail"].replace(" · date de bază, fișa completă urmează", ""))
+                if "fișa completă urmează" in (e.get("detail") or "") else e for e in (m.events or [])]
+    tc = m.tmview_checked or ""
+    m.tmview_checked = tc.replace("|skel", "|gs3|img").replace("|skx", "|gs3|img").replace("|skn", "|gs3|img")
+
+
 SKEL_CHUNK = 10      # fișe per sesiune TMview (/api/tm-detail-batch în aplicația principală)
 SKEL_PAUSE = 3.0     # secunde între fișe: mai încet, dar fără blocări Imperva (20.11: la 1 s bloca des)
 
@@ -1766,23 +1792,7 @@ def _complete_skels(limit: int = 150) -> int:
                     break
                 continue
             fails = 0
-            if not m.status:
-                m.status = _old_status(d.get("markCurrentStatusCode") or "")
-            if not m.reg_number and m.status == "Înregistrată":
-                m.reg_number = re.sub(r"\D", "", str(d.get("registrationNumber") or "")).lstrip("0")
-            m.status_date = m.status_date or (d.get("registrationDate") or d.get("publicationDate") or "")[:10]
-            exp = (d.get("expiryDate") or "")[:10]
-            if exp[:4].isdigit() and m.filing_date and not d.get("applicationDate"):
-                m.filing_date = old_filing(exp, (d.get("registrationDate") or d.get("publicationDate") or "")[:10])
-            _apply_detail(m, d, a, "", db)
-            _set_tm_status(m, d)
-            if not m.expiry_date and exp[:4].isdigit() and m.status == "Înregistrată":
-                m.expiry_date = exp
-            if not m.mark_type:
-                m.mark_type = "Combinată" if m.has_image else "Verbală"
-            m.events = [dict(e, detail=e["detail"].replace(" · date de bază, fișa completă urmează", ""))
-                        if "fișa completă urmează" in (e.get("detail") or "") else e for e in (m.events or [])]
-            m.tmview_checked = m.tmview_checked.replace("|skel", "|gs3|img").replace("|skx", "|gs3|img")
+            _finish_skel(m, d, a, db)
             db.commit()
             n += 1
         except Exception as e:
