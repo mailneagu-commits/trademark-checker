@@ -1783,7 +1783,7 @@ def _complete_skels(limit: int = 150) -> int:
             print(f"[OLD] fișă {a}: {type(e).__name__}: {e}")
         finally:
             db.close()
-        _t.sleep(0.3)
+        _t.sleep(1.0)        # 0,3 s ducea la blocări Imperva la ~10 minute (pauze 5–10 min) — mai lent, dar continuu
     old_job["completed"] = old_job.get("completed", 0) + n
     return n
 
