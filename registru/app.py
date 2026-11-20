@@ -305,6 +305,8 @@ def search(name: str = "", holder: str = "", representative: str = "", classes: 
         raise HTTPException(400, "Introduceți o denumire, un titular, un reprezentant, o clasă sau alegeți o stare.")
     order = []
     num = re.sub(r"[\s/.-]", "", name).upper()
+    if re.fullmatch(r"(19|20)\d{7}", num):
+        num = "M" + num                    # „2001 00500” fără M → nr. de depozit M 2001 00500
     if n and re.fullmatch(r"(M\d{8,10}|\d{1,7}|\d?R\d{1,7})", num):
         # Căutare după nr. de depozit / de marcă (032709, M 2016 01750, 3R29570) — sau denumire cu cifre.
         digits = re.sub(r"^\d?R", "", num)
