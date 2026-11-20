@@ -1692,8 +1692,8 @@ def _create_skel(db, num: str, t: Dict) -> Optional[Mark]:
     return m
 
 
-SKEL_CHUNK = 20      # fișe per sesiune TMview (/api/tm-detail-batch în aplicația principală)
-SKEL_PAUSE = 1.0     # secunde între fișe, în sesiune (0,3 s ducea la blocări Imperva la ~10 minute)
+SKEL_CHUNK = 10      # fișe per sesiune TMview (/api/tm-detail-batch în aplicația principală)
+SKEL_PAUSE = 3.0     # secunde între fișe: mai încet, dar fără blocări Imperva (20.11: la 1 s bloca des)
 
 
 def _complete_skels(limit: int = 150) -> int:
