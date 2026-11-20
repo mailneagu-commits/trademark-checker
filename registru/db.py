@@ -1434,6 +1434,24 @@ def _procedure_v3():
         db.close()
 
 
+def _requeue_skx_v1():
+    """O singură dată: fișele scheletice amânate greșit (TMview blocat citit ca „fără fișă”) revin în coadă."""
+    marker = "migration:requeue-skx-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for m in db.query(Mark).filter(Mark.tmview_checked.like("%|skx%")):
+            m.tmview_checked = m.tmview_checked.replace("|skx", "|skel")
+            n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=n, label=f"fișe scheletice reluate: {n}"))
+        db.commit()
+        print(f"[DB] Fișe scheletice reluate: {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -1469,6 +1487,7 @@ def init_db():
                                      __import__("osim_export").import_all()),
                      daemon=True).start()
     _fix_reg_zeros()
+    _requeue_skx_v1()
     _fill_stub_filing_dates()
     _drop_part_duplicates()
     _retry_nameless_logos()

@@ -1715,6 +1715,9 @@ def _complete_skels(limit: int = 150) -> int:
     db = SessionLocal()
     try:
         todo = [a for (a,) in db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|skel%")).limit(limit)]
+        if len(todo) < limit:          # la final, încă o încercare pentru cele amânate (fără fișă TMview)
+            todo += [a for (a,) in db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|skx%"))
+                     .limit(limit - len(todo))]
     finally:
         db.close()
     n = fails = 0
@@ -1731,13 +1734,16 @@ def _complete_skels(limit: int = 150) -> int:
             try:
                 r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": st13}, timeout=120)
                 d = r.json() if r.status_code == 200 else None
-                net_err = r.status_code >= 500 or r.status_code == 429
+                # TMview blocat / timeout: aplicația principală răspunde 200 cu {"error": …} — nu e „fără fișă”.
+                net_err = r.status_code >= 500 or r.status_code == 429 or (isinstance(d, dict) and "error" in d)
             except Exception as e:
                 net_err = True
                 print(f"[OLD] fișă {a}: {type(e).__name__}")
             if not isinstance(d, dict) or not d.get("applicationNumber"):
                 if not net_err:
                     # TMview răspunde, dar nu are fișa: marca trece la sfârșitul cozii (nu blochează restul).
+                    if "|skx" in (m.tmview_checked or ""):
+                        m.tmview_checked = m.tmview_checked.replace("|skx", "|skn")   # a doua oară: rămâne așa
                     m.tmview_checked = (m.tmview_checked or "").replace("|skel", "|skx")
                     db.commit()
                     print(f"[OLD] fișă {a}: fără fișă TMview ({st13}) — amânată")
@@ -1764,7 +1770,7 @@ def _complete_skels(limit: int = 150) -> int:
                 m.mark_type = "Combinată" if m.has_image else "Verbală"
             m.events = [dict(e, detail=e["detail"].replace(" · date de bază, fișa completă urmează", ""))
                         if "fișa completă urmează" in (e.get("detail") or "") else e for e in (m.events or [])]
-            m.tmview_checked = m.tmview_checked.replace("|skel", "|gs3|img")
+            m.tmview_checked = m.tmview_checked.replace("|skel", "|gs3|img").replace("|skx", "|gs3|img")
             db.commit()
             n += 1
         except Exception as e:
