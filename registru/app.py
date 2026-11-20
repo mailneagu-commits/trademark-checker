@@ -84,7 +84,7 @@ def _startup():
     sched.add_job(ingest.enrich_logos_hq, "interval", minutes=15, id="tmview_logos_hq",
                   misfire_grace_time=1800, coalesce=True)
     # Mărcile vechi (depozit până în 2001) încetate înainte de arhiva BOPI online — din TMview, treptat.
-    sched.add_job(ingest.enrich_old, "interval", minutes=5, id="tmview_old",
+    sched.add_job(ingest.enrich_old, "interval", minutes=10, id="tmview_old",
                   misfire_grace_time=1800, coalesce=True)
     sched.start()
     if os.environ.get("AUTO_INGEST", "1") == "1":

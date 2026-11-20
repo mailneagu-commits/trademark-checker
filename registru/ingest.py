@@ -1058,31 +1058,14 @@ def _missing_pending() -> bool:
 
 
 def _weekend() -> bool:
-    """Ritm dublu pentru importul ProWatch din TMview: sâmbăta și duminica (nu rulează monitorizarea
-    ProMonitor) și în zilele lucrătoare după monitorizarea zilnică (15:30) până dimineața (08:00),
-    când TMview nu e folosit de ProSearch / ProMonitor. Tot secvențial — fără paralelizare."""
-    # Decizia utilizatorului (20.11.2026): ritm dublu tot timpul. Fereastra ProMonitor (15:00–15:30)
-    # rămâne liberă prin _tmview_paused(); ProWATCH_SLOW=1 revine la ritmul de zi.
-    if os.environ.get("PROWATCH_SLOW") == "1":
-        from zoneinfo import ZoneInfo
-        ro = datetime.now(ZoneInfo("Europe/Bucharest"))
-        return ro.weekday() >= 5 or (ro.hour, ro.minute) >= (15, 30) or ro.hour < 8
-    return True
+    """Sâmbăta și duminica nu rulează monitorizarea ProMonitor — ProWatch poate lua mai mult din TMview."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Europe/Bucharest")).weekday() >= 5
 
 
-def _tmview_backoff(hours: float = 0.0) -> None:
-    """Pauză adaptivă: 5 minute; dacă TMview refuză din nou la mai puțin de 30 de minute după pauza
-    precedentă, durata se dublează (10, 20, 40… maxim 60 de minute); după o perioadă liniștită, iar 5."""
-    now = datetime.utcnow()
-    if hours:
-        minutes = hours * 60
-    else:
-        prev_end, prev_min = tmview_pause.get("until"), tmview_pause.get("minutes", 0)
-        recent = prev_end is not None and prev_min and now - prev_end < timedelta(minutes=30)
-        minutes = min(prev_min * 2, 60) if recent else 5
-    tmview_pause["minutes"] = minutes
-    tmview_pause["until"] = now + timedelta(minutes=minutes)
-    print(f"[TMVIEW] pauză {minutes:.0f} min, până la {tmview_pause['until']:%H:%M} UTC")
+def _tmview_backoff(hours: float = 0.25) -> None:
+    tmview_pause["until"] = datetime.utcnow() + timedelta(hours=hours)
+    print(f"[TMVIEW] pauză până la {tmview_pause['until']:%H:%M} UTC")
 TM_FEATURE = {"Word": "Verbală", "Figurative": "Figurativă", "Combined": "Combinată", "Shape": "Tridimensională",
               "3-D": "Tridimensională", "Sound": "Sonoră", "Colour": "Culoare", "Position": "Poziție",
               "Pattern": "Model", "Motion": "Mișcare", "Multimedia": "Multimedia", "Hologram": "Hologramă",
@@ -2049,7 +2032,7 @@ def enrich_old(batches: int = 8) -> None:
         _fill_names()
         if start > OLD_END:
             # Toate mărcile sunt în bază cu datele de bază — acum fișele complete.
-            _complete_skels(600 if _weekend() else 150)
+            _complete_skels(300 if _weekend() else 150)
             return
         fails = 0
         for _ in range(batches * (2 if _weekend() else 1)):
