@@ -1748,6 +1748,11 @@ def _complete_skels(limit: int = 150) -> int:
                     db.commit()
                     print(f"[OLD] fișă {a}: fără fișă TMview ({st13}) — amânată")
                     continue
+                # Eroare / timeout: marca trece la coadă (o fișă care cade mereu nu mai blochează începutul
+                # cozii, ca în noaptea de 19–20.11); se reia la final. Trei erori la rând → pauză TMview.
+                if "|skel" in (m.tmview_checked or ""):
+                    m.tmview_checked = m.tmview_checked.replace("|skel", "|skx")
+                    db.commit()
                 fails += 1
                 if fails >= 3:
                     _tmview_backoff()
