@@ -1772,7 +1772,7 @@ def _complete_skels(limit: int = 150) -> int:
             print(f"[OLD] fișă {a}: {type(e).__name__}: {e}")
         finally:
             db.close()
-        _t.sleep(1)
+        _t.sleep(0.3)
     old_job["completed"] = old_job.get("completed", 0) + n
     return n
 
@@ -2015,7 +2015,7 @@ def enrich_old(batches: int = 8) -> None:
         _fill_names()
         if start > OLD_END:
             # Toate mărcile sunt în bază cu datele de bază — acum fișele complete.
-            _complete_skels(300 if _weekend() else 150)
+            _complete_skels(600 if _weekend() else 150)
             return
         fails = 0
         for _ in range(batches * (2 if _weekend() else 1)):
