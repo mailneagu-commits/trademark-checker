@@ -1061,9 +1061,13 @@ def _weekend() -> bool:
     """Ritm dublu pentru importul ProWatch din TMview: sâmbăta și duminica (nu rulează monitorizarea
     ProMonitor) și în zilele lucrătoare după monitorizarea zilnică (15:30) până dimineața (08:00),
     când TMview nu e folosit de ProSearch / ProMonitor. Tot secvențial — fără paralelizare."""
-    from zoneinfo import ZoneInfo
-    ro = datetime.now(ZoneInfo("Europe/Bucharest"))
-    return ro.weekday() >= 5 or (ro.hour, ro.minute) >= (15, 30) or ro.hour < 8
+    # Decizia utilizatorului (20.11.2026): ritm dublu tot timpul. Fereastra ProMonitor (15:00–15:30)
+    # rămâne liberă prin _tmview_paused(); ProWATCH_SLOW=1 revine la ritmul de zi.
+    if os.environ.get("PROWATCH_SLOW") == "1":
+        from zoneinfo import ZoneInfo
+        ro = datetime.now(ZoneInfo("Europe/Bucharest"))
+        return ro.weekday() >= 5 or (ro.hour, ro.minute) >= (15, 30) or ro.hour < 8
+    return True
 
 
 def _tmview_backoff(hours: float = 0.0) -> None:
