@@ -1590,10 +1590,16 @@ OLD_MAX = 57000
 # (înainte de 11/2001) și „M 2000 / M 2001” (TMview: „M 2000 02551”). Numerele deja în bază se sar.
 OLD_M_MAX = 12000
 OLD_SERIES = [("old", 0), ("M", 2000), ("M", 2001)]
+# 21.11.2026 (aprobat de user): cererile 2002–2010 care nu apar în BOPI (respinse / retrase înainte de
+# publicare, ~30.000 — proba: 20/20 găsite în TMview). Adăugate DUPĂ seriile de mai sus, ca cursorul
+# existent (81001) să continue direct cu ele. Lungimea = cel mai mare nr. de cerere al anului + rezervă.
+OLD_LATE = {2002: 7500, 2003: 8500, 2004: 12500, 2005: 14000, 2006: 15500, 2007: 12500, 2008: 12000,
+            2009: 10500, 2010: 10000}
+OLD_SERIES += [("M", y) for y in OLD_LATE]
 # La cerere (căutare după nr.), marca lipsă se poate aduce din TMview și pentru acești ani.
-OLD_ONDEMAND_YEARS = (2000, 2001, 2003, 2004, 2017, 2018, 2019)
+OLD_ONDEMAND_YEARS = (2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2017, 2018, 2019)
 OLD_M_YEARS = OLD_ONDEMAND_YEARS
-_SPANS = [OLD_MAX if k == "old" else OLD_M_MAX for k, _ in OLD_SERIES]
+_SPANS = [OLD_MAX if k == "old" else OLD_LATE.get(y, OLD_M_MAX) for k, y in OLD_SERIES]
 OLD_END = sum(_SPANS)
 
 
@@ -1667,7 +1673,9 @@ def _create_old(db, num: str, t: Dict, d: Dict) -> Optional[Mark]:
              holder=holder, holder_norm=norm(holder), classes=[], goods={},
              tmview_checked=date.today().isoformat() + "|old|gs3",
              events=[{"date": (d.get("markCurrentStatusDate") or date.today().isoformat())[:10], "bopi": "TMview",
-                      "chapter": ("Marcă preluată din TMview (buletinul BOPI nu poate fi citit)" if key.startswith("M")
+                      "chapter": (("Cerere nepublicată în BOPI (respinsă / retrasă), preluată din TMview"
+                                   if int(key[1:5]) in OLD_LATE else
+                                   "Marcă preluată din TMview (buletinul BOPI nu poate fi citit)") if key.startswith("M")
                                   and int(key[1:5]) >= 2002 else "Marcă veche (înainte de BOPI online) preluată din TMview"),
                       "detail": f"nr. depozit {key}" + (f" · nr. marcă {reg}" if reg else ""), "st13": st13}])
     db.add(m)
@@ -1716,7 +1724,9 @@ def _create_skel(db, num: str, t: Dict) -> Optional[Mark]:
              mark_type="" if t.get("markImageURI") else ("Verbală" if name else ""),
              tmview_checked=date.today().isoformat() + "|old|skel",
              events=[{"date": date.today().isoformat(), "bopi": "TMview",
-                      "chapter": ("Marcă preluată din TMview (buletinul BOPI nu poate fi citit)" if key.startswith("M")
+                      "chapter": (("Cerere nepublicată în BOPI (respinsă / retrasă), preluată din TMview"
+                                   if int(key[1:5]) in OLD_LATE else
+                                   "Marcă preluată din TMview (buletinul BOPI nu poate fi citit)") if key.startswith("M")
                                   and int(key[1:5]) >= 2002 else "Marcă veche (înainte de BOPI online) preluată din TMview"),
                       "detail": f"nr. depozit {key}" + (f" · nr. marcă {reg}" if reg else "")
                                 + " · date de bază, fișa completă urmează", "st13": st13}])
