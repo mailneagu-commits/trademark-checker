@@ -128,6 +128,10 @@ def fix_record(x, legacy: Optional[bool] = None):
     if isinstance(x, dict):
         out = {k: (fix_goods(v) if k == "goods" and isinstance(v, dict) else fix_record(v, legacy))
                for k, v in x.items()}
+        if isinstance(x.get("goods"), dict) and x["goods"] and set(out["goods"]) != set(x["goods"]) \
+                and isinstance(out.get("classes"), list):
+            # Clase „inventate” din restul buletinului, scoase de cut_overflow.
+            out["classes"] = sorted(int(c) for c in out["goods"] if str(c).isdigit())
         if isinstance(out.get("name"), str):
             # Coduri INID lipite de denumire („JIDVEI … 531) Clasificare Viena…”, „SOBYC (511 )Produse…”).
             out["name"] = strip_garbled(_INID_TAIL.sub("", out["name"]))
@@ -174,7 +178,7 @@ def garbled_name(name: str) -> bool:
 
 def fix_goods(goods: dict) -> dict:
     legacy = has_legacy_diacritics(*goods.values())
-    return {c: clean_goods_text(fix_cp1252_goods(fix_record(t, legacy))) for c, t in goods.items()}
+    return cut_overflow({c: clean_goods_text(fix_cp1252_goods(fix_record(t, legacy))) for c, t in goods.items()})
 
 
 # Numele titularului / mandatarului se termină la prima virgulă — afară de forma juridică sau de
@@ -1017,10 +1021,78 @@ def _join_broken(s: str, vocab) -> str:
         while i < len(parts):
             for k in range(len(parts), i + 1, -1):
                 w = "".join(parts[i:k])
-                if vocab.get(w.lower(), 0) >= 5 and not any(p.lower() in _STOP for p in parts[i + 1:k]):
+                n = vocab.get(w.lower(), 0)
+                # „toaletă nemedicinale”, „după ras”: două cuvinte reale, fiecare mult mai des decât lipitura.
+                if (n >= 5 and n * 2 >= min(vocab.get(p.lower(), 0) for p in parts[i:k])
+                        and not any(p.lower() in _STOP for p in parts[i + 1:k])):
                     out.append(w); i = k
                     break
             else:
                 out.append(parts[i]); i += 1
         return " ".join(out)
     return _BROKEN.sub(fix, s)
+
+
+# Ultima marcă dintr-un capitol a „înghițit” uneori restul buletinului: tabelul mărcilor care urmează
+# să expire, cesiuni, erate, lista centrelor regionale — chiar și ca „clase” noi. Textul real se
+# termină înaintea primului astfel de titlu; clasele care vin după el în fișă sunt false.
+_OVERFLOW = re.compile(
+    r"TABEL CU|Tabel al m[aă]rcilor|Lista m[aă]rcilor respinse|LISTA CONTINAND|Nr\. marcă/ Titular vechi"
+    r"|vechi şi adresă Titular nou|Modific[aă]ri (?:de nume|de adres\w*|de num|n)\s+Nr\.depozit|HG nr\.833/1998 A 26"
+    r"|\bERA(?:TA|TE)?\b\s*(?:BOPI|BO\b|Referitor|$)|\bER Se scoate|\bERATA\b|BULETINU\w? OFICIAL DE PROPRIETATE"
+    r"|MODIFICĂRI ŞI TRAN|CAPIT\w* ELIBERARI|REGULAMENTE? M|n BOPI nr\. \d+/\d{4} clasei Nisa"
+    r"|Nr\.depozit/ (?:marcă|Denumire)|Mărci publicate în \(în ordinea|DIVERSE - LISTA|TABEL CUPRINZ")
+# Antetul paginii în mijlocul listei (BOPI 2018, 2023): „BULETINUL OFICIAL DE PRpOubPlRicIaEtTeA îTnE d IaNt”.
+_MID_HEADER = re.compile(r"\s*BULETINUL OFICIAL DE ?PR\S*(?: îTnE d IaNt| \d\d/\d\d)\s*")
+_INDEX_ROW = re.compile(r"M \d{4} \d{5} \d{6}")
+
+
+# În fișele cu text străin, și rândurile de tabel / adresele lipite după produse („…alimentari. R 037977/026103
+# BATOSAN…”, „…dietetice. PHARMACIA (PERTH) PTY LIMITED, 15 Brodie…”).
+_OVERFLOW_ROW = re.compile(r"\b\d{6}\s*/\s*\d{6}\b|\b\d{6} \d\d\.\d\d\.\d{4}\b|\bS\.U\.A\.|\bROMANIA\b|\bStr\. |\bTitular (?:nou|vechi)"
+                           r"|\b(?:LIMITED|INC|LLC|GMBH|GmbH|PTY|SRL|S\.A\.)\b|\bnr\. \d|e-mail|Tel\.:|& #\*&")
+
+
+def _cut_at(s: str, rx_list) -> Tuple[str, bool]:
+    end = len(s)
+    rows = list(_INDEX_ROW.finditer(s))
+    if len(rows) >= 2:
+        end = rows[0].start()
+    for rx in rx_list:
+        mm = rx.search(s)
+        if mm and mm.start() < end:
+            end = mm.start()
+    if end == len(s):
+        return s, False
+    t = _drop_junk(s[:end]).strip()
+    if not re.search(r"[.;)]$", t):
+        k = max(t.rfind("."), t.rfind(";"))
+        if k > 0:
+            t = t[:k + 1]
+    t = re.sub(r"(?<=[.;])\s+[^a-zăâîşţșț]*$", "", t)      # coada fără litere mici: „… PHARMACIA (PERTH)”
+    return t, True
+
+
+def _goods_like(s: str) -> bool:
+    """Începe ca o listă de produse („Produse lactate dietetice.”), nu ca un tabel / o adresă / un titlu."""
+    return bool(re.match(r"[A-ZĂÂÎŞŢȘȚ][a-zăâîşţșț]+\b", s) and re.search(r"[.;)]$", s)
+                and not re.search(r"\d{4}|\d\.\d{3}|brevet", s) and len(re.findall(r"\b\d+\b", s)) < 2)
+
+
+def cut_overflow(goods: dict) -> dict:
+    """Doar în fișele în care apare un titlu de capitol / tabel: fiecare clasă e tăiată la primul semn de
+    text străin; după prima clasă tăiată, clasele care nu încep ca o listă de produse sunt „inventate”
+    din restul buletinului și se scot."""
+    goods = {c: _MID_HEADER.sub(" ", t or "") for c, t in goods.items()}
+    if not any(_OVERFLOW.search(t) or len(_INDEX_ROW.findall(t)) >= 2 for t in goods.values()):
+        return goods
+    out, seen = {}, False
+    for c, t in goods.items():
+        s, did = _cut_at(t, (_OVERFLOW, _OVERFLOW_ROW))
+        s = s.strip()
+        if seen and not _goods_like(s):
+            continue
+        seen = seen or did
+        if len(re.findall(r"[^\W\d_]", s)) >= 3 and re.search(r"[a-zăâîşţșț]{2}", s):
+            out[c] = s
+    return out
