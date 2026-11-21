@@ -688,7 +688,10 @@ def coverage(year: int = 0, gaps: int = 0, app_gaps: int = 0, db: Session = Depe
                 if x - prev > 50:
                     runs.append([prev + 1, x - 1])
                 prev = x
-            out[y] = {"max": top, "have": len(nums), "missing": miss, "big_gaps": runs[:20]}
+            lack = [i for i in range(1, top + 1) if i not in nums]
+            sample = [f"M{y}{lack[k * len(lack) // 8]:05d}" for k in range(8)] if len(lack) >= 8 else \
+                [f"M{y}{i:05d}" for i in lack]
+            out[y] = {"max": top, "have": len(nums), "missing": miss, "big_gaps": runs[:20], "sample": sample}
         return {"by_year": out, "missing_total": sum(v["missing"] for v in out.values())}
     if year:
         rows = db.query(SourceFile).filter(SourceFile.bulletin_date.like(f"{year}-%")).order_by(SourceFile.bulletin_date).all()
