@@ -554,6 +554,38 @@ def goods_problems(goods: dict) -> list:
     return [k for k, rx in _GQ.items() if rx.search(t)]
 
 
+def _goods_vocab(db) -> dict:
+    from collections import Counter
+    v = Counter()
+    for (goods,) in db.query(Mark.goods).yield_per(5000):
+        for t in (goods or {}).values():
+            v.update(w.lower() for w in re.findall(r"[^\W\d_]{3,}", t or ""))
+    return v
+
+
+@app.get("/api/quality-goods/preview")
+def quality_goods_preview(n: int = 40, db: Session = Depends(get_db)):
+    """Ce ar schimba curățarea listelor de produse (fără să scrie nimic) și ce ar rămâne stricat."""
+    from bopi_parser import clean_goods_text
+    from collections import Counter
+    vocab = _goods_vocab(db)
+    changed, left, ex, joins = 0, Counter(), [], Counter()
+    for app_no, goods in db.query(Mark.app_number, Mark.goods).yield_per(5000):
+        if not goods:
+            continue
+        new = {c: clean_goods_text(t, vocab) for c, t in goods.items()}
+        if new == goods:
+            continue
+        changed += 1
+        for k in goods_problems(new):
+            left[k] += 1
+        for c, t in goods.items():
+            if new[c] != t and len(ex) < n:
+                ex.append({"app": app_no, "cls": c, "before": t[:300], "after": new[c][:300]})
+                break
+    return {"would_change": changed, "still_flagged": dict(left), "examples": ex}
+
+
 @app.get("/api/quality-goods")
 def quality_goods(kind: str = "", n: int = 20, db: Session = Depends(get_db)):
     """Listele de produse / servicii cu text stricat din PDF-urile BOPI, pe tipuri și pe ani."""

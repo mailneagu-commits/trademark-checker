@@ -939,3 +939,63 @@ def parse_old_tables(path: str) -> Iterator[Tuple[str, Dict]]:
                     "name": name, "classes": classes, "goods": {str(c): "" for c in classes},
                 }
             page.flush_cache()
+
+
+# Curățarea listelor de produse (21.11.2026). BOPI 2000–2003: antetul paginii, tipărit cu un font
+# cu codificare proprie, intră în text la trecerea pe pagina următoare — „…mag- -"0%/&,#1(2(0345…@AA@
+# netice…”, „…preparate !"#$%&’"#()*&+&,#(-$(./)…&’din carne…”, „…umbrele. !!!!!!!”. Textul real e
+# întreg; se scoate doar antetul și se reface cuvântul despărțit în silabe la capăt de rând.
+_JUNK_RUN = re.compile(r"""!{3,}|[!"#$%&’'()*+,\-./0-9:;<=>?@A-C\[\]^_`{|}~]{8,}""")
+_JUNK_GLYPHS = set('!"#$%&’\'()*+,-./:;<=>?@[\\]^_`{|}~')
+
+
+def _is_junk(run: str) -> bool:
+    if set(run) == {"!"}:
+        return True
+    g = [c for c in run if c in _JUNK_GLYPHS]
+    odd = set(run) & set('!"#$%&<=>?@')            # semne care nu apar laolaltă într-o listă reală
+    return len(odd) >= 3 and len(set(g)) >= 5 and len(g) / len(run) >= 0.4
+
+
+def _drop_junk(t: str) -> str:
+    out, pos = [], 0
+    for mm in _JUNK_RUN.finditer(t):
+        if not _is_junk(mm.group(0)):
+            continue
+        out.append(t[pos:mm.start()]); out.append("\x00"); pos = mm.end()
+    if not out:
+        return t
+    out.append(t[pos:])
+    t = "".join(out)
+    # „mag- \x00 netice” → „magnetice”; altfel un singur spațiu.
+    t = re.sub(r"(?<=[a-zăâîşţșț])-\s*(?:\x00\s*)+(?=[a-zăâîşţșț])", "", t)
+    t = re.sub(r"\s*(?:\x00\s*)+", " ", t)
+    return t
+
+
+_LOWER = "a-zăâîşţșț"
+
+
+def clean_goods_text(t: str, vocab=None) -> str:
+    """Textul unei clase fără gunoaie din PDF: antete codificate, diacritice descompuse („ı̂n”),
+    caractere de control, cuvinte rupte după diacritice („Asigură ri”, cu vocabularul bazei)."""
+    import unicodedata
+    if not t:
+        return t
+    s = _drop_junk(t)
+    if re.search(r"[̀-ͯı]", s):
+        s = s.replace("ı̂", "î").replace("ı̂", "î")
+        s = unicodedata.normalize("NFC", s)
+        s = re.sub(r"[̀-ͯ]", "", s).replace("ı", "i")
+    # „]n domeniul” (BOPI 2000–2003: „î” tipărit ca „]”)
+    s = re.sub(rf"(?<![\w\[\]])\](?=n\b)|(?<=[{_LOWER}])\](?=[{_LOWER}])", "î", s)
+    s = re.sub(r"[\x00-\x08\x0b-\x1f�-]", " ", s)
+    if vocab:
+        def join(mm):
+            w = mm.group(1) + mm.group(2)
+            return w if vocab.get(w.lower(), 0) >= 3 and vocab.get(mm.group(2).lower(), 0) < vocab[w.lower()] else mm.group(0)
+        s = re.sub(rf"\b(\w*[ăâîşţșț]) ([{_LOWER}]+)\b", join, s)
+    s = re.sub(r"[ \t]*\n[ \t]*", " ", s)
+    s = re.sub(r" {2,}", " ", s)
+    s = re.sub(r" +([,;.)])", r"\1", s)
+    return s.strip()
