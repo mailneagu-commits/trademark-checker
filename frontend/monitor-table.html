@@ -99,7 +99,7 @@ const idLink = r => `<a class="id" href="${esc(r.link)}"${EMBED ? "" : ' target=
 
 // Gradul de similaritate și metoda care a dat scorul (scor compus — composite_similarity.py).
 const METHODS = { existenta: "textual + fonetic", nucleu: "nucleu fără afixe", subsir: "subșir comun",
-  includere: "includere", trigrame: "trigrame (Dice)", identica: "marcă identică",
+  includere: "includere", trigrame: "trigrame (Dice)", identica: "marcă identică", marca_proprie: "marca proprie (același nr. de depozit)",
   cuvant_cuprins: "cuvânt cuprins identic", cuvant_comun: "cuvânt comun", levenshtein: "Levenshtein" };
 function likeGrade(r) {
   const g = r.like >= 0.85 ? ["ridicat", "#c62828"] : r.like >= 0.70 ? ["mediu", "#e67e00"] : ["scăzut", "#6b7280"];

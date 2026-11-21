@@ -176,11 +176,11 @@ def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
             app = str(m.get("applicationNumber") or "")
             if not app or app in seen:
                 continue
-            # Marca din buletin e chiar marca din portofoliu (același nr. de depozit) — nu e conflict.
-            if own_app and _norm_app(app) == own_app:
-                continue
+            # Marca din buletin e chiar marca din portofoliu (același nr. de depozit): apare și ea, ca
+            # „marcă proprie” — userul (21.11.2026) vrea s-o vadă, ca dovadă că monitorizarea o prinde.
+            own = bool(own_app) and _norm_app(app) == own_app
             tm = m.get("tmName") or ""
-            identical = bool(watch_norm) and _norm_identity(tm) == watch_norm
+            identical = own or (bool(watch_norm) and _norm_identity(tm) == watch_norm)
             single = set() if identical else _single_word_hit(name, tm)
             # Scorul compus = maximul dintre metoda existentă și metodele din composite_similarity.
             like, method = existing.get(app, 0.0), "existenta"
@@ -189,7 +189,9 @@ def compute_conflicts(marks: List[Dict], items: List[WatchItem]) -> List[Dict]:
             comp, comp_method = cs.composite(watch_prep, mark_prep[app])
             if comp > like:
                 like, method = comp, comp_method
-            if identical:
+            if own:
+                like, method = 1.0, "marca_proprie"
+            elif identical:
                 like, method = 1.0, "identica"
             elif single:
                 like, method = 1.0, "cuvant_cuprins"
