@@ -653,7 +653,7 @@ def quality_names(db: Session = Depends(get_db)):
 
 
 @app.get("/api/coverage")
-def coverage(year: int = 0, gaps: int = 0, db: Session = Depends(get_db)):
+def coverage(year: int = 0, gaps: int = 0, app_gaps: int = 0, db: Session = Depends(get_db)):
     """Acoperirea bazei: mărci pe an de depozit (după nr. „M an …”) și ce a dat fiecare buletin citit.
     gaps=N: numerele de înregistrare (111) lipsă de la N încoace — OSIM le dă la rând, fiecare apare în BOPI."""
     if gaps:
@@ -672,6 +672,24 @@ def coverage(year: int = 0, gaps: int = 0, db: Session = Depends(get_db)):
         return {"from": gaps, "max": top, "missing": len(miss),
                 "by_thousand": [{"from": k, "missing": n, "reg_dates": near.get(k, [])} for k, n in sorted(by_k.items())],
                 "numbers": miss[:5000]}
+    if app_gaps:
+        # Numerele de cerere „M an NNNNN” lipsă: OSIM le dă la rând în fiecare an, de la 1.
+        seen = {}
+        for (a,) in db.query(Mark.app_number).filter(Mark.app_number.like("M%")):
+            if len(a) == 10 and a[1:].isdigit():
+                seen.setdefault(a[1:5], set()).add(int(a[5:]))
+        out = {}
+        for y, nums in sorted(seen.items()):
+            top = max(nums)
+            miss = top - len(nums)
+            # Golurile mari (sute la rând) arată un capitol / buletin necitit, nu cereri nepublicate izolate.
+            runs, prev = [], 0
+            for x in sorted(nums):
+                if x - prev > 50:
+                    runs.append([prev + 1, x - 1])
+                prev = x
+            out[y] = {"max": top, "have": len(nums), "missing": miss, "big_gaps": runs[:20]}
+        return {"by_year": out, "missing_total": sum(v["missing"] for v in out.values())}
     if year:
         rows = db.query(SourceFile).filter(SourceFile.bulletin_date.like(f"{year}-%")).order_by(SourceFile.bulletin_date).all()
         return {"year": year, "sources": [{"label": r.label, "kind": r.kind, "date": r.bulletin_date, "status": r.status,
