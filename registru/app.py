@@ -558,19 +558,28 @@ def goods_problems(goods: dict) -> list:
 def quality_goods(kind: str = "", n: int = 20, db: Session = Depends(get_db)):
     """Listele de produse / servicii cu text stricat din PDF-urile BOPI, pe tipuri și pe ani."""
     from collections import Counter
-    tot, by_year, ex, anyp = Counter(), {}, {}, 0
+    tot, by_year, ex, anyp, mid, midex = Counter(), {}, {}, 0, 0, []
     for app_no, goods in db.query(Mark.app_number, Mark.goods).yield_per(5000):
         pr = goods_problems(goods)
         if not pr:
             continue
         anyp += 1
+        if "simboluri" in pr:
+            # Gunoi în mijlocul listei (text real și după el) — acolo s-ar putea să lipsească cuvinte.
+            for c, t in goods.items():
+                ms = list(_GQ["simboluri"].finditer(t))
+                if ms and re.search(r"[A-Za-zăâîşţ]{4,}", t[ms[-1].end():]):
+                    mid += 1
+                    if len(midex) < 15:
+                        midex.append({"app": app_no, "cls": c, "text": t[:700]})
+                    break
         for k in pr:
             tot[k] += 1
             by_year.setdefault(k, Counter())[app_no[1:5] if app_no[:1] == "M" else app_no[:1]] += 1
             if (not kind or k == kind) and len(ex.setdefault(k, [])) < n:
                 t = " ".join(goods.values()); mm = _GQ[k].search(t)
                 ex[k].append({"app": app_no, "ctx": t[max(0, mm.start() - 50):mm.end() + 30]})
-    return {"marks_affected": anyp, "by_kind": dict(tot),
+    return {"marks_affected": anyp, "by_kind": dict(tot), "simboluri_mid": mid, "mid_examples": midex,
             "by_year": {k: dict(sorted(v.items())) for k, v in by_year.items()}, "examples": ex}
 
 
