@@ -991,12 +991,36 @@ def clean_goods_text(t: str, vocab=None) -> str:
     s = re.sub(rf"(?<![\w\[\]])\](?=n\b)|(?<=[{_LOWER}])\](?=[{_LOWER}])", "î", s)
     s = re.sub(r"[\x00-\x08\x0b-\x1f�-]", " ", s)
     if vocab:
-        def join(mm):
-            w = mm.group(1) + mm.group(2)
-            n, r = vocab.get(w.lower(), 0), vocab.get(mm.group(2).lower(), 0)
-            return w if n >= 5 and n > 3 * r else mm.group(0)
-        s = re.sub(rf"\b(\w*[ăâîşţșț]) ([{_LOWER}]+)\b", join, s)
+        s = _join_broken(s, vocab)
     s = re.sub(r"[ \t]*\n[ \t]*", " ", s)
     s = re.sub(r" {2,}", " ", s)
     s = re.sub(r" +([,;.])(?=\s|$)", r"\1", s)
     return s.strip()
+
+
+_BROKEN = re.compile(r"\b\w*[ăâîşţșțĂÂÎŞŢȘȚ](?: [a-zăâîşţșț]*[ăâîşţșț])* [a-zăâîşţșț]+\b")
+
+
+# Cuvinte de sine stătătoare care urmează firesc după un cuvânt cu diacritic („să le”, „pudră de”).
+_STOP = {"în", "și", "şi", "de", "la", "cu", "a", "o", "al", "ai", "ale", "din", "pe", "sau", "ce", "le", "se",
+         "nu", "ca", "că", "pentru", "prin", "după", "sub", "fi", "fie", "care", "un", "una", "unei", "unui",
+         "este", "sunt", "mai", "fără", "între", "spre", "până", "lui", "li", "ne", "vă", "va", "iar", "dar"}
+
+
+def _join_broken(s: str, vocab) -> str:
+    """„vânză ri” → „vânzări”, „să nă tă ţii” → „sănătăţii”: bucățile dintr-un șir rupt după diacritice
+    se lipesc dacă forma lipită e un cuvânt des întâlnit în bază, iar ultima bucată nu e un cuvânt
+    obișnuit de sine stătător („să le”, „consultanță în” rămân)."""
+    def fix(mm):
+        parts = mm.group(0).split(" ")
+        out, i = [], 0
+        while i < len(parts):
+            for k in range(len(parts), i + 1, -1):
+                w = "".join(parts[i:k])
+                if vocab.get(w.lower(), 0) >= 5 and not any(p.lower() in _STOP for p in parts[i + 1:k]):
+                    out.append(w); i = k
+                    break
+            else:
+                out.append(parts[i]); i += 1
+        return " ".join(out)
+    return _BROKEN.sub(fix, s)

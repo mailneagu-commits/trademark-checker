@@ -545,6 +545,8 @@ _GQ = {
     "cid": re.compile(r"\(cid:\d+\)"),
     "nedecodabil": re.compile(r"[\ufffd\x00-\x08\x0b-\x1f\ue000-\uf8ff]"),
     "diacritice_descompuse": re.compile(r"[\u0300-\u036f]|ı"),
+    # Restul buletinului lipit de ultima marcă (tabele, formulare OSIM, erate).
+    "text_strain": re.compile(r"Nr\. ?depozit|Titular vechi|TABEL CU|ERATA|Ghidul de completare|Preşedinte CCIA|Cedent Cesionar|BULETINUL OFICIAL"),
     "cuvinte_rupte": re.compile(r"\w[ăâîşţșț] (?:rie|re|ri|rii|tor|toare|ri|lor|ţie|ție|ţii|ții)\b"),
 }
 
