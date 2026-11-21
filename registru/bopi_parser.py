@@ -996,6 +996,9 @@ def clean_goods_text(t: str, vocab=None) -> str:
     s = re.sub(r"[\x00-\x08\x0b-\x1f�-]", " ", s)
     if vocab:
         s = _join_broken(s, vocab)
+        s = _split_glued(s, vocab)
+    # „transmiterea,reproducerea” → „transmiterea, reproducerea”
+    s = re.sub(r"(?<=[a-zăâîşţșț]{3})([,;])(?=[A-Za-zăâîşţșțĂÂÎŞŢȘȚ]{2})", r"\1 ", s)
     for b, ok in _FIXED_WORDS.items():
         s = s.replace(b, ok)
     s = _fix_ocr_words(s)
@@ -1049,6 +1052,41 @@ def _join_broken(s: str, vocab) -> str:
                 out.append(parts[i]); i += 1
         return " ".join(out)
     return _BROKEN.sub(fix, s)
+
+
+_GLUED = re.compile(r"\b[a-zăâîşţșț]{16,}\b")
+
+
+def _split_glued(s: str, vocab) -> str:
+    """„informațiipacienților” → „informații pacienților”: un cuvânt lung care nu apare (aproape) deloc
+    în bază se desparte în două sau trei cuvinte des întâlnite."""
+    def ok(w):
+        return vocab.get(w, 0) >= 30 and (len(w) >= 3 or w in _STOP)
+
+    def best(w, depth):
+        top = None
+        for i in range(2, len(w) - 1):
+            a, b = w[:i], w[i:]
+            if not ok(a):
+                continue
+            if ok(b):
+                cand = ([a, b], min(vocab[a], vocab[b]))
+            elif depth and len(b) >= 6:
+                r = best(b, depth - 1)
+                cand = ([a] + r[0], min(vocab[a], r[1])) if r else None
+            else:
+                cand = None
+            if cand and (not top or (len(cand[0]), -cand[1]) < (len(top[0]), -top[1])):
+                top = cand
+        return top
+
+    def fix(m):
+        w = m.group(0)
+        if vocab.get(w, 0) >= 3:
+            return w
+        r = best(w, 1)
+        return " ".join(r[0]) if r else w
+    return _GLUED.sub(fix, s)
 
 
 # Ultima marcă dintr-un capitol a „înghițit” uneori restul buletinului: tabelul mărcilor care urmează

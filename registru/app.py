@@ -573,7 +573,7 @@ def _goods_vocab(db) -> dict:
 
 
 @app.get("/api/quality-goods/preview")
-def quality_goods_preview(n: int = 40, db: Session = Depends(get_db)):
+def quality_goods_preview(n: int = 40, kind: str = "", db: Session = Depends(get_db)):
     """Ce ar schimba curățarea listelor de produse (fără să scrie nimic) și ce ar rămâne stricat."""
     from bopi_parser import clean_goods_text
     from collections import Counter
@@ -592,7 +592,8 @@ def quality_goods_preview(n: int = 40, db: Session = Depends(get_db)):
         for k in goods_problems(new):
             left[k] += 1
         for c, t in goods.items():
-            if before and new[c] != t and len(ex) < n:
+            if before and (not kind or (_GQ[kind].search(t) and not _GQ[kind].search(new[c]))) \
+                    and new[c] != t and len(ex) < n:
                 ex.append({"app": app_no, "cls": c, "before": t[:300], "after": new[c][:300]})
                 break
     return {"would_change": changed, "fixed_problems": dict(joins), "still_flagged": dict(left), "examples": ex}
