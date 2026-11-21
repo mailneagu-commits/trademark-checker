@@ -1656,7 +1656,8 @@ def init_db():
                      daemon=True).start()
     threading.Thread(target=lambda: (_clean_goods_v1(), _clean_goods_v2(), _clean_goods_v3(), _clean_goods_v4(),
                                            # încă o trecere: listele rescrise între timp din TMview (21.11)
-                                           _clean_goods_v2("migration:clean-goods-v5")), daemon=True).start()
+                                           _clean_goods_v2("migration:clean-goods-v5"),
+                                           _clean_goods_v2("migration:clean-goods-v6")), daemon=True).start()
     _fix_reg_zeros()
     _requeue_skx_v1()
     _finish_opened_skels_v1()

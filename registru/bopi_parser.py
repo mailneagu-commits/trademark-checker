@@ -996,11 +996,18 @@ def clean_goods_text(t: str, vocab=None) -> str:
     s = re.sub(r"[\x00-\x08\x0b-\x1f�-]", " ", s)
     if vocab:
         s = _join_broken(s, vocab)
+    for b, ok in _FIXED_WORDS.items():
+        s = s.replace(b, ok)
     s = re.sub(r"[ \t]*\n[ \t]*", " ", s)
     s = re.sub(r" {2,}", " ", s)
     s = re.sub(r" +([,;.])(?=\s|$)", r"\1", s)
     return s.strip()
 
+
+# Cuvinte rupte prea rare în bază ca vocabularul să le recunoască (TMview le aduce tot rupte).
+_FIXED_WORDS = {"încarcă toare": "încărcătoare", "ouă lor": "ouălor", "ştergă tor": "ştergător",
+                "bucată rie": "bucătărie", "B răță ri": "Brățări", "cală rie": "călărie",
+                "desfă că toare": "desfăcătoare"}
 
 _BROKEN = re.compile(r"\b\w*[ăâîşţșțĂÂÎŞŢȘȚ](?: [a-zăâîşţșț]*[ăâîşţșț])* [a-zăâîşţșț]+\b")
 
