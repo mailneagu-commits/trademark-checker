@@ -1681,7 +1681,8 @@ def init_db():
                                            # încă o trecere: listele rescrise între timp din TMview (21.11)
                                            _clean_goods_v2("migration:clean-goods-v5"),
                                            _clean_goods_v2("migration:clean-goods-v6"),
-                                           _ocr_fixes_2018(), _ocr_fixes_2018("migration:ocr-fixes-2018b")), daemon=True).start()
+                                           _ocr_fixes_2018(), _ocr_fixes_2018("migration:ocr-fixes-2018b"),
+                                           _clean_goods_v2("migration:clean-goods-v7")), daemon=True).start()
     _fix_reg_zeros()
     _requeue_skx_v1()
     _finish_opened_skels_v1()

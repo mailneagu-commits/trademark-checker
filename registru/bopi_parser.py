@@ -998,6 +998,7 @@ def clean_goods_text(t: str, vocab=None) -> str:
         s = _join_broken(s, vocab)
     for b, ok in _FIXED_WORDS.items():
         s = s.replace(b, ok)
+    s = _fix_ocr_words(s)
     s = re.sub(r"[ \t]*\n[ \t]*", " ", s)
     s = re.sub(r" {2,}", " ", s)
     s = re.sub(r" +([,;.])(?=\s|$)", r"\1", s)
@@ -1007,7 +1008,17 @@ def clean_goods_text(t: str, vocab=None) -> str:
 # Cuvinte rupte prea rare în bază ca vocabularul să le recunoască (TMview le aduce tot rupte).
 _FIXED_WORDS = {"încarcă toare": "încărcătoare", "ouă lor": "ouălor", "ştergă tor": "ştergător",
                 "bucată rie": "bucătărie", "B răță ri": "Brățări", "cală rie": "călărie",
-                "desfă că toare": "desfăcătoare"}
+                "desfă că toare": "desfăcătoare", "sl ăbire": "slăbire",
+                "transferuri eleutiuiiiue de funduil": "transferuri electronice de fonduri"}
+
+
+def _fix_ocr_words(s: str) -> str:
+    """Greșeli tipice de recunoaștere a textului scanat: „sl”/„§i”/„:;;i” în loc de „și”, „rn” în loc de „m”."""
+    si = "şi" if "ş" in s and "ș" not in s else "și"
+    s = re.sub(r"(?<=\s)(?:sl|§i|:;;i)(?=\s)", si, s)
+    s = re.sub(r"§i(?=[a-zăâîşţșț])", si + " ", s)
+    s = s.replace("inforrn", "inform").replace("Inforrn", "Inform").replace("publicilar", "publicitar")
+    return s
 
 _BROKEN = re.compile(r"\b\w*[ăâîşţșțĂÂÎŞŢȘȚ](?: [a-zăâîşţșț]*[ăâîşţșț])* [a-zăâîşţșț]+\b")
 
