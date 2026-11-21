@@ -548,6 +548,10 @@ _GQ = {
     # Restul buletinului lipit de ultima marcă (tabele, formulare OSIM, erate).
     "text_strain": re.compile(r"Nr\. ?depozit|Titular vechi|TABEL CU|\bERATA\b|Ghidul de completare|Preşedinte CCIA|Cedent Cesionar|BULETINUL OFICIAL"),
     "cuvinte_rupte": re.compile(r"\w[ăâîşţșț] (?:rie|re|ri|rii|tor|toare|ri|lor|ţie|ție|ţii|ții)\b"),
+    # Text recunoscut prost din scanări (OCR): „?i”/„~i” în loc de „şi”, cuvinte lipite.
+    "ocr_si": re.compile(r"(?<!\S)[?~]i\b|[a-zăâîşţ][?~][a-zăâîşţ]"),
+    "cuvinte_lipite": re.compile(r"\b[a-zăâîşţșț]{24,}\b"),
+    "virgula_lipita": re.compile(r"[a-zăâîşţșț]{3}[,;][a-zăâîşţșț]{3}"),
 }
 
 
