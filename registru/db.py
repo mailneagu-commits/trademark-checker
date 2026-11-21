@@ -1481,6 +1481,43 @@ def _finish_opened_skels_v1():
         db.close()
 
 
+def _clean_goods_v1():
+    """O singură dată (21.11.2026): listele de produse curățate de gunoaiele din PDF-urile BOPI —
+    antetul codificat al paginii (BOPI 2000–2003, „!!!!!!! !"#$%&’"#(…”), diacritice descompuse
+    („ı̂n”), cuvinte rupte după diacritice („Asigură ri”), caractere de control. Doar din textul
+    buletinelor, fără TMview."""
+    import re as _re
+    from collections import Counter
+    from bopi_parser import clean_goods_text
+    marker = "migration:clean-goods-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        vocab = Counter()
+        for (goods,) in db.query(Mark.goods).yield_per(5000):
+            for t in (goods or {}).values():
+                vocab.update(w.lower() for w in _re.findall(r"[^\W\d_]+", t or ""))
+        todo = {}
+        for app_no, goods in db.query(Mark.app_number, Mark.goods).yield_per(5000):
+            if goods:
+                new = {c: clean_goods_text(t, vocab) for c, t in goods.items()}
+                if new != goods:
+                    todo[app_no] = new
+        keys, n = list(todo), 0
+        for i in range(0, len(keys), 1000):
+            for m in db.query(Mark).filter(Mark.app_number.in_(keys[i:i + 1000])):
+                m.goods = todo[m.app_number]
+                n += 1
+            db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=n,
+                          label=f"liste de produse curățate (gunoaie PDF BOPI): {n}"))
+        db.commit()
+        print(f"[DB] Liste de produse curățate: {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -1515,6 +1552,7 @@ def init_db():
                                      _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _names_from_later_bulletin(), _procedure_v1(), _procedure_v2(), _procedure_v3(), _drop_expiring_renewals(), _dedupe_0907(),
                                      __import__("osim_export").import_all()),
                      daemon=True).start()
+    threading.Thread(target=_clean_goods_v1, daemon=True).start()
     _fix_reg_zeros()
     _requeue_skx_v1()
     _finish_opened_skels_v1()

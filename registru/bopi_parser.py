@@ -174,7 +174,7 @@ def garbled_name(name: str) -> bool:
 
 def fix_goods(goods: dict) -> dict:
     legacy = has_legacy_diacritics(*goods.values())
-    return {c: fix_cp1252_goods(fix_record(t, legacy)) for c, t in goods.items()}
+    return {c: clean_goods_text(fix_cp1252_goods(fix_record(t, legacy))) for c, t in goods.items()}
 
 
 # Numele titularului / mandatarului se termină la prima virgulă — afară de forma juridică sau de
