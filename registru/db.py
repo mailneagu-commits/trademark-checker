@@ -1563,6 +1563,35 @@ def _clean_goods_v2():
         db.close()
 
 
+def _clean_goods_v3():
+    """O singură dată (21.11.2026): ultimele 8 liste de produse rămase după v1/v2, corectate punctual."""
+    from sqlalchemy import Text, cast
+    marker = "migration:clean-goods-v3"
+    fixes = {"încarcă toare": "încărcătoare", "ouă lor": "ouălor", "ştergă tor": "ştergător",
+             "bucată rie": "bucătărie", "B răță ri": "Brățări"}
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for bad, good in fixes.items():
+            for m in db.query(Mark).filter(cast(Mark.goods, Text).like(f"%{bad}%")):
+                g = {c: t.replace(bad, good) for c, t in (m.goods or {}).items()}
+                if g != m.goods:
+                    m.goods = g
+                    n += 1
+        m = db.get(Mark, "M200104807")
+        if m and (m.goods or {}).get("9", "").startswith("Programe pentru calculator. B@CAD"):
+            m.goods = dict(m.goods, **{"9": "Programe pentru calculator."})
+            n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=n,
+                          label=f"produse corectate punctual: {n}"))
+        db.commit()
+        print(f"[DB] Produse corectate punctual: {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -1597,7 +1626,7 @@ def init_db():
                                      _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _names_from_later_bulletin(), _procedure_v1(), _procedure_v2(), _procedure_v3(), _drop_expiring_renewals(), _dedupe_0907(),
                                      __import__("osim_export").import_all()),
                      daemon=True).start()
-    threading.Thread(target=lambda: (_clean_goods_v1(), _clean_goods_v2()), daemon=True).start()
+    threading.Thread(target=lambda: (_clean_goods_v1(), _clean_goods_v2(), _clean_goods_v3()), daemon=True).start()
     _fix_reg_zeros()
     _requeue_skx_v1()
     _finish_opened_skels_v1()
