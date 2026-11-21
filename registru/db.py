@@ -1518,7 +1518,7 @@ def _clean_goods_v1():
         db.close()
 
 
-def _clean_goods_v2():
+def _clean_goods_v2(marker: str = "migration:clean-goods-v2"):
     """O singură dată (21.11.2026), după v1: (1) textul străin lipit de ultima marcă dintr-un capitol
     (tabele de reînnoiri / cesiuni, erate, centre regionale) — tăiat, iar clasele „inventate” din el scoase;
     (2) șirurile rupte după diacritice („vânză ri”, „să nă tă ţii”). Fișele rămase fără niciun produs
@@ -1526,7 +1526,6 @@ def _clean_goods_v2():
     import re as _re
     from collections import Counter
     from bopi_parser import clean_goods_text, cut_overflow
-    marker = "migration:clean-goods-v2"
     db = SessionLocal()
     try:
         if db.get(SourceFile, marker):
@@ -1655,7 +1654,9 @@ def init_db():
                                      _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _names_from_later_bulletin(), _procedure_v1(), _procedure_v2(), _procedure_v3(), _drop_expiring_renewals(), _dedupe_0907(),
                                      __import__("osim_export").import_all()),
                      daemon=True).start()
-    threading.Thread(target=lambda: (_clean_goods_v1(), _clean_goods_v2(), _clean_goods_v3(), _clean_goods_v4()), daemon=True).start()
+    threading.Thread(target=lambda: (_clean_goods_v1(), _clean_goods_v2(), _clean_goods_v3(), _clean_goods_v4(),
+                                           # încă o trecere: listele rescrise între timp din TMview (21.11)
+                                           _clean_goods_v2("migration:clean-goods-v5")), daemon=True).start()
     _fix_reg_zeros()
     _requeue_skx_v1()
     _finish_opened_skels_v1()

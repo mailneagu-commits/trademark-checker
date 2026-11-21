@@ -1271,6 +1271,35 @@ def _registered_from_tmview(m: Mark, d: Dict) -> None:
         "detail": (f"nr. marcă {m.reg_number} · " if m.reg_number else "") + "înregistrarea nu apare în buletinele OSIM citite"}]
 
 
+_VOCAB = {"at": 0.0, "v": None, "busy": False}
+
+
+def _goods_vocab():
+    """Vocabularul listelor de produse din bază (pentru „vânză ri” → „vânzări” și în textul din TMview),
+    refăcut o dată pe zi, în fundal; până e gata, curățarea merge fără lipirea cuvintelor rupte."""
+    import threading
+    import time as _t
+    if not _VOCAB["busy"] and _t.time() - _VOCAB["at"] > 86400:
+        _VOCAB["busy"] = True
+
+        def build():
+            from collections import Counter
+            v = Counter()
+            db = SessionLocal()
+            try:
+                for (goods,) in db.query(Mark.goods).yield_per(5000):
+                    for t in (goods or {}).values():
+                        v.update(w.lower() for w in re.findall(r"[^\W\d_]+", t or ""))
+                _VOCAB.update(v=v, at=_t.time())
+            except Exception as e:
+                print(f"[ProWatch] vocabular produse: {e}")
+            finally:
+                db.close()
+                _VOCAB["busy"] = False
+        threading.Thread(target=build, daemon=True).start()
+    return _VOCAB["v"]
+
+
 def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
     """Fișa TMview aplicată unei mărci: produse (unde lipsesc / BOPI dă doar titlul clasei), adresă,
     date, tip, Viena, reprezentant, stare. Întoarce True dacă s-au completat produse."""
@@ -1279,7 +1308,7 @@ def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
     for g in d.get("goodAndServices") or []:
         c = str(g.get("niceClass") or "").lstrip("0")
         if c.isdigit() and (g.get("goodsAndServices") or "").strip():
-            gs[c] = clean_goods_text((gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip())
+            gs[c] = clean_goods_text((gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip(), _goods_vocab())
     if gs and (app.startswith("R") or "|gsneed" in tc or not m.goods):
         keep = {str(c) for c in (m.classes or [])} if app.startswith("R") else set()
         # Doar clasele reînnoite (o reînnoire poate fi parțială); fără clase cunoscute — toate.
