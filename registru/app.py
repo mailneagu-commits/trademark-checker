@@ -540,6 +540,40 @@ def quality_chars(limit: int = 4000, ch: str = "", db: Session = Depends(get_db)
     return {"scanned": n, "top": ctx.most_common(300)}
 
 
+_GQ = {
+    "simboluri": re.compile(r'[!"#$%&’()*+,\-./:;<=>?@\[\]^_`{|}~]{6,}|(?:[!"#$%&’()*+/<=>?@\[\]^_`{|}~][^\sA-Za-zăâîşţșțĂÂÎŞŢȘȚ]){4,}'),
+    "cid": re.compile(r"\(cid:\d+\)"),
+    "nedecodabil": re.compile(r"[\ufffd\x00-\x08\x0b-\x1f\ue000-\uf8ff]"),
+    "diacritice_descompuse": re.compile(r"[\u0300-\u036f]|ı"),
+    "cuvinte_rupte": re.compile(r"\w[ăâîşţșț] (?:rie|re|ri|rii|tor|toare|ri|lor|ţie|ție|ţii|ții)\b"),
+}
+
+
+def goods_problems(goods: dict) -> list:
+    t = " ".join((goods or {}).values())
+    return [k for k, rx in _GQ.items() if rx.search(t)]
+
+
+@app.get("/api/quality-goods")
+def quality_goods(kind: str = "", n: int = 20, db: Session = Depends(get_db)):
+    """Listele de produse / servicii cu text stricat din PDF-urile BOPI, pe tipuri și pe ani."""
+    from collections import Counter
+    tot, by_year, ex, anyp = Counter(), {}, {}, 0
+    for app_no, goods in db.query(Mark.app_number, Mark.goods).yield_per(5000):
+        pr = goods_problems(goods)
+        if not pr:
+            continue
+        anyp += 1
+        for k in pr:
+            tot[k] += 1
+            by_year.setdefault(k, Counter())[app_no[1:5] if app_no[:1] == "M" else app_no[:1]] += 1
+            if (not kind or k == kind) and len(ex.setdefault(k, [])) < n:
+                t = " ".join(goods.values()); mm = _GQ[k].search(t)
+                ex[k].append({"app": app_no, "ctx": t[max(0, mm.start() - 50):mm.end() + 30]})
+    return {"marks_affected": anyp, "by_kind": dict(tot),
+            "by_year": {k: dict(sorted(v.items())) for k, v in by_year.items()}, "examples": ex}
+
+
 def _odd_name(n: str) -> str:
     """De ce pare o denumire citită greșit din PDF ("" = pare în regulă)."""
     t = (n or "").replace(" ", "")
