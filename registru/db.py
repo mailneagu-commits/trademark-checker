@@ -1592,6 +1592,35 @@ def _clean_goods_v3():
         db.close()
 
 
+def _clean_goods_v4():
+    """O singură dată: v3 a căutat cu LIKE, dar produsele sunt salvate cu diacriticele codificate (\\u0103)
+    și nu s-au găsit — aceleași corecturi, cu textul citit din fiecare fișă."""
+    marker = "migration:clean-goods-v4"
+    fixes = {"încarcă toare": "încărcătoare", "ouă lor": "ouălor", "ştergă tor": "ştergător",
+             "bucată rie": "bucătărie", "B răță ri": "Brățări"}
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        todo = {}
+        for app_no, goods in db.query(Mark.app_number, Mark.goods).yield_per(5000):
+            if goods and any(b in t for t in goods.values() for b in fixes):
+                g = dict(goods)
+                for c, t in g.items():
+                    for b, ok in fixes.items():
+                        t = t.replace(b, ok)
+                    g[c] = t
+                todo[app_no] = g
+        for m in db.query(Mark).filter(Mark.app_number.in_(list(todo) or [""])):
+            m.goods = todo[m.app_number]
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=len(todo),
+                          label=f"produse corectate punctual (v4): {len(todo)}"))
+        db.commit()
+        print(f"[DB] Produse corectate punctual (v4): {len(todo)}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -1626,7 +1655,7 @@ def init_db():
                                      _fix_party_names(), _fix_date_reps(), _fix_cp1252_parties(), _names_from_later_bulletin(), _procedure_v1(), _procedure_v2(), _procedure_v3(), _drop_expiring_renewals(), _dedupe_0907(),
                                      __import__("osim_export").import_all()),
                      daemon=True).start()
-    threading.Thread(target=lambda: (_clean_goods_v1(), _clean_goods_v2(), _clean_goods_v3()), daemon=True).start()
+    threading.Thread(target=lambda: (_clean_goods_v1(), _clean_goods_v2(), _clean_goods_v3(), _clean_goods_v4()), daemon=True).start()
     _fix_reg_zeros()
     _requeue_skx_v1()
     _finish_opened_skels_v1()
