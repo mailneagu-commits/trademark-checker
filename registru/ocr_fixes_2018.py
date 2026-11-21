@@ -101,6 +101,33 @@ SPOT = {
     "M202407076": {"cinematografelor~săli": "cinematografelor, săli"},
 }
 
+# A doua tură (21.11.2026), găsite de verificarea ocr_scan.
+FULL["M201804157"] = {"43": _C43}
+FULL["M201804043"] = {"35": _C35, "36": _C36, "41": _ORG.replace("la: ", "la "), "43": _C43}
+FULL["M201804044"] = {"35": _C35, "36": _C36, "41": _ORG, "43": _C43}
+FULL["M201804070"] = {
+    "16": "Produse de imprimerie și tipografie, fotografii, publicații (ziare și reviste cu sau fără caracter de periodice), articole de birou, materiale publicitare (tipărituri).",
+    "35": "Publicitate, gestiunea afacerilor comerciale, administrație comercială, lucrări de birou, compilarea de informații în baze de date computerizate, organizare de târguri și expoziții în scop comercial, publicitar și de promovare.",
+    "38": "Telecomunicații, difuzarea de programe radio și/sau TV (programe și generice radio și/sau TV), consultanță în domeniul mass-media, furnizarea de camere de discuții în spațiu virtual, respectiv pe internet (internet chatrooms).",
+    "41": "Educație, instruire, divertisment, activități sportive și culturale, filmare, organizarea de târguri și expoziții în scop educativ.",
+    "42": "Crearea și dezvoltarea programelor de calculator, crearea, întreținerea și găzduirea de pagini și site-uri web, furnizarea de motoare de căutare pe internet.",
+}
+FULL["M201804077"] = {"9": "Aplicații software (programe)."}
+FULL["M201804078"] = {
+    "9": "Suporturi magnetice pentru înregistrări audio, casete audio digitale, CD-uri audio, discuri audio digitale, discuri pentru (înregistrări audio).",
+    "38": "Difuzare audio.",
+    "41": "Prezentări audiovizuale, producție de înregistrări audio, servicii de divertisment audio, producție de înregistrări audiovizuale.",
+}
+_BERE = ("Bere, ape minerale și gazoase și alte băuturi nealcoolice, băuturi din fructe și sucuri de fructe, siropuri și "
+         "alte preparate pentru fabricarea băuturilor. (Solicităm protecție pentru întreaga listă de produse incluse în "
+         "această clasă conform Clasificării de la Nisa)")
+FULL["M201804019"] = {"32": _BERE}
+FULL["M201804021"] = {"32": _BERE}
+SPOT["M202106955"] = {"cornunicarea": "comunicarea"}
+SPOT["M201903184"] = {"cornunicaţii": "comunicaţii"}
+SPOT["M201902569"] = {"cornunicaţii": "comunicaţii"}
+SPOT["M201808704"] = {"rnedicală": "medicală"}
+
 
 def apply(app_no: str, goods: dict) -> dict:
     g = dict(goods or {})

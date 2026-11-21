@@ -552,7 +552,7 @@ _GQ = {
     "ocr_si": re.compile(r"(?<!\S)[?~]i\b|[a-zăâîşţ][?~][a-zăâîşţ]"),
     # Alte urme ale scanărilor din 2018: antetul paginii lipit, „rn” în loc de „m”, „9i” în loc de „şi”.
     "ocr_scan": re.compile(r"BULETINUL ?OFICIAL ?DE ?PROPRIETATE|BUlETINUl|depuse ?in ?(?:data|perioada)|ternporar|"
-                           r"Servieii|rnedical|\b[lI]nreq|\beazare\b|\b9i\b|:;;i|\bcornun|\brnasin"),
+                           r"Servieii|rnedical|\b[lI]nreq|\beazare\b|\b9[1i]\b|:;;i|§i|\bcornun|\brnasin|\balirnent|[il]nforrn|publicilar|\bsl\b"),
     "cuvinte_lipite": re.compile(r"\b[a-zăâîşţșț]{24,}\b"),
     "virgula_lipita": re.compile(r"[a-zăâîşţșț]{3}[,;][a-zăâîşţșț]{3}"),
 }
