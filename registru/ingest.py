@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 
 import requests
 
-from bopi_parser import display_app, fix_record, parse_changes, parse_pdf, party_name
+from bopi_parser import clean_goods_text, display_app, fix_record, parse_changes, parse_pdf, party_name
 from db import Mark, MarkChange, MarkImage, SessionLocal, SourceFile, norm
 import procedura
 
@@ -1279,7 +1279,7 @@ def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
     for g in d.get("goodAndServices") or []:
         c = str(g.get("niceClass") or "").lstrip("0")
         if c.isdigit() and (g.get("goodsAndServices") or "").strip():
-            gs[c] = (gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip()
+            gs[c] = clean_goods_text((gs.get(c, "") + " " + g["goodsAndServices"].strip()).strip())
     if gs and (app.startswith("R") or "|gsneed" in tc or not m.goods):
         keep = {str(c) for c in (m.classes or [])} if app.startswith("R") else set()
         # Doar clasele reînnoite (o reînnoire poate fi parțială); fără clase cunoscute — toate.
