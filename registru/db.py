@@ -1620,6 +1620,30 @@ def _clean_goods_v4():
         db.close()
 
 
+def _ocr_fixes_2018():
+    """O singură dată (21.11.2026): textul produselor corectat de mână la mărcile publicate din cereri
+    scanate prost (BOPI iunie 2018 și câteva „~”/„?” rătăcite) — vezi ocr_fixes_2018.py."""
+    import ocr_fixes_2018 as f
+    marker = "migration:ocr-fixes-2018"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        apps = list(f.FULL) + list(f.SPOT)
+        n = 0
+        for m in db.query(Mark).filter(Mark.app_number.in_(apps)):
+            g = f.apply(m.app_number, m.goods)
+            if g != m.goods:
+                m.goods = g
+                n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=n,
+                          label=f"produse corectate de mână (OCR 2018): {n}"))
+        db.commit()
+        print(f"[DB] Produse corectate de mână (OCR 2018): {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -1657,7 +1681,8 @@ def init_db():
     threading.Thread(target=lambda: (_clean_goods_v1(), _clean_goods_v2(), _clean_goods_v3(), _clean_goods_v4(),
                                            # încă o trecere: listele rescrise între timp din TMview (21.11)
                                            _clean_goods_v2("migration:clean-goods-v5"),
-                                           _clean_goods_v2("migration:clean-goods-v6")), daemon=True).start()
+                                           _clean_goods_v2("migration:clean-goods-v6"),
+                                           _ocr_fixes_2018()), daemon=True).start()
     _fix_reg_zeros()
     _requeue_skx_v1()
     _finish_opened_skels_v1()
