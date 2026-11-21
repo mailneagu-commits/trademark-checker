@@ -559,7 +559,7 @@ def _goods_vocab(db) -> dict:
     v = Counter()
     for (goods,) in db.query(Mark.goods).yield_per(5000):
         for t in (goods or {}).values():
-            v.update(w.lower() for w in re.findall(r"[^\W\d_]{3,}", t or ""))
+            v.update(w.lower() for w in re.findall(r"[^\W\d_]+", t or ""))
     return v
 
 
@@ -577,13 +577,16 @@ def quality_goods_preview(n: int = 40, db: Session = Depends(get_db)):
         if new == goods:
             continue
         changed += 1
+        before = goods_problems(goods)
+        for k in before:
+            joins[k] += 1
         for k in goods_problems(new):
             left[k] += 1
         for c, t in goods.items():
-            if new[c] != t and len(ex) < n:
+            if before and new[c] != t and len(ex) < n:
                 ex.append({"app": app_no, "cls": c, "before": t[:300], "after": new[c][:300]})
                 break
-    return {"would_change": changed, "still_flagged": dict(left), "examples": ex}
+    return {"would_change": changed, "fixed_problems": dict(joins), "still_flagged": dict(left), "examples": ex}
 
 
 @app.get("/api/quality-goods")

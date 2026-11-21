@@ -993,9 +993,10 @@ def clean_goods_text(t: str, vocab=None) -> str:
     if vocab:
         def join(mm):
             w = mm.group(1) + mm.group(2)
-            return w if vocab.get(w.lower(), 0) >= 3 and vocab.get(mm.group(2).lower(), 0) < vocab[w.lower()] else mm.group(0)
+            n, r = vocab.get(w.lower(), 0), vocab.get(mm.group(2).lower(), 0)
+            return w if n >= 5 and n > 3 * r else mm.group(0)
         s = re.sub(rf"\b(\w*[ăâîşţșț]) ([{_LOWER}]+)\b", join, s)
     s = re.sub(r"[ \t]*\n[ \t]*", " ", s)
     s = re.sub(r" {2,}", " ", s)
-    s = re.sub(r" +([,;.)])", r"\1", s)
+    s = re.sub(r" +([,;.])(?=\s|$)", r"\1", s)
     return s.strip()
