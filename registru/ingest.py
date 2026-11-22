@@ -1673,7 +1673,7 @@ def _create_old(db, num: str, t: Dict, d: Dict) -> Optional[Mark]:
              holder=holder, holder_norm=norm(holder), classes=[], goods={},
              tmview_checked=date.today().isoformat() + "|old|gs3",
              events=[{"date": (d.get("markCurrentStatusDate") or date.today().isoformat())[:10], "bopi": "TMview",
-                      "chapter": (("Cerere nepublicată în BOPI (respinsă / retrasă), preluată din TMview"
+                      "chapter": (("Cerere lipsă din buletinele citite, preluată din TMview"
                                    if int(key[1:5]) in OLD_LATE else
                                    "Marcă preluată din TMview (buletinul BOPI nu poate fi citit)") if key.startswith("M")
                                   and int(key[1:5]) >= 2002 else "Marcă veche (înainte de BOPI online) preluată din TMview"),
@@ -1724,7 +1724,7 @@ def _create_skel(db, num: str, t: Dict) -> Optional[Mark]:
              mark_type="" if t.get("markImageURI") else ("Verbală" if name else ""),
              tmview_checked=date.today().isoformat() + "|old|skel",
              events=[{"date": date.today().isoformat(), "bopi": "TMview",
-                      "chapter": (("Cerere nepublicată în BOPI (respinsă / retrasă), preluată din TMview"
+                      "chapter": (("Cerere lipsă din buletinele citite, preluată din TMview"
                                    if int(key[1:5]) in OLD_LATE else
                                    "Marcă preluată din TMview (buletinul BOPI nu poate fi citit)") if key.startswith("M")
                                   and int(key[1:5]) >= 2002 else "Marcă veche (înainte de BOPI online) preluată din TMview"),

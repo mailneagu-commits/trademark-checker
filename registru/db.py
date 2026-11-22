@@ -1643,6 +1643,33 @@ def _ocr_fixes_2018(marker: str = "migration:ocr-fixes-2018"):
         db.close()
 
 
+def _fix_old_late_label(marker: str = "migration:fix-old-late-label"):
+    """O singură dată (22.11.2026): mențiunea din istoric pentru cererile 2002–2010 aduse din TMview spunea
+    „nepublicată în BOPI (respinsă / retrasă)”, deși multe sunt mărci înregistrate, doar expirate."""
+    from sqlalchemy import Text, cast
+    old = "Cerere nepublicată în BOPI (respinsă / retrasă), preluată din TMview"
+    new = "Cerere lipsă din buletinele citite, preluată din TMview"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        apps = [a for (a,) in db.query(Mark.app_number).filter(cast(Mark.events, Text).like("%nepublicat%TMview%"))]
+        for i in range(0, len(apps), 500):
+            for m in db.query(Mark).filter(Mark.app_number.in_(apps[i:i + 500])):
+                ev = m.events or []
+                if any(e.get("chapter") == old for e in ev):
+                    m.events = [dict(e, chapter=new) if e.get("chapter") == old else e for e in ev]
+                    n += 1
+            db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=n,
+                          label=f"mențiune istoric cereri 2002–2010 corectată: {n}"))
+        db.commit()
+        print(f"[DB] Mențiune istoric 2002–2010 corectată: {n}")
+    finally:
+        db.close()
+
+
 def _fix_refused_registered(marker: str = "migration:fix-refused-registered"):
     """O singură dată (22.11.2026): fișe vechi completate din TMview cu „Application refused / withdrawn”
     rămase „Înregistrată” (starea generică „Ended” din căutare) — devin Respinsă / Retrasă, fără expirare."""
@@ -1707,7 +1734,7 @@ def init_db():
                                            # încă o trecere: listele rescrise între timp din TMview (21.11)
                                            _clean_goods_v2("migration:clean-goods-v5"),
                                            _clean_goods_v2("migration:clean-goods-v6"),
-                                           _fix_refused_registered(), _ocr_fixes_2018(), _ocr_fixes_2018("migration:ocr-fixes-2018b"),
+                                           _fix_refused_registered(), _fix_old_late_label(), _ocr_fixes_2018(), _ocr_fixes_2018("migration:ocr-fixes-2018b"),
                                            _clean_goods_v2("migration:clean-goods-v7"),
                                            # spațiu după virgulă, cuvinte lipite despărțite (21.11)
                                            _clean_goods_v2("migration:clean-goods-v8"),
