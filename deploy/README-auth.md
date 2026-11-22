@@ -15,8 +15,8 @@ Setări în panoul Railway (NU în fișiere — railway.json / config-as-code nu
 - Builder Railpack (railpack.json instalează caddy; nixpacks.toml rămâne pentru Nixpacks); Python din .python-version (3.11).
 
 - Utilizator: `protectmark`. Parola NU e în git — doar hash-ul ei bcrypt, în variabila Railway
-  `BASIC_AUTH_HASH` (serviciul „web” → Variables).
-- Excepție fără parolă: doar `/api/session-status` (verificarea de sănătate Railway, fără date).
+  `BASIC_AUTH_HASH` (pe ambele servicii → Variables).
+- Excepție fără parolă: doar calea de healthcheck din tabel (fără date).
 - Apeluri între aplicații pe rețeaua privată (nu trec prin parolă):
   prowatch: `MONITOR_API = http://web.railway.internal:8001`; web: `PROWATCH_API = http://prowatch.railway.internal:8001`.
 - Blocate (403): .env, .git, .htpasswd, *.sql, *.bak, *.log, *.zip, *.old, *.swp, *.ini, *.cfg, *.conf, *.yml, *.toml.
