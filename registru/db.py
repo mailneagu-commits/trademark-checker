@@ -1670,6 +1670,92 @@ def _fix_old_late_label(marker: str = "migration:fix-old-late-label"):
         db.close()
 
 
+def _drop_expiring_renewals_v3(marker: str = "migration:expiring-not-renewals-v3"):
+    """O singură dată (22.11.2026): „Tabelul mărcilor care expiră și urmează a fi reînnoite” fusese citit ca
+    listă de reînnoiri, cu expirarea +10 ani (ex. POFTA DEL MARE VINE MANCAND, M 2008 01100, BOPI 10/2017;
+    Calligraph, BOPI 01/2023; DINES D, BOPI 05/2021 — toate doar în tabelul expirărilor, nu în lista de
+    reînnoiri). V2 le păstrase pe cele cu expirare; acum se scot și acestea: reînnoire fără rând în listele
+    de reînnoiri ale buletinului, cu vechea expirare (expirare − 10 ani) la cel mult 12 luni după buletin.
+    Tot de acolo: „Cereri de marcă respinse” din BOPI 10/2017 la mărci înregistrate înainte."""
+    from ingest import _current_rep, _recompute_holder, expiry_of
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        real = set()
+        for app, reg, label in db.query(MarkChange.app_number, MarkChange.reg_number, MarkChange.label)\
+                .filter(MarkChange.kind == "renewal"):
+            if app:
+                real.add((label, app))
+            if reg:
+                real.add((label, "#" + reg.lstrip("0")))
+        lab = re.compile(r"^BOPI \d{2}/\d{4}$")
+
+        def minus10(iso):
+            return str(int(iso[:4]) - 10) + iso[4:]
+
+        def fake(m, e):
+            if not (e.get("chapter") == "Reînnoire" and lab.match(e.get("bopi") or "") and
+                    re.match(r"\d{4}-\d{2}-\d{2}$", e.get("expiry") or "") and e.get("date")):
+                return False
+            if (e["bopi"], m.app_number) in real or (e["bopi"], "#" + (m.reg_number or "").lstrip("0")) in real:
+                return False
+            old = minus10(e["expiry"])
+            return e["date"] < old <= str(int(e["date"][:4]) + 1) + e["date"][4:]
+
+        def reg_d(m):
+            return m.reg_date or min((e["date"] for e in (m.events or []) if e.get("chapter") == "Mărci înregistrate"),
+                                     default="")
+
+        def fake_rej(m, e):
+            d = reg_d(m)
+            return (e.get("chapter") == "Cereri de marcă respinse" and e.get("bopi") == "BOPI 10/2017"
+                    and d and (e.get("date") or "") > d)
+
+        found = []
+        for (app, evs, reg, rd) in db.query(Mark.app_number, Mark.events, Mark.reg_number, Mark.reg_date).yield_per(5000):
+            class _M:
+                pass
+            mm = _M(); mm.app_number, mm.events, mm.reg_number, mm.reg_date = app, evs, reg, rd
+            if any(fake(mm, e) or fake_rej(mm, e) for e in (evs or [])):
+                found.append(app)
+        if len(found) > 30000:
+            print(f"[DB] Reînnoiri false v3: {len(found)} mărci, peste prag — oprit")
+            return
+        n_ren = n_rej = n = 0
+        for i in range(0, len(found), 1000):
+            for m in db.query(Mark).filter(Mark.app_number.in_(found[i:i + 1000])):
+                evs = m.events or []
+                fk = [e for e in evs if fake(m, e)]
+                fr = [e for e in evs if fake_rej(m, e)]
+                # Mențiunea falsă devine cea adevărată: marca figura în tabelul expirărilor.
+                fixed = []
+                for e in evs:
+                    if e in fr:
+                        continue
+                    if e in fk:
+                        o = minus10(e["expiry"])
+                        e = {"date": e["date"], "bopi": e["bopi"],
+                             "chapter": "În tabelul mărcilor care urmează să expire",
+                             "detail": f"expiră la {o[8:10]}.{o[5:7]}.{o[:4]}"}
+                    fixed.append(e)
+                m.events = fixed
+                n_ren += len(fk); n_rej += len(fr); n += 1
+                if fk:
+                    # Expirarea reală: cea din tabelul expirărilor (= expirarea falsă − 10 ani), dacă nu
+                    # rămâne altă reînnoire / nu se poate calcula din depozit (mărcile „R…”).
+                    m.expiry_date = expiry_of(m) or max(minus10(e["expiry"]) for e in fk)
+                _recompute_holder(m)
+                _current_rep(m)
+            db.commit()
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=n,
+                          label=f"tabel expirări ≠ reînnoiri v3: {n_ren} reînnoiri false, {n_rej} respingeri false, {n} mărci"))
+        db.commit()
+        print(f"[DB] Reînnoiri false v3: {n_ren}; respingeri false BOPI 10/2017: {n_rej}; mărci: {n}")
+    finally:
+        db.close()
+
+
 def _fix_refused_registered(marker: str = "migration:fix-refused-registered"):
     """O singură dată (22.11.2026): fișe vechi completate din TMview cu „Application refused / withdrawn”
     rămase „Înregistrată” (starea generică „Ended” din căutare) — devin Respinsă / Retrasă, fără expirare."""
@@ -1734,7 +1820,7 @@ def init_db():
                                            # încă o trecere: listele rescrise între timp din TMview (21.11)
                                            _clean_goods_v2("migration:clean-goods-v5"),
                                            _clean_goods_v2("migration:clean-goods-v6"),
-                                           _fix_refused_registered(), _fix_old_late_label(), _ocr_fixes_2018(), _ocr_fixes_2018("migration:ocr-fixes-2018b"),
+                                           _fix_refused_registered(), _fix_old_late_label(), _drop_expiring_renewals_v3(), _ocr_fixes_2018(), _ocr_fixes_2018("migration:ocr-fixes-2018b"),
                                            _clean_goods_v2("migration:clean-goods-v7"),
                                            # spațiu după virgulă, cuvinte lipite despărțite (21.11)
                                            _clean_goods_v2("migration:clean-goods-v8"),
