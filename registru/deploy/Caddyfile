@@ -1,0 +1,34 @@
+# Poarta ProWatch (serviciul Railway ProWatch, rădăcina registru/): Caddy pe portul public, aplicația (uvicorn) doar
+# intern pe 8001. HTTPS și redirectul HTTP→HTTPS le face marginea Railway, înainte de Caddy.
+# Parola: hash bcrypt în variabila Railway BASIC_AUTH_HASH (niciodată în git). Vezi deploy/README-auth.md din rădăcina repo-ului.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:{$PORT} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Robots-Tag "noindex, nofollow, noarchive"
+		# SAMEORIGIN: cu parolă, modul încorporat (?embed=1) pe alte site-uri oricum nu mai merge.
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+	route {
+		# Verificarea de sănătate Railway (decide dacă un deploy reușește) — fără parolă, doar această cale.
+		@health path /api/health
+		reverse_proxy @health {$UPSTREAM}
+
+		@blocked path /.env* /.git* /.htpasswd* *.sql *.bak *.log *.zip *.old *.swp *.ini *.cfg *.conf *.yml *.yaml *.toml
+		respond @blocked 403
+
+		import auth_{$AUTH_MODE}
+
+		reverse_proxy {$UPSTREAM} {
+			flush_interval -1
+		}
+	}
+}

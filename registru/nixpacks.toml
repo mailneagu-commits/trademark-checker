@@ -1,0 +1,3 @@
+# Serviciul ProWatch (rădăcina registru/): Caddy pentru parola din fața aplicației (deploy/Caddyfile).
+[phases.setup]
+nixPkgs = ["...", "caddy"]
