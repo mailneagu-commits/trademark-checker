@@ -1756,6 +1756,139 @@ def _drop_expiring_renewals_v3(marker: str = "migration:expiring-not-renewals-v3
         db.close()
 
 
+# Verificate în buletinele OSIM (23.11.2026), mărcile cu „Cereri de marcă respinse” după înregistrare.
+# Respinse cu adevărat după înregistrare: tabelele „mărcilor respinse în urma deciziei comisiei de examinare
+# a opozițiilor / contestațiilor / tribunalului” (2006–2015, opoziția era după înregistrare) + 1 din 2025.
+_REJ_TRUE = {"M200404399", "M200404400", "M200501071", "M200506743", "M200601840", "M200606681", "M200607555",
+             "M200609579", "M200610227", "M200704192", "M200801823", "M200803036", "M200806163", "M200808116",
+             "M200808792", "M200809023", "M200810941", "M200900179", "M200904816", "M200700322", "M201205086",
+             "M201106760", "M200606811", "M201101626", "M200609859", "M200613446", "M200603810", "M200608725",
+             "M200608727", "M200505422", "M200604031", "M200604032", "M200604033", "M200604034", "M200604035",
+             "M200101931", "M200103468", "M200104504", "M200204585", "M200304761", "M200307054", "M200307059",
+             "M200406406", "M202101671"}
+# Mențiune falsă: marca era în tabelul expirărilor, într-o erată, la limitări sau la mărci înregistrate.
+_REJ_FALSE = {"M201208017", "M200709637", "M200709972", "M201608062", "M201608200", "M201605935", "M201604025",
+              "M201603736", "M201606431", "M201607519", "M201607520", "M201605402", "M201608012", "M201608011",
+              "M202105615", "M202309118", "M202402664", "M201500591", "M202309877", "M202008421", "M202104437"}
+# Decăderi / anulări și contestații (2024–2025): decizia, nu o cerere respinsă.
+_REJ_DECISION = {
+    "M202207516": ("Marcă anulată — cerere de anulare admisă (CA 36/2023)", "Anulată"),
+    "M202102859": ("Marcă anulată — cerere de anulare admisă (CA 13/2023)", "Anulată"),
+    "M202105898": ("Cerere de anulare respinsă (CA 3/2024) — marca rămâne", ""),
+    "M201806711": ("Decizie a comisiei de examinare a contestațiilor: admitere (CCM 168/2020, Hot. nr. 135/2022)", ""),
+}
+
+
+def _fix_rejected_renewals_v4(marker: str = "migration:rejected-renewals-checked-v4"):
+    """O singură dată (23.11.2026), după verificarea fiecărui caz în buletinul OSIM:
+    1) „Cereri de marcă respinse” după înregistrare: respinse cu adevărat → Respinsă (fără expirare); mențiuni
+       false → scoase; anulări / contestații → mențiunea corectă (anulată → Anulată).
+    2) Reînnoiri fără rândul mărcii în lista buletinului (alt nr. de marcă cu aceeași expirare — ex. PPC a
+       primit reînnoirea mărcii 116091 GETUSA) → notă, expirarea se recalculează.
+    3) „Mărcile” R2–R5: rânduri „3R014645” citite odinioară ca marca nr. 3 — reînnoirile adunate acolo se scot."""
+    from ingest import _current_rep, _recompute_holder, expiry_of
+    from sqlalchemy import or_
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        real = set()
+        for app, reg, label in db.query(MarkChange.app_number, MarkChange.reg_number, MarkChange.label)\
+                .filter(MarkChange.kind == "renewal"):
+            if app:
+                real.add((label, app))
+            if reg:
+                real.add((label, "#" + reg.lstrip("0")))
+        lab = re.compile(r"^BOPI \d{2}/\d{4}$")
+        REJ = "Cereri de marcă respinse"
+        n = {"rej_true": 0, "rej_false": 0, "decision": 0, "renew": 0, "stubs": 0}
+
+        def unconfirmed(m, e):
+            return (e.get("chapter") == "Reînnoire" and lab.match(e.get("bopi") or "") and e.get("expiry")
+                    and (e["bopi"], m.app_number) not in real
+                    and (e["bopi"], "#" + (m.reg_number or "").lstrip("0")) not in real)
+
+        def after_reg(m, e):
+            d = m.reg_date or min((x["date"] for x in (m.events or []) if x.get("chapter") == "Mărci înregistrate"),
+                                  default="")
+            return e.get("chapter") == REJ and d and (e.get("date") or "") > d
+
+        apps = _REJ_TRUE | _REJ_FALSE | set(_REJ_DECISION)
+        for m in db.query(Mark).filter(Mark.app_number.in_(sorted(apps))):
+            evs, out = m.events or [], []
+            hit = [e for e in evs if after_reg(m, e)]
+            if not hit:
+                continue
+            last = max(hit, key=lambda e: e["date"])
+            for e in evs:
+                if e in hit:
+                    if m.app_number in _REJ_FALSE:
+                        continue
+                    if m.app_number in _REJ_DECISION:
+                        e = dict(e, chapter=_REJ_DECISION[m.app_number][0])
+                    else:
+                        e = dict(e, detail="respinsă după înregistrare, în urma deciziei comisiei de opoziții / "
+                                           "contestații sau a instanței")
+                out.append(e)
+            m.events = out
+            if m.app_number in _REJ_TRUE:
+                m.status, m.status_date, m.expiry_date = "Respinsă", last["date"], ""
+                n["rej_true"] += 1
+            elif m.app_number in _REJ_DECISION:
+                st = _REJ_DECISION[m.app_number][1]
+                if st:
+                    m.status, m.status_date, m.expiry_date = st, last["date"], ""
+                n["decision"] += 1
+            else:
+                if m.status == "Respinsă" and m.reg_number:          # CORIOLAN, M 2021 04437
+                    m.status, m.status_date = "Înregistrată", m.reg_date or m.status_date
+                    m.expiry_date = expiry_of(m)
+                n["rej_false"] += 1
+        db.commit()
+
+        stubs = {"R2", "R3", "R4", "R5"}
+        for m in db.query(Mark).filter(Mark.app_number.in_(sorted(stubs))):
+            m.events = [e for e in (m.events or []) if not unconfirmed(m, e)]
+            if not m.name and not m.events:
+                db.delete(m)
+            else:
+                m.expiry_date = expiry_of(m)
+            n["stubs"] += 1
+        db.commit()
+
+        found = []
+        for (app, evs, reg) in db.query(Mark.app_number, Mark.events, Mark.reg_number).yield_per(5000):
+            class _M:
+                pass
+            mm = _M(); mm.app_number, mm.reg_number = app, reg
+            if app not in stubs and any(unconfirmed(mm, e) for e in (evs or [])):
+                found.append(app)
+        if len(found) <= 200:
+            for m in db.query(Mark).filter(Mark.app_number.in_(found)):
+                fixed = []
+                for e in m.events or []:
+                    if unconfirmed(m, e):
+                        x = e["expiry"]
+                        e = {"date": e["date"], "bopi": e["bopi"], "chapter": "Notă",
+                             "detail": f"reînnoirea până la {x[8:10]}.{x[5:7]}.{x[:4]} din acest buletin e a altei mărci "
+                                       f"(nr. {m.reg_number or '?'} nu apare în lista de reînnoiri)"}
+                        n["renew"] += 1
+                    fixed.append(e)
+                m.events = fixed
+                m.expiry_date = expiry_of(m)
+                _recompute_holder(m)
+                _current_rep(m)
+            db.commit()
+        else:
+            print(f"[DB] v4: {len(found)} reînnoiri neconfirmate — peste prag, neatinse")
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=sum(n.values()),
+                          label="verificare respingeri / reînnoiri v4: " + ", ".join(f"{k} {v}" for k, v in n.items())))
+        db.commit()
+        print(f"[DB] Verificare respingeri / reînnoiri v4: {n}")
+    finally:
+        db.close()
+
+
 def _fix_refused_registered(marker: str = "migration:fix-refused-registered"):
     """O singură dată (22.11.2026): fișe vechi completate din TMview cu „Application refused / withdrawn”
     rămase „Înregistrată” (starea generică „Ended” din căutare) — devin Respinsă / Retrasă, fără expirare."""
@@ -1820,7 +1953,7 @@ def init_db():
                                            # încă o trecere: listele rescrise între timp din TMview (21.11)
                                            _clean_goods_v2("migration:clean-goods-v5"),
                                            _clean_goods_v2("migration:clean-goods-v6"),
-                                           _fix_refused_registered(), _fix_old_late_label(), _drop_expiring_renewals_v3(), _ocr_fixes_2018(), _ocr_fixes_2018("migration:ocr-fixes-2018b"),
+                                           _fix_refused_registered(), _fix_old_late_label(), _drop_expiring_renewals_v3(), _fix_rejected_renewals_v4(), _ocr_fixes_2018(), _ocr_fixes_2018("migration:ocr-fixes-2018b"),
                                            _clean_goods_v2("migration:clean-goods-v7"),
                                            # spațiu după virgulă, cuvinte lipite despărțite (21.11)
                                            _clean_goods_v2("migration:clean-goods-v8"),
