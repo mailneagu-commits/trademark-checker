@@ -641,6 +641,48 @@ def _odd_name(n: str) -> str:
     return ""
 
 
+@app.get("/api/quality-events")
+def quality_events(n: int = 30, db: Session = Depends(get_db)):
+    """Doar citire: mențiuni din istoric probabil false, din tabelul „mărci care urmează să expire”
+    citit greșit înainte (ex. M 2008 01100, BOPI 10/2017): „respinsă” după înregistrare și
+    reînnoiri cu expirare fără rând în listele de reînnoiri ale buletinului."""
+    from collections import Counter
+    real = set()
+    for app_no, reg, label in db.query(MarkChange.app_number, MarkChange.reg_number, MarkChange.label)\
+            .filter(MarkChange.kind == "renewal"):
+        if app_no:
+            real.add((label, app_no))
+        if reg:
+            real.add((label, "#" + reg.lstrip("0")))
+    lab = re.compile(r"^BOPI \d{2}/\d{4}")
+    rej, ren, rej_by, ren_by, pat = 0, 0, Counter(), Counter(), Counter()
+    both, ex_rej, ex_ren = 0, [], []
+    for m in db.query(Mark).yield_per(5000):
+        evs = m.events or []
+        reg_d = m.reg_date or min((e["date"] for e in evs if e.get("chapter") == "Mărci înregistrate"), default="")
+        r1 = [e for e in evs if e.get("chapter") == "Cereri de marcă respinse" and reg_d and e.get("date", "") > reg_d]
+        r2 = [e for e in evs if e.get("chapter") == "Reînnoire" and e.get("expiry") and lab.match(e.get("bopi") or "")
+              and (e["bopi"], m.app_number) not in real and (e["bopi"], "#" + (m.reg_number or "").lstrip("0")) not in real]
+        for e in r1:
+            rej += 1; rej_by[e["bopi"]] += 1
+        for e in r2:
+            ren += 1; ren_by[e["bopi"]] += 1
+            old = str(int(e["expiry"][:4]) - 10) + e["expiry"][4:]
+            # tiparul tabelului „urmează să expire”: vechea expirare la 0–8 luni după buletin
+            pat["expiring_pattern" if e["date"] < old <= str(int(e["date"][:4]) + 1) + e["date"][4:] else "other"] += 1
+        if r1 and r2:
+            both += 1
+        if r1 and len(ex_rej) < n:
+            ex_rej.append({"app": m.app_number, "name": m.name, "bopi": r1[0]["bopi"], "reg_date": reg_d,
+                           "status": m.status, "tm": m.tm_status, "expiry": m.expiry_date})
+        if r2 and len(ex_ren) < n:
+            ex_ren.append({"app": m.app_number, "name": m.name, "bopi": r2[0]["bopi"], "ev_expiry": r2[0]["expiry"],
+                           "tm": m.tm_status, "tm_date": m.tm_status_date, "expiry": m.expiry_date})
+    return {"rejected_after_reg": rej, "rejected_by_bopi": dict(rej_by.most_common(40)),
+            "renewals_unconfirmed": ren, "renewals_by_bopi": dict(ren_by.most_common(40)), "renewal_pattern": dict(pat),
+            "marks_with_both": both, "ex_rejected": ex_rej, "ex_renewals": ex_ren}
+
+
 @app.get("/api/quality-names")
 def quality_names(db: Session = Depends(get_db)):
     """Toate denumirile care par citite greșit (font cu codificare proprie, coduri cid)."""
