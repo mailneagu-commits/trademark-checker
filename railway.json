@@ -5,9 +5,9 @@
     "buildCommand": "pip install -r backend/requirements.txt"
   },
   "deploy": {
-    "startCommand": "uvicorn app:app --host 0.0.0.0 --port $PORT",
+    "startCommand": "bash deploy/start-web.sh",
     "healthcheckPath": "/api/session-status",
     "healthcheckTimeout": 30,
-    "restartPolicyType": "ON_FAILURE"
+    "restartPolicyType": "ALWAYS"
   }
 }

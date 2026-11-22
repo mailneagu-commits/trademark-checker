@@ -1,0 +1,3 @@
+basicauth {
+	protectmark {$BASIC_AUTH_HASH}
+}

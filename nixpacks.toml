@@ -1,0 +1,3 @@
+# Serviciul „web” (rădăcina repo-ului): Caddy pentru parola din fața aplicației (deploy/Caddyfile).
+[phases.setup]
+nixPkgs = ["...", "caddy"]
