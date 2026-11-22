@@ -1737,8 +1737,14 @@ def _create_skel(db, num: str, t: Dict) -> Optional[Mark]:
 
 def _finish_skel(m: Mark, d: Dict, a: str, db) -> None:
     """Fișa scheletică (marcă veche intrată doar cu datele de bază) completată din fișa TMview `d`."""
-    if not m.status:
-        m.status = _old_status(d.get("markCurrentStatusCode") or "")
+    code = d.get("markCurrentStatusCode") or ""
+    if not m.status or (code and code.strip().lower() != "ended"):
+        # Fișa dă starea exactă; cea din căutare („Ended”) e generică și intrase ca „Înregistrată”
+        # (KARTEZIAN M 2003 05228: „Ended” în căutare, „Application refused” în fișă).
+        m.status = _old_status(code)
+    if m.status != "Înregistrată":
+        m.reg_number, m.expiry_date = "", ""
+        m.status_date = (d.get("markCurrentStatusDate") or "")[:10]
     if not m.reg_number and m.status == "Înregistrată":
         m.reg_number = re.sub(r"\D", "", str(d.get("registrationNumber") or "")).lstrip("0")
     m.status_date = m.status_date or (d.get("registrationDate") or d.get("publicationDate") or "")[:10]

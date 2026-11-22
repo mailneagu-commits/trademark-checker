@@ -1643,6 +1643,32 @@ def _ocr_fixes_2018(marker: str = "migration:ocr-fixes-2018"):
         db.close()
 
 
+def _fix_refused_registered(marker: str = "migration:fix-refused-registered"):
+    """O singură dată (22.11.2026): fișe vechi completate din TMview cu „Application refused / withdrawn”
+    rămase „Înregistrată” (starea generică „Ended” din căutare) — devin Respinsă / Retrasă, fără expirare."""
+    import ingest
+    from sqlalchemy import or_
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        q = db.query(Mark).filter(Mark.status == "Înregistrată", or_(Mark.reg_number.is_(None), Mark.reg_number == ""),
+                                  or_(Mark.tm_status.ilike("%refus%"), Mark.tm_status.ilike("%reject%"),
+                                      Mark.tm_status.ilike("%withdraw%")))
+        for m in q:
+            m.status = ingest._old_status(m.tm_status)
+            m.expiry_date = ""
+            m.status_date = m.tm_status_date or m.status_date
+            n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=n,
+                          label=f"cereri respinse/retrase marcate greșit „Înregistrată”: {n}"))
+        db.commit()
+        print(f"[DB] Respinse/retrase corectate: {n}")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _ensure_columns()
@@ -1681,7 +1707,7 @@ def init_db():
                                            # încă o trecere: listele rescrise între timp din TMview (21.11)
                                            _clean_goods_v2("migration:clean-goods-v5"),
                                            _clean_goods_v2("migration:clean-goods-v6"),
-                                           _ocr_fixes_2018(), _ocr_fixes_2018("migration:ocr-fixes-2018b"),
+                                           _fix_refused_registered(), _ocr_fixes_2018(), _ocr_fixes_2018("migration:ocr-fixes-2018b"),
                                            _clean_goods_v2("migration:clean-goods-v7"),
                                            # spațiu după virgulă, cuvinte lipite despărțite (21.11)
                                            _clean_goods_v2("migration:clean-goods-v8"),
