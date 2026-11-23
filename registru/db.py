@@ -768,6 +768,36 @@ def _reread_cid_changes():
         db.close()
 
 
+# Verificate în TMview (23.11.2026): reînnoite, dar reînnoirea lipsește din listele BOPI citite —
+# marca apărea „Expirată” după corectarea tabelului „urmează să expire” (v3).
+_TM_RENEWED_1123 = {"M201104462": "2031-06-15", "M201104601": "2031-07-08", "M201305447": "2033-07-31",
+                    "M201105133": "2031-08-02", "M200612305": "2026-11-03", "M200613766": "2026-12-08",
+                    "M200710333": "2027-11-08", "M200710334": "2027-11-08", "M200710335": "2027-11-08"}
+
+
+def _tmview_renewals_1123(marker: str = "migration:tmview-renewals-1123"):
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for app, exp in _TM_RENEWED_1123.items():
+            m = db.get(Mark, app)
+            if m is None or m.status != "Înregistrată" or (m.expiry_date or "") >= exp:
+                continue
+            m.events = sorted((m.events or []) + [{"date": "2026-11-23", "bopi": "TMview", "chapter": "Reînnoire",
+                              "detail": f"valabilă până la {exp[8:10]}.{exp[5:7]}.{exp[:4]} (din TMview; "
+                                        "reînnoirea nu apare în listele BOPI citite)", "expiry": exp}],
+                              key=lambda e: e["date"])
+            m.expiry_date = exp
+            n += 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", marks=n, label=f"reînnoiri din TMview 23.11: {n}"))
+        db.commit()
+        print(f"[DB] Reînnoiri confirmate în TMview: {n}")
+    finally:
+        db.close()
+
+
 def _reread_changes_2020():
     """BOPI 01/2020 și 08/2020: tabelele de modificări și reînnoiri au fontul fără tabel de caractere doar
     la final (căutat înainte numai în primele 15 pagini) — citite cu 15 / 0 rânduri în loc de ~320 / ~420.
@@ -1961,6 +1991,7 @@ def init_db():
     _relabel_0907()
     _reread_0111()
     _reread_changes_2020()
+    _tmview_renewals_1123()
     _clean_garbled_tails()
     _reread_forms_2010()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
