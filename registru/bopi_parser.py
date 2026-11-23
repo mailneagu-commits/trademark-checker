@@ -453,7 +453,10 @@ def _prepare_fonts(pdf) -> None:
     completează ce lipsește."""
     import cidfix
     cidfix.FIX.clear()
-    for page in pdf.pages[1:15]:
+    # BOPI 01/2020, 08/2020: doar capitolele de la final (modificări, reînnoiri) au fontul fără tabel —
+    # se caută în primele pagini și apoi din 10 în 10 pagini.
+    pages = list(pdf.pages[1:15]) + list(pdf.pages[15::10])
+    for page in pages:
         n = sum(1 for c in page.chars if c["text"].startswith("(cid:"))
         page.flush_cache()
         if n > 100:
@@ -800,6 +803,11 @@ def parse_changes(path: str) -> Iterator[Dict]:
                 if RE_TITLE.match(line.strip()):
                     title = line.strip()
                     break
+            if "URMEAZ" in title.upper() and "EXPIR" in title.upper():
+                # „Tabel al mărcilor ce urmează să expire” cu pagina de titlu necitibilă (BOPI 08/2020) —
+                # nu sunt reînnoiri.
+                page.flush_cache()
+                continue
             if "LIMIT" in title.upper() or RE_LIM_HEAD.search(full):
                 lim_text.append(_clean_lines(full))
             for table in clean.extract_tables():

@@ -768,6 +768,26 @@ def _reread_cid_changes():
         db.close()
 
 
+def _reread_changes_2020():
+    """BOPI 01/2020 și 08/2020: tabelele de modificări și reînnoiri au fontul fără tabel de caractere doar
+    la final (căutat înainte numai în primele 15 pagini) — citite cu 15 / 0 rânduri în loc de ~320 / ~420.
+    Se recitesc o dată (23.11.2026) cu recunoașterea literelor după formă."""
+    marker = "migration:reread-changes-2020-v1"
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, marker):
+            return
+        n = 0
+        for s in db.query(SourceFile).filter(SourceFile.kind == "changes",
+                                             SourceFile.label.in_(["BOPI 01/2020", "BOPI 08/2020"])):
+            s.status, n = "error", n + 1
+        db.add(SourceFile(url=marker, kind="migration", status="ok", label="recitire modificări 01+08/2020"))
+        db.commit()
+        print(f"[DB] Tabele de modificări 2020 de recitit: {n}")
+    finally:
+        db.close()
+
+
 def _reread_empty_changes():
     """Tabelele de modificări 2002–2009 (titlul capitolului urmat de text pe aceeași pagină, reînnoiri
     „2R013986”) citite cu 0 rânduri: se recitesc cu parserul corectat."""
@@ -1940,6 +1960,7 @@ def init_db():
     _fix_disclaimer_names()
     _relabel_0907()
     _reread_0111()
+    _reread_changes_2020()
     _clean_garbled_tails()
     _reread_forms_2010()
     # Trece prin toate mărcile (minute întregi) — în fundal, ca site-ul să pornească imediat.
