@@ -642,11 +642,13 @@ def _odd_name(n: str) -> str:
 
 
 @app.get("/api/quality-events")
-def quality_events(n: int = 30, db: Session = Depends(get_db)):
+def quality_events(n: int = 30, expiring: int = 0, db: Session = Depends(get_db)):
     """Doar citire: mențiuni din istoric probabil false, din tabelul „mărci care urmează să expire”
     citit greșit înainte (ex. M 2008 01100, BOPI 10/2017): „respinsă” după înregistrare și
     reînnoiri cu expirare fără rând în listele de reînnoiri ale buletinului."""
     from collections import Counter
+    if expiring:
+        return _quality_expiring(n, db)
     real = set()
     for app_no, reg, label in db.query(MarkChange.app_number, MarkChange.reg_number, MarkChange.label)\
             .filter(MarkChange.kind == "renewal"):
@@ -681,6 +683,43 @@ def quality_events(n: int = 30, db: Session = Depends(get_db)):
     return {"rejected_after_reg": rej, "rejected_by_bopi": dict(rej_by.most_common(40)),
             "renewals_unconfirmed": ren, "renewals_by_bopi": dict(ren_by.most_common(40)), "renewal_pattern": dict(pat),
             "marks_with_both": both, "ex_rejected": ex_rej, "ex_renewals": ex_ren}
+
+
+def _quality_expiring(n: int, db: Session):
+    """Doar citire: mărcile cu mențiunea „În tabelul mărcilor care urmează să expire” (fostele reînnoiri
+    false, corectate în v3) — starea afișată acum, comparată cu TMview, și dacă lista de reînnoiri a
+    buletinului respectiv a fost citită (rânduri MarkChange)."""
+    from collections import Counter
+    ren_rows = Counter(l for (l,) in db.query(MarkChange.label).filter(MarkChange.kind == "renewal"))
+    chap = "În tabelul mărcilor care urmează să expire"
+    total, by_status, cross, by_bopi, renewed_later = 0, Counter(), Counter(), Counter(), 0
+    sus = []
+    for m in db.query(Mark).yield_per(5000):
+        evs = m.events or []
+        ex = [e for e in evs if e.get("chapter") == chap]
+        if not ex:
+            continue
+        total += 1
+        st = _status(m)
+        by_status[st] += 1
+        for e in ex:
+            by_bopi[e.get("bopi") or ""] += 1
+        tm = (m.tm_status or "").lower()
+        tmc = "fără TMview" if not tm else "Registered" if tm.startswith("registered") else \
+            "Expired" if "expired" in tm else "renewal" if "renew" in tm else tm[:30]
+        cross[f"{st} | {tmc}"] += 1
+        last = max(e.get("date") or "" for e in ex)
+        if any(e.get("chapter") == "Reînnoire" and (e.get("date") or "") >= last for e in evs):
+            renewed_later += 1
+        if st in ("Expirată", RENEW_MAYBE) and tmc == "Registered" and len(sus) < n:
+            sus.append({"app": m.app_number, "reg": m.reg_number, "name": m.name, "expiry": m.expiry_date,
+                        "tm": m.tm_status, "tm_date": m.tm_status_date, "bopi": [e.get("bopi") for e in ex]})
+    bops = sorted(by_bopi, key=lambda b: (b[-4:], b[5:7]))
+    return {"marks": total, "by_status": dict(by_status.most_common()), "status_x_tmview": dict(cross.most_common(30)),
+            "with_later_renewal": renewed_later,
+            "by_bopi": {b: {"in_expiring_table": by_bopi[b], "renewal_rows_read": ren_rows.get(b, 0)} for b in bops},
+            "renewal_rows_by_bopi": dict(sorted(ren_rows.items(), key=lambda kv: (kv[0][-4:], kv[0][5:7]))),
+            "expired_but_tmview_registered": sus}
 
 
 @app.get("/api/quality-names")
