@@ -1057,6 +1057,28 @@ def _missing_pending() -> bool:
     return v
 
 
+_oldwork: Dict = {"at": None, "v": True}
+
+
+def _old_work_pending() -> bool:
+    """Ordinea prezentată userului (24.11.2026): după importul 2002–2010, întâi verificarea mărcilor
+    expirate din tabelul „urmează să expire”, apoi fișele scheletice, abia apoi starea cererilor
+    2010–2021 — toate prin enrich_old, una după alta, fără ca enrich_status să ocupe TMview între timp."""
+    now = datetime.utcnow()
+    if _oldwork["at"] and now - _oldwork["at"] < timedelta(minutes=10):
+        return _oldwork["v"]
+    if exp_job.get("left") == 0:
+        db = SessionLocal()
+        try:
+            v = db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|skel%")).first() is not None
+        finally:
+            db.close()
+    else:
+        v = True
+    _oldwork.update(at=now, v=v)
+    return v
+
+
 def _weekend() -> bool:
     """Sâmbăta și duminica nu rulează monitorizarea ProMonitor — ProWatch poate lua mai mult din TMview."""
     from zoneinfo import ZoneInfo
@@ -1178,6 +1200,8 @@ def enrich_status(limit: int = 150) -> None:
         return
     if _missing_pending():
         return                                    # întâi toate mărcile lipsă, apoi starea cererilor
+    if _old_work_pending():
+        return                                    # apoi mărcile expirate + fișele scheletice (24.11)
     for _ in range(40):                           # golurile / denumirile din TMview termină întâi
         if not old_job["running"]:
             break
