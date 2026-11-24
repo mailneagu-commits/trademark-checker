@@ -2057,6 +2057,86 @@ def _fill_names(limit: int = 100) -> None:
             db.close()
 
 
+_EXP_CHAP = "În tabelul mărcilor care urmează să expire"
+exp_job: Dict = {"running": False, "done": 0, "renewed": 0, "left": None, "last": None}
+
+
+def _check_expiring_tmview(limit: int = 100) -> bool:
+    """O singură trecere (acceptată de user 23.11.2026): mărcile din tabelul „urmează să expire”, acum
+    expirate, verificate în TMview — BOPI nu publică toate reînnoirile (ex. LIBERTATEA, CHE&CICO).
+    Reînnoirea din TMview (expirare mai nouă, „Registered”) se adaugă în istoric. Secvențial, câte o fișă,
+    3 s între ele. Întoarce True cât mai sunt mărci de verificat (completarea fișelor așteaptă)."""
+    import time as _t
+    from sqlalchemy import String, or_
+    today = date.today().isoformat()
+    db = SessionLocal()
+    try:
+        cand = db.query(Mark.app_number).filter(
+            Mark.status == "Înregistrată", Mark.expiry_date < today, Mark.expiry_date != "",
+            # JSON-ul e salvat cu diacriticele ca \\u…: se caută doar partea ASCII a mențiunii.
+            Mark.events.cast(String).like("%care urmeaz%expire%"),
+            or_(Mark.tmview_checked.is_(None), ~Mark.tmview_checked.like("%|exp1%")))
+        exp_job["left"] = cand.count()
+        todo = [a for (a,) in cand.limit(limit)]
+    finally:
+        db.close()
+    if not todo:
+        return False
+    exp_job.update(running=True, last=datetime.utcnow().isoformat() + "Z")
+    fails = 0
+    try:
+        for app in todo:
+            if _tmview_paused():
+                break
+            db = SessionLocal()
+            try:
+                m = db.get(Mark, app)
+                st13 = _st13_of(m) if m else ""
+            finally:
+                db.close()
+            d = None
+            if st13:
+                try:
+                    r = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": st13}, timeout=60)
+                    d = r.json() if r.status_code == 200 else None
+                except Exception:
+                    d = None
+            if not isinstance(d, dict) or "error" in d:
+                fails += 1
+                if fails >= 3:
+                    _tmview_backoff()
+                    break
+                _t.sleep(3)
+                continue
+            fails = 0
+            db = SessionLocal()
+            try:
+                m = db.get(Mark, app)
+                exp = (d.get("expiryDate") or "")[:10]
+                st = d.get("markCurrentStatusCode") or ""
+                if d and st:
+                    if not m.tm_status:
+                        m.tm_status, m.tm_status_date = st, (d.get("markCurrentStatusDate") or "")[:10]
+                    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", exp) and exp > (m.expiry_date or "") and \
+                            st.lower().startswith("regist"):
+                        m.events = sorted((m.events or []) + [{"date": today, "bopi": "TMview", "chapter": "Reînnoire",
+                                          "detail": f"valabilă până la {exp[8:10]}.{exp[5:7]}.{exp[:4]} (din TMview; "
+                                                    "reînnoirea nu apare în listele BOPI citite)", "expiry": exp}],
+                                          key=lambda e: e["date"])
+                        m.expiry_date = exp
+                        exp_job["renewed"] += 1
+                        print(f"[EXP] {app}: reînnoită în TMview până la {exp}")
+                m.tmview_checked = (m.tmview_checked or "") + "|exp1"
+                db.commit()
+                exp_job["done"] += 1
+            finally:
+                db.close()
+            _t.sleep(3)
+    finally:
+        exp_job["running"] = False
+    return True
+
+
 def enrich_old(batches: int = 8) -> None:
     """Treptat, toate numerele vechi de depozit (loturi de 25 în căutarea TMview, apoi fișa fiecărei
     mărci găsite). Cursorul se păstrează în baza de date — reluarea continuă de unde a rămas."""
@@ -2086,7 +2166,10 @@ def enrich_old(batches: int = 8) -> None:
         fill_reg_gaps()
         _fill_names()
         if start > OLD_END:
-            # Toate mărcile sunt în bază cu datele de bază — acum fișele complete.
+            # Întâi verificarea mărcilor expirate din tabelul „urmează să expire” (o singură trecere),
+            # apoi fișele complete — una după alta, nu în paralel.
+            if _check_expiring_tmview(200 if _weekend() else 100):
+                return
             _complete_skels(300 if _weekend() else 150)
             return
         fails = 0
