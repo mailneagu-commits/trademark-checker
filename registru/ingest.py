@@ -2103,6 +2103,14 @@ def _check_expiring_tmview(limit: int = 100) -> bool:
             or_(Mark.tmview_checked.is_(None), ~Mark.tmview_checked.like("%|exp1%")))
         exp_job["left"] = cand.count()
         exp_job["checked_total"] = db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|exp1%")).count()
+        from sqlalchemy import func as _f
+        _yr = _f.substr(Mark.app_number, 1, 5)              # „M2006” etc.
+        exp_job["left_by_year"] = dict(db.query(_yr, _f.count()).filter(cand.whereclause).group_by(_yr).order_by(_yr).all())
+        exp_job["checked_by_year"] = dict(db.query(_yr, _f.count()).filter(
+            Mark.tmview_checked.like("%|exp1%"), Mark.events.cast(String).like("%care urmeaz%expire%"))
+            .group_by(_yr).order_by(_yr).all())
+        exp_job["left_first"], exp_job["left_last"] = db.query(_f.min(Mark.app_number), _f.max(Mark.app_number)) \
+            .filter(cand.whereclause).one()
         if not exp_job.get("seeded"):          # după un restart: reînnoirile găsite deja, din baza de date
             exp_job["seeded"] = True
             for a, nm, ex in db.query(Mark.app_number, Mark.name, Mark.expiry_date).filter(
