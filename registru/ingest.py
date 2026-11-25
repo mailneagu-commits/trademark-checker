@@ -2082,7 +2082,8 @@ def _fill_names(limit: int = 100) -> None:
 
 
 _EXP_CHAP = "În tabelul mărcilor care urmează să expire"
-exp_job: Dict = {"running": False, "done": 0, "renewed": 0, "left": None, "last": None}
+exp_job: Dict = {"running": False, "done": 0, "renewed": 0, "left": None, "last": None, "current": "",
+                 "current_name": "", "renewed_marks": []}
 
 
 def _check_expiring_tmview(limit: int = 100) -> bool:
@@ -2101,7 +2102,15 @@ def _check_expiring_tmview(limit: int = 100) -> bool:
             Mark.events.cast(String).like("%care urmeaz%expire%"),
             or_(Mark.tmview_checked.is_(None), ~Mark.tmview_checked.like("%|exp1%")))
         exp_job["left"] = cand.count()
-        todo = [a for (a,) in cand.limit(limit)]
+        exp_job["checked_total"] = db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|exp1%")).count()
+        if not exp_job.get("seeded"):          # după un restart: reînnoirile găsite deja, din baza de date
+            exp_job["seeded"] = True
+            for a, nm, ex in db.query(Mark.app_number, Mark.name, Mark.expiry_date).filter(
+                    Mark.tmview_checked.like("%|exp1%"),
+                    Mark.events.cast(String).like("%nu apare %listele BOPI citite%")).order_by(Mark.app_number):
+                exp_job["renewed_marks"].append(f"{a} {nm or ''} → {ex}")
+            exp_job["renewed_marks"] = exp_job["renewed_marks"][-50:]
+        todo = [a for (a,) in cand.order_by(Mark.app_number).limit(limit)]
     finally:
         db.close()
     if not todo:
@@ -2116,6 +2125,7 @@ def _check_expiring_tmview(limit: int = 100) -> bool:
             try:
                 m = db.get(Mark, app)
                 st13 = _st13_of(m) if m else ""
+                exp_job["current"], exp_job["current_name"] = app, (m.name or "") if m else ""
             finally:
                 db.close()
             d = None
@@ -2149,6 +2159,7 @@ def _check_expiring_tmview(limit: int = 100) -> bool:
                                           key=lambda e: e["date"])
                         m.expiry_date = exp
                         exp_job["renewed"] += 1
+                        exp_job["renewed_marks"] = (exp_job["renewed_marks"] + [f"{app} {m.name or ''} → {exp}"])[-50:]
                         print(f"[EXP] {app}: reînnoită în TMview până la {exp}")
                 m.tmview_checked = (m.tmview_checked or "") + "|exp1"
                 db.commit()
