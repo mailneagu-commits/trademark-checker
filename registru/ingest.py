@@ -1812,13 +1812,19 @@ SKEL_CHUNK = 10      # fișe per sesiune TMview (/api/tm-detail-batch în aplica
 SKEL_PAUSE = 3.0     # secunde între fișe: mai încet, dar fără blocări Imperva (20.11: la 1 s bloca des)
 
 
-def _complete_skels(limit: int = 150) -> int:
+# Fișe scheletice cerute de user în afara cozii — completate la prima rulare enrich_old, înaintea restului.
+SKEL_NOW = ["042288"]       # 26.11.2026: EXPERT GSM
+
+
+def _complete_skels(limit: int = 150, only: Optional[List[str]] = None) -> int:
     """Mărcile intrate cu datele de bază: fișa TMview completă (produse, mandatar, logo, date exacte)."""
     import time as _t
     db = SessionLocal()
     try:
-        todo = [a for (a,) in db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|skel%")).limit(limit)]
-        if len(todo) < limit:          # la final, încă o încercare pentru cele amânate (fără fișă TMview)
+        q = db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|sk%"))
+        todo = [a for (a,) in (q.filter(Mark.app_number.in_(only)) if only else
+                               q.filter(Mark.tmview_checked.like("%|skel%"))).limit(limit)]
+        if not only and len(todo) < limit:          # la final, încă o încercare pentru cele amânate (fără fișă TMview)
             todo += [a for (a,) in db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|skx%"))
                      .limit(limit - len(todo))]
     finally:
@@ -2226,6 +2232,8 @@ def enrich_old(batches: int = 8) -> None:
         finally:
             db.close()
         old_job["next"] = start
+        if SKEL_NOW:
+            _complete_skels(len(SKEL_NOW), only=SKEL_NOW)
         # Golurile din numerotare întâi: aduc mărci înregistrate lipsă (cele mai utile), apoi denumirile.
         fill_reg_gaps()
         _fill_names()
