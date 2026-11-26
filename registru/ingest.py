@@ -1345,6 +1345,32 @@ def _goods_vocab():
     return _VOCAB["v"]
 
 
+def _no_rep(name: str) -> bool:
+    """TMview pune „NEDESEMNAT” (adresa „*****”) când marca nu are mandatar — nu e un nume (ex. 042288)."""
+    t = re.sub(r"[^A-Z*]", "", (name or "").upper())
+    return not t.strip("*") or t.startswith("NEDESEMNAT") or t.startswith("NONE")
+
+
+def clean_no_rep() -> int:
+    """O singură dată: mandatarul „NEDESEMNAT” preluat din TMview înainte de 26.11.2026 devine gol."""
+    db = SessionLocal()
+    try:
+        key = "migration:no-rep-v1"
+        if db.get(SourceFile, key) is not None:
+            return 0
+        n = 0
+        for m in db.query(Mark).filter(Mark.representative.ilike("%nedesemnat%")):
+            if _no_rep(m.representative):
+                m.representative, m.rep_norm, m.representative_address = "", "", ""
+                n += 1
+        db.add(SourceFile(url=key, kind="migration", status="ok", label=f"mandatar NEDESEMNAT golit: {n}"))
+        db.commit()
+        print(f"[MIG] mandatar NEDESEMNAT golit la {n} mărci")
+        return n
+    finally:
+        db.close()
+
+
 def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
     """Fișa TMview aplicată unei mărci: produse (unde lipsesc / BOPI dă doar titlul clasei), adresă,
     date, tip, Viena, reprezentant, stare. Întoarce True dacă s-au completat produse."""
@@ -1413,7 +1439,7 @@ def _apply_detail(m: Mark, d: Dict, app: str, tc: str, db=None) -> bool:
     if not m.vienna and d.get("viennaCodes"):
         m.vienna = ", ".join(str(v) for v in d["viennaCodes"])
     r0 = (d.get("representatives") or [{}])[0]
-    if not m.representative and r0.get("fullName"):
+    if not m.representative and r0.get("fullName") and not _no_rep(r0["fullName"]):
         m.representative = r0["fullName"].strip()
         m.rep_norm = norm(m.representative)
         m.representative_address = ", ".join(p for p in [m.representative, (r0.get("fullAddress") or "").replace("\n", ", ")] if p)

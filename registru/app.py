@@ -56,6 +56,10 @@ def _startup():
                           run_date=_dt.now(_Z("Europe/Bucharest")) + _td(minutes=3))
     finally:
         _s.close()
+    from datetime import datetime as _dt2, timedelta as _td2
+    from zoneinfo import ZoneInfo as _Z2
+    sched.add_job(ingest.clean_no_rep, "date", id="clean_no_rep", misfire_grace_time=3600,
+                  run_date=_dt2.now(_Z2("Europe/Bucharest")) + _td2(minutes=2))
     import mailer
     sched.add_job(mailer.keepalive, "cron", day_of_week="mon", hour=9, id="brevo_keepalive")
     # Denumirile mărcilor reînnoite vechi, din TMview — la 20 de minute, în paralel cu încărcarea.
