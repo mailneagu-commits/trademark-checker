@@ -149,11 +149,20 @@ function repAxis(m) {
   // Mandatarul actual din TMview / registru, când documentele BOPI citite nu îl numesc (ex. Lektor L).
   const lastSeg = segs[segs.length - 1];
   if (segs.length && m.representative && !same(lastSeg.rep, m.representative))
-    // Data înscrierii nu e publicată în BOPI și TMview nu o dă (tm_status_date e data stării mărcii, nu a
-    // mandatarului — ex. leche M 2022 01856: PROTECTMARK apărea la 19.09.2022). Se arată doar „după” ultimul
-    // document BOPI care numea alt reprezentant sau niciunul.
-    segs.push({ rep: m.representative, ev: { date: "", after: lastSeg.ev.date || "", chapter: "Reprezentant actual",
-                bopi: "registrul OSIM (TMview) — data înscrierii nu apare în buletinele BOPI" } });
+  {
+    // TMview nu dă data înscrierii mandatarului (tm_status_date e data stării mărcii — ex. leche M 2022 01856:
+    // PROTECTMARK apărea la 19.09.2022).
+    // Regula userului (26.11.2026): mandatarul nou intră odată cu ultima cesiune / schimbare de titular de după
+    // acel document — tabelele de cesiuni din BOPI nu au coloană de mandatar.
+    const after = lastSeg.ev.date || "";
+    const own = (m.events || []).filter(e => /Cesiune|Fuziune|Modificare titular/i.test(e.chapter || "") && (e.date || "") > after)
+      .sort((a, b) => (a.date || "").localeCompare(b.date || "")).pop();
+    segs.push({ rep: m.representative, ev: own
+      ? { date: own.date, chapter: "Reprezentant actual — odată cu " + own.chapter.toLowerCase(),
+          bopi: own.bopi + " (mandatarul din registrul OSIM / TMview)" }
+      : { date: "", after, chapter: "Reprezentant actual",
+          bopi: "registrul OSIM (TMview) — data înscrierii nu apare în buletinele BOPI" } });   // fără cesiune: doar „după”
+  }
   if (!segs.length) return "";
   const nm = r => r ? r : "fără reprezentant";
   // Același format ca „Istoricul mărcii”: data pe axă, documentul BOPI, schimbarea veche → nouă.
