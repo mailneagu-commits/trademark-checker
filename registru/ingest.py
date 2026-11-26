@@ -1060,23 +1060,44 @@ def _missing_pending() -> bool:
 _oldwork: Dict = {"at": None, "v": True}
 
 
+def _status_first_left(db) -> int:
+    """Cererile publicate / admise (M…) a căror stare din TMview n-a fost verificată niciodată."""
+    return db.query(Mark.app_number).filter(
+        Mark.status.in_(["Cerere publicată", "Admisă la înregistrare"]), Mark.app_number.like("M%"),
+        Mark.tm_status_checked.is_(None)).count()
+
+
 def _old_work_pending() -> bool:
-    """Ordinea prezentată userului (24.11.2026): după importul 2002–2010, întâi verificarea mărcilor
-    expirate din tabelul „urmează să expire”, apoi fișele scheletice, abia apoi starea cererilor
-    2010–2021 — toate prin enrich_old, una după alta, fără ca enrich_status să ocupe TMview între timp."""
+    """Ordinea fixată de user (26.11.2026): 1) verificarea mărcilor expirate din tabelul „urmează să
+    expire”, 2) starea cererilor 2010–2021 (prima verificare a tuturor), 3) abia apoi fișele scheletice.
+    Adevărat cât timp enrich_status trebuie să aștepte: în etapa 1 și în etapa 3."""
     now = datetime.utcnow()
     if _oldwork["at"] and now - _oldwork["at"] < timedelta(minutes=10):
         return _oldwork["v"]
     if exp_job.get("left") == 0:
         db = SessionLocal()
         try:
-            v = db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|skel%")).first() is not None
+            first = _status_first_left(db)
+            status_job["first_pass_left"] = first
+            # Starea cererilor terminată → fișele scheletice au TMview pentru ele, fără reverificări între timp.
+            v = first == 0 and db.query(Mark.app_number).filter(Mark.tmview_checked.like("%|skel%")).first() is not None
         finally:
             db.close()
     else:
         v = True
     _oldwork.update(at=now, v=v)
     return v
+
+
+def _status_phase_pending() -> bool:
+    """Etapa 2 (starea cererilor) încă în curs — fișele scheletice așteaptă."""
+    db = SessionLocal()
+    try:
+        first = _status_first_left(db)
+    finally:
+        db.close()
+    status_job["first_pass_left"] = first
+    return first > 0
 
 
 def _weekend() -> bool:
@@ -1201,7 +1222,7 @@ def enrich_status(limit: int = 150) -> None:
     if _missing_pending():
         return                                    # întâi toate mărcile lipsă, apoi starea cererilor
     if _old_work_pending():
-        return                                    # apoi mărcile expirate + fișele scheletice (24.11)
+        return                                    # mărcile expirate întâi; fișele scheletice după (26.11)
     for _ in range(40):                           # golurile / denumirile din TMview termină întâi
         if not old_job["running"]:
             break
@@ -2213,6 +2234,8 @@ def enrich_old(batches: int = 8) -> None:
             # apoi fișele complete — una după alta, nu în paralel.
             if _check_expiring_tmview(200 if _weekend() else 100):
                 return
+            if _status_phase_pending():
+                return                            # întâi starea cererilor 2010–2021 (enrich_status), apoi fișele
             _complete_skels(300 if _weekend() else 150)
             return
         fails = 0
