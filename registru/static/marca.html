@@ -149,7 +149,11 @@ function repAxis(m) {
   // Mandatarul actual din TMview / registru, când documentele BOPI citite nu îl numesc (ex. Lektor L).
   const lastSeg = segs[segs.length - 1];
   if (segs.length && m.representative && !same(lastSeg.rep, m.representative))
-    segs.push({ rep: m.representative, ev: { date: m.tm_status_date || "", chapter: "Reprezentant actual", bopi: "registrul OSIM (TMview)" } });
+    // Data înscrierii nu e publicată în BOPI și TMview nu o dă (tm_status_date e data stării mărcii, nu a
+    // mandatarului — ex. leche M 2022 01856: PROTECTMARK apărea la 19.09.2022). Se arată doar „după” ultimul
+    // document BOPI care numea alt reprezentant sau niciunul.
+    segs.push({ rep: m.representative, ev: { date: "", after: lastSeg.ev.date || "", chapter: "Reprezentant actual",
+                bopi: "registrul OSIM (TMview) — data înscrierii nu apare în buletinele BOPI" } });
   if (!segs.length) return "";
   const nm = r => r ? r : "fără reprezentant";
   // Același format ca „Istoricul mărcii”: data pe axă, documentul BOPI, schimbarea veche → nouă.
@@ -160,7 +164,7 @@ function repAxis(m) {
         ${prev !== null ? `<s class="tl-old">${esc(nm(prev))}</s> <span class="tl-arrow">→</span> ` : ""}${who}</div>`;
     const now = i === segs.length - 1 ? ' <span class="badge light">actual</span>' : "";
     return `<li class="tl-item ${i ? "tl-mod" : "tl-st"}">
-      <div class="tl-date">${dmy(g.ev.date) || esc(g.ev.date)}</div>
+      <div class="tl-date">${g.ev.after ? "după " + (dmy(g.ev.after) || esc(g.ev.after)) : (dmy(g.ev.date) || esc(g.ev.date))}</div>
       <div class="tl-body"><div class="tl-head"><strong>${esc(g.ev.chapter)}</strong> <span class="muted small">· ${esc(g.ev.bopi)}</span>${now}</div>${ch}</div>
     </li>`;
   });
