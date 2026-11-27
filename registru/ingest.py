@@ -1387,6 +1387,102 @@ def fix_reg_unread() -> int:
         db.close()
 
 
+scan111_job: Dict = {"running": False, "files_done": 0, "files_total": 0, "fixed": 0, "current": "", "examples": []}
+
+
+def scan_reg_unread() -> None:
+    """O singură trecere (cerută de user 27.11.2026): toate buletinele lunare, doar fișele cu (111) fără
+    număr citibil. Marca respectivă devine „Mărci înregistrate” la data buletinului (data publicării
+    înregistrării), fără să se atingă alte date. Doar PDF-uri OSIM — fără TMview. Progres pe fișier în
+    SourceFile („scan111:<url>”), deci reluarea după restart continuă de unde a rămas."""
+    import time as _t
+    if scan111_job["running"]:
+        return
+    db = SessionLocal()
+    try:
+        if db.get(SourceFile, "migration:scan111-v1") is not None:
+            return
+    finally:
+        db.close()
+    scan111_job["running"] = True
+    try:
+        srcs = [x for x in list_sources() if x["kind"] == "monthly"]
+        scan111_job["files_total"] = len(srcs)
+        reg_lbl, adm_lbl = CHAPTER_LABEL["registered"], CHAPTER_LABEL["admitted"]
+        for src in srcs:
+            key = "scan111:" + src["url"]
+            db = SessionLocal()
+            try:
+                if db.get(SourceFile, key) is not None:
+                    scan111_job["files_done"] += 1
+                    continue
+            finally:
+                db.close()
+            while job["running"]:                 # nu peste citirea buletinelor noi
+                _t.sleep(60)
+            scan111_job["current"] = src["label"]
+            path, n = None, 0
+            try:
+                path = _download(src["url"])
+                if path:
+                    bdate = src["date"].isoformat()
+                    db = SessionLocal()
+                    try:
+                        for chapter, rec in parse_pdf(path, "monthly", want_images=False):
+                            if not rec.get("has_111") or rec.get("reg_number"):
+                                continue
+                            m = db.get(Mark, rec["app_number"])
+                            if m is None:
+                                continue
+                            evs = m.events or []
+                            if any(e.get("chapter") == reg_lbl and e.get("bopi") == src["label"] for e in evs):
+                                continue
+                            hit = next((e for e in evs if e.get("chapter") == adm_lbl and e.get("bopi") == src["label"]), None)
+                            if hit is not None:
+                                m.events = [dict(e, chapter=reg_lbl) if e is hit else e for e in evs]
+                            else:
+                                _add_event(m, {"date": bdate, "bopi": src["label"], "chapter": reg_lbl})
+                            if m.status in ("Cerere publicată", "Admisă la înregistrare", ""):
+                                m.status, m.status_date = "Înregistrată", bdate
+                            if not m.reg_date:
+                                m.reg_date = bdate
+                            m.expiry_date = expiry_of(m)
+                            procedura.apply(db, m, source="corectură (111) necitit, " + src["label"])
+                            n += 1
+                            if len(scan111_job["examples"]) < 30:
+                                scan111_job["examples"].append(f"{m.app_number} ({src['label']})")
+                        db.merge(SourceFile(url=key, kind="scan111", status="ok", label=f"{src['label']}: {n}"))
+                        db.commit()
+                    finally:
+                        db.close()
+                else:
+                    db = SessionLocal()
+                    try:
+                        db.merge(SourceFile(url=key, kind="scan111", status="ok", label=f"{src['label']}: lipsă"))
+                        db.commit()
+                    finally:
+                        db.close()
+            except Exception as e:
+                print(f"[SCAN111] {src['label']}: {type(e).__name__}: {e}")
+            finally:
+                if path and os.path.exists(path):
+                    os.remove(path)
+            scan111_job["fixed"] += n
+            scan111_job["files_done"] += 1
+            if n:
+                print(f"[SCAN111] {src['label']}: {n} mărci înregistrate cu (111) necitit")
+        db = SessionLocal()
+        try:
+            total = scan111_job["fixed"]
+            db.merge(SourceFile(url="migration:scan111-v1", kind="migration", status="ok",
+                                label=f"trecere (111) necitit terminată: {total} mărci corectate"))
+            db.commit()
+        finally:
+            db.close()
+    finally:
+        scan111_job.update(running=False, current="")
+
+
 def clean_no_rep() -> int:
     """O singură dată: mandatarul „NEDESEMNAT” preluat din TMview înainte de 26.11.2026 devine gol."""
     db = SessionLocal()
