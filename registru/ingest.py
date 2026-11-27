@@ -1351,6 +1351,42 @@ def _no_rep(name: str) -> bool:
     return not t.strip("*") or t.startswith("NEDESEMNAT") or t.startswith("NONE")
 
 
+def fix_reg_unread() -> int:
+    """O singură dată (27.11.2026): mărcile înregistrate a căror fișă din buletinul lunar avea (111) fără număr
+    citibil au fost trecute drept „Cereri admise” (ex. M 2024 11512, BOPI 10/2025). Evenimentul din buletinul
+    lunar devine „Mărci înregistrate” când marca e înregistrată (nr. din TMview), fără alt eveniment de
+    înregistrare, iar data înregistrării e cu cel mult 75 de zile înaintea buletinului."""
+    from sqlalchemy import String
+    db = SessionLocal()
+    try:
+        key = "migration:reg-unread-v1"
+        if db.get(SourceFile, key) is not None:
+            return 0
+        reg_lbl, adm_lbl = CHAPTER_LABEL["registered"], CHAPTER_LABEL["admitted"]
+        n, ex = 0, []
+        for m in db.query(Mark).filter(Mark.status == "Înregistrată", Mark.reg_number != "",
+                                       Mark.events.cast(String).like("%completat din TMview%")):
+            evs = m.events or []
+            if any(e.get("chapter") == reg_lbl for e in evs) or not (m.reg_date or "")[:4].isdigit():
+                continue
+            cand = [e for e in evs if e.get("chapter") == adm_lbl and re.fullmatch(r"BOPI \d{2}/\d{4}", e.get("bopi") or "")
+                    and m.reg_date <= (e.get("date") or "") <= (date.fromisoformat(m.reg_date) + timedelta(days=75)).isoformat()]
+            if not cand:
+                continue
+            tgt = cand[0]
+            m.events = [dict(e, chapter=reg_lbl, reg_number=m.reg_number) if e is tgt else e for e in evs]
+            procedura.apply(db, m, source="corectură (111) necitit")
+            n += 1
+            if len(ex) < 20:
+                ex.append(m.app_number)
+        db.add(SourceFile(url=key, kind="migration", status="ok", label=f"înregistrate cu (111) necitit: {n} {ex}"))
+        db.commit()
+        print(f"[MIG] (111) necitit → Mărci înregistrate: {n} mărci, ex. {ex}")
+        return n
+    finally:
+        db.close()
+
+
 def clean_no_rep() -> int:
     """O singură dată: mandatarul „NEDESEMNAT” preluat din TMview înainte de 26.11.2026 devine gol."""
     db = SessionLocal()

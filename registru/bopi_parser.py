@@ -350,6 +350,9 @@ def parse_block(block: str) -> Optional[Dict]:
         n = re.search(r"\d{3,7}", seg["111"])
         # Arhiva tipărește nr. de marcă pe 6 cifre (065304); în bază e fără zerouri, ca în tabele.
         rec["reg_number"] = n.group(0).lstrip("0") if n else ""
+        # Fișa are (111), dar numărul e tipărit în altă parte a paginii (ex. BOPI 10/2025, M 2024 11512):
+        # tot marcă înregistrată — în buletinul lunar, cererile admise nu au cod (111).
+        rec["has_111"] = True
     else:
         # Buletinele lunare 2011–2014 tipăresc nr. mărcii pe rândul depozitului, fără cod (111):
         # „(210) M 2010 01736                  111601”.
@@ -684,7 +687,7 @@ def parse_pdf(path: str, kind: str, want_images: bool = True,
                 if txt and (not goods.get(c) or re.search(r"Conform\s+Anexa", goods[c], re.I)):
                     goods[c] = txt
             rec["goods"], rec["classes"] = goods, sorted(int(c) for c in goods)
-        chapter = fixed or ("registered" if rec.get("reg_number") else
+        chapter = fixed or ("registered" if rec.get("reg_number") or rec.get("has_111") else
                             "rejected" if rec["app_number"] in rejected else "admitted")
         yielded.add(rec["app_number"])
         yield chapter, rec
