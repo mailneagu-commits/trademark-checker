@@ -2268,7 +2268,9 @@ def _fill_names(limit: int = 100) -> None:
 
 _EXP_CHAP = "În tabelul mărcilor care urmează să expire"
 exp_job: Dict = {"running": False, "done": 0, "renewed": 0, "left": None, "last": None, "current": "",
-                 "current_name": "", "renewed_marks": []}
+                 "current_name": "", "renewed_marks": [], "fail": {}, "no_tmview": []}
+_exp_failed_at: Dict[str, datetime] = {}
+_exp_failed_n: Dict[str, int] = {}
 
 
 def _check_expiring_tmview(limit: int = 100) -> bool:
@@ -2303,13 +2305,19 @@ def _check_expiring_tmview(limit: int = 100) -> bool:
                     Mark.events.cast(String).like("%nu apare %listele BOPI citite%")).order_by(Mark.app_number):
                 exp_job["renewed_marks"].append(f"{a} {nm or ''} → {ex}")
             exp_job["renewed_marks"] = exp_job["renewed_marks"][-50:]
-        todo = [a for (a,) in cand.order_by(Mark.app_number).limit(limit)]
+        # Mărcile la care TMview n-a dat fișa trec la coadă 6 ore — altfel aceleași mărci rămân în capul listei,
+        # fiecare rulare se oprește pe ele (3 eșecuri → pauză TMview) și verificarea stă (2007, 28.11.2026).
+        cut = datetime.utcnow() - timedelta(hours=6)
+        todo = [a for (a,) in cand.order_by(Mark.app_number).limit(limit * 5)
+                if _exp_failed_at.get(a, cut) <= cut][:limit]
+        left_total = exp_job["left"]
     finally:
         db.close()
     if not todo:
-        return False
+        return bool(left_total)       # doar mărci amânate: se reîncearcă după 6 ore, fișele scheletice așteaptă
     exp_job.update(running=True, last=datetime.utcnow().isoformat() + "Z")
-    fails = 0
+    # last_ok: o fișă sigur existentă pentru proba „TMview merge?” (FRIENDS DISTRICT), apoi ultima fișă bună.
+    fails, run_fails, last_ok = 0, [], "RO50000M202411512"
     try:
         for app in todo:
             if _tmview_paused():
@@ -2328,13 +2336,48 @@ def _check_expiring_tmview(limit: int = 100) -> bool:
                     d = r.json() if r.status_code == 200 else None
                 except Exception:
                     d = None
-            if not isinstance(d, dict) or "error" in d:
+            if not isinstance(d, dict) or "error" in d or not st13:
+                _exp_failed_at[app] = datetime.utcnow()
+                why = (str(d.get("error"))[:60] if isinstance(d, dict) else "fără răspuns") if st13 else "fără ST13"
+                exp_job["fail"][why] = exp_job["fail"].get(why, 0) + 1
+                run_fails.append(app)
                 fails += 1
                 if fails >= 3:
-                    _tmview_backoff()
-                    break
+                    # Trei la rând: TMview blocat sau doar mărci fără fișă? Proba pe ultima fișă bună.
+                    ok = False
+                    if last_ok:
+                        try:
+                            pr = requests.get(f"{MONITOR_API}/api/tm-detail", params={"st13": last_ok}, timeout=60)
+                            pj = pr.json() if pr.status_code == 200 else None
+                            ok = isinstance(pj, dict) and "error" not in pj and bool(pj)
+                        except Exception:
+                            ok = False
+                    if not ok:
+                        _tmview_backoff()
+                        break
+                    fails = 0                     # TMview merge: eșecurile țin de mărcile acelea
+                else:
+                    _t.sleep(3)
+                    continue
+            # TMview a răspuns → eșecurile de dinainte țin de mărcile acelea, nu de rețea.
+            for a in run_fails:
+                _exp_failed_n[a] = _exp_failed_n.get(a, 0) + 1
+                if _exp_failed_n[a] >= 3:
+                    # A treia oară fără fișă, cu TMview funcțional: verificată, fără date TMview.
+                    db = SessionLocal()
+                    try:
+                        mm = db.get(Mark, a)
+                        if mm is not None:
+                            mm.tmview_checked = (mm.tmview_checked or "") + "|exp1|expx"
+                            db.commit()
+                            exp_job["no_tmview"] = (exp_job.get("no_tmview") or []) + [a]
+                    finally:
+                        db.close()
+            run_fails = []
+            if not isinstance(d, dict) or "error" in d or not st13:
                 _t.sleep(3)
                 continue
+            last_ok = st13
             fails = 0
             db = SessionLocal()
             try:
