@@ -1483,6 +1483,46 @@ def scan_reg_unread() -> None:
         scan111_job.update(running=False, current="")
 
 
+def fix_stub_links() -> int:
+    """Zilnic și la pornire (28.11.2026, ex. PROTECT MARK M 2014 04931 ↔ R134607): marca reînnoită / cedată păstrată pe
+    nr. de marcă („R…”), al cărei tabel BOPI dă nr. de depozit, se unește cu marca originală când originalul n-are
+    nr. de înregistrare (buletinul înregistrării necitit). Altfel apar două fișe și doi titulari."""
+    from sqlalchemy import String
+    db = SessionLocal()
+    try:
+        key = "migration:stub-links-v1"      # rulează zilnic: păstrează rezultatul ultimei treceri cu unificări
+        n, ex = 0, []
+        for stub in db.query(Mark).filter(Mark.app_number.like("R%"), Mark.events.cast(String).like('%"app": "M%')).all():
+            apps = {e.get("app") for e in (stub.events or []) if re.fullmatch(r"M\d{8,10}", e.get("app") or "")}
+            if len(apps) != 1:
+                continue
+            m = db.get(Mark, apps.pop())
+            reg = stub.app_number[1:]
+            if m is None or (m.reg_number and m.reg_number.lstrip("0") != reg):
+                continue
+            if not m.reg_number:
+                m.reg_number = reg
+            if not m.reg_date and stub.reg_date:
+                m.reg_date = stub.reg_date
+            _merge_stub(db, m)
+            _recompute_holder(m)
+            m.expiry_date = expiry_of(m)
+            m.name_norm, m.holder_norm, m.rep_norm = norm(m.name), norm(m.holder), norm(m.representative)
+            n += 1
+            if len(ex) < 30:
+                ex.append(f"{m.app_number}↔{stub.app_number}")
+            if n % 200 == 0:
+                db.commit()
+        if n or db.get(SourceFile, key) is None:
+            db.merge(SourceFile(url=key, kind="migration", status="ok",
+                                label=f"{date.today():%d.%m.%Y} fișe R… unite cu originalul: {n} {ex}"))
+        db.commit()
+        print(f"[MIG] fișe R… unite cu originalul: {n}, ex. {ex}")
+        return n
+    finally:
+        db.close()
+
+
 def clean_no_rep() -> int:
     """O singură dată: mandatarul „NEDESEMNAT” preluat din TMview înainte de 26.11.2026 devine gol."""
     db = SessionLocal()

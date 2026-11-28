@@ -62,6 +62,10 @@ def _startup():
                   run_date=_dt2.now(_Z2("Europe/Bucharest")) + _td2(minutes=2))
     sched.add_job(ingest.fix_reg_unread, "date", id="fix_reg_unread", misfire_grace_time=3600,
                   run_date=_dt2.now(_Z2("Europe/Bucharest")) + _td2(minutes=3))
+    sched.add_job(ingest.fix_stub_links, "date", id="fix_stub_links", misfire_grace_time=3600,
+                  run_date=_dt2.now(_Z2("Europe/Bucharest")) + _td2(minutes=2))
+    sched.add_job(ingest.fix_stub_links, "cron", hour=3, minute=30, id="fix_stub_links_daily",
+                  misfire_grace_time=3600, coalesce=True)
     sched.add_job(ingest.scan_reg_unread, "date", id="scan_reg_unread", misfire_grace_time=3600,
                   run_date=_dt2.now(_Z2("Europe/Bucharest")) + _td2(minutes=5))
     import mailer
@@ -504,7 +508,7 @@ def public_status(db: Session = Depends(get_db)):
             "first_bulletin": db.query(func.min(SourceFile.bulletin_date)).filter(SourceFile.status == "ok").scalar(),
             "publications": [db.query(func.min(Mark.publication_date)).filter(Mark.publication_date != "").scalar(),
                              db.query(func.max(Mark.publication_date)).scalar()],
-            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "logos_hq": ingest.hq_job, "old_marks": dict(ingest.old_job, skeletons=db.query(func.count(Mark.app_number)).filter(Mark.tmview_checked.like("%|skel%")).scalar() or 0, skeletons_no_detail=db.query(func.count(Mark.app_number)).filter(Mark.tmview_checked.like("%|skx%")).scalar() or 0), "expiring_check": ingest.exp_job, "courts": courts.job, "corrections": {r.url[10:]: r.label for r in db.query(SourceFile).filter(SourceFile.url.in_(["migration:no-rep-v1", "migration:reg-unread-v1", "migration:scan111-v1"]))}, "scan111": ingest.scan111_job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
+            "renewed_without_original": stubs, "renewed_named_from_tmview": named, "enrich": ingest.enrich_job, "goods": ingest.goods_job, "status_sync": ingest.status_job, "logos_hq": ingest.hq_job, "old_marks": dict(ingest.old_job, skeletons=db.query(func.count(Mark.app_number)).filter(Mark.tmview_checked.like("%|skel%")).scalar() or 0, skeletons_no_detail=db.query(func.count(Mark.app_number)).filter(Mark.tmview_checked.like("%|skx%")).scalar() or 0), "expiring_check": ingest.exp_job, "courts": courts.job, "corrections": {r.url[10:]: r.label for r in db.query(SourceFile).filter(SourceFile.url.in_(["migration:no-rep-v1", "migration:reg-unread-v1", "migration:scan111-v1", "migration:stub-links-v1"]))}, "scan111": ingest.scan111_job, "tmview_pause_until": ingest.tmview_pause["until"].isoformat() + "Z",
             "errors": [{"bopi": e.label, "error": (e.error or "")[:160]} for e in
                        db.query(SourceFile).filter(SourceFile.status == "error").limit(10)],
             "changes_applied": dict(db.query(MarkChange.kind, func.count(MarkChange.id))
